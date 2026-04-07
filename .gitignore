@@ -1,11 +1,45 @@
+# Binários e artefatos de build
 /bin/
 /dist/
+/build/
+/out/
 *.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 *.test
 *.out
+__debug_bin*
+
+# Go — cobertura e perfis
+*.coverprofile
+coverage.out
+coverage.html
+*.prof
+*.pprof
+
+# Vendor (habitualmente não versionado; remova esta linha se adotarem vendoring no repo)
+/vendor/
+
+# Ambiente e segredos (mantém o template versionado)
 .env
-.env.local
+.env.*
+!.env.example
+
+# IDE e SO
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Logs e diretórios temporários
 *.log
-coverage.out
+tmp/
+temp/
+
+# Ferramentas locais
+.air.toml.bak
