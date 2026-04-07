@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: retechfin
+      POSTGRES_PASSWORD: retechfin
+      POSTGRES_DB: retechfin
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retechfin -d retechfin"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: retechfin
+      DB_PASSWORD: retechfin
+      DB_NAME: retechfin
+      DB_SSLMODE: disable
+      APP_PORT: "8080"
+      APP_ENV: development
+      LOG_LEVEL: INFO
+      MIGRATIONS_PATH: /app/migrations
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
