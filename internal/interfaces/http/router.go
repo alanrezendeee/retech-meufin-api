@@ -8,10 +8,12 @@ import (
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
+	"gorm.io/gorm"
 )
 
 type RouterDeps struct {
 	Log                 *slog.Logger
+	DB                  *gorm.DB
 	AccountService      *appl.AccountService
 	CategoryService     *appl.CategoryService
 	TransactionService  *appl.TransactionService
@@ -24,7 +26,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog(d.Log))
 
-	hHealth := &handlers.Health{}
+	hHealth := &handlers.Health{DB: d.DB}
 	r.GET("/health", hHealth.Get)
 
 	accH := handlers.NewAccountHandler(d.AccountService)

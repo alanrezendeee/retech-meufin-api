@@ -2,6 +2,7 @@ package configs
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 )
@@ -21,6 +22,8 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	log.Println("🔍 Carregando configurações obrigatórias...")
+
 	keys := []string{
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
 		"APP_PORT", "APP_ENV", "LOG_LEVEL", "MIGRATIONS_PATH",
@@ -51,6 +54,8 @@ func Load() (*Config, error) {
 	if cfg.AppEnv != "development" && cfg.AppEnv != "production" && cfg.AppEnv != "test" {
 		return nil, fmt.Errorf("APP_ENV inválido: use development, production ou test")
 	}
+
+	log.Println("✅ Todas as configurações carregadas com sucesso!")
 
 	return cfg, nil
 }

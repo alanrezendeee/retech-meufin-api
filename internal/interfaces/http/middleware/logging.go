@@ -15,7 +15,7 @@ func AccessLog(log *slog.Logger) gin.HandlerFunc {
 		latency := time.Since(start)
 		status := c.Writer.Status()
 		rid := GetRequestID(c)
-		log.Info("http",
+		log.Info("requisição concluída",
 			slog.String("method", c.Request.Method),
 			slog.String("path", path),
 			slog.Int("status", status),
