@@ -1,45 +1,50 @@
 services:
   postgres:
-    image: postgres:16-alpine
-    container_name: retech-meufin-db
+    image: postgres:17-alpine
+    container_name: ${CONTAINER_NAME}
     environment:
-      POSTGRES_USER: retech_meufin_user
-      POSTGRES_PASSWORD: d18cf320-18f3-4a88-a030-9b4069454ebf
-      POSTGRES_DB: retech_meufin_db
+      POSTGRES_USER: ${PGUSER}
+      POSTGRES_PASSWORD: ${PGPASSWORD}
+      POSTGRES_DB: ${PGDATABASE}
+      PGDATA: ${PGDATA}
     ports:
-      - "5432:5432"
+      - "${PGPORT}:5432"
     volumes:
       - retech_meufin_db_volume:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U retech_meufin_user -d retech-meufin-db"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER}"]
+      interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - retech-meufin-network
+      - retech-network
 
   api:
     build: .
+    container_name: retech-meufin-app
     ports:
-      - "8002:8080"
+      - "${APP_PORT:-8002}:8080"
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_USER: retech_meufin_user
-      DB_PASSWORD: d18cf320-18f3-4a88-a030-9b4069454ebf
-      DB_NAME: retech_meufin_db
-      DB_SSLMODE: disable
-      APP_PORT: "8002"
-      APP_ENV: development
-      LOG_LEVEL: INFO
-      MIGRATIONS_PATH: /app/migrations
+      DB_HOST: ${DB_HOST:-postgres}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      DB_SSLMODE: ${DB_SSLMODE:-disable}
+      APP_PORT: ${APP_PORT:-8002}
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      MIGRATIONS_PATH: ${MIGRATIONS_PATH:-/app/migrations}
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - retech-network
+
+networks:
+  retech-network:
+    driver: bridge
 
 volumes:
   retech_meufin_db_volume:
-
-networks:
-  retech-meufin-network:
-    driver: bridge
+    name: ${PGVOLUME_NAME}
