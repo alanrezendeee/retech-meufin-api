@@ -1,5 +1,5 @@
 package version
 
-const Service = "retech-fin-api"
+const Service = "retech-meufin-api"
 
 var Version = "dev"

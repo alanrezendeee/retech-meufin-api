@@ -1,0 +1,538 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "name": "Retech MeuFin API",
+    "description": "Coleção da **retech-meufin-api** (ledger + orçamento).\n\n**Workspace:** todas as rotas em `/api/v1` exigem o cabeçalho `X-Workspace-ID` com um UUID válido. Ajuste a variável de coleção `workspaceId`.\n\n**Base URL:** padrão local `http://localhost:8002` (`APP_PORT` no `.env`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8002"
+    },
+    {
+      "key": "workspaceId",
+      "value": "00000000-0000-0000-0000-000000000001"
+    },
+    {
+      "key": "accountId",
+      "value": ""
+    },
+    {
+      "key": "categoryId",
+      "value": ""
+    },
+    {
+      "key": "transactionId",
+      "value": ""
+    },
+    {
+      "key": "budgetId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "POST Create account",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Conta principal\",\n  \"currency\": \"BRL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/accounts"
+          },
+          "response": []
+        },
+        {
+          "name": "GET List accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/accounts?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "accounts"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "description": "máx. 100"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Get account by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/accounts/{{accountId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Update account",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Conta principal (atualizada)\",\n  \"currency\": \"BRL\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/accounts/{{accountId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Account",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/accounts/{{accountId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "item": [
+        {
+          "name": "POST Create category",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alimentação\",\n  \"kind\": \"expense\",\n  \"parent_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/categories"
+          },
+          "response": []
+        },
+        {
+          "name": "GET List categories",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Get category by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/categories/{{categoryId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Update category",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Alimentação\",\n  \"kind\": \"expense\",\n  \"parent_id\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/categories/{{categoryId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Category",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/categories/{{categoryId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "POST Create transaction",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"category_id\": \"{{categoryId}}\",\n  \"amount_cents\": 15050,\n  \"flow\": \"out\",\n  \"description\": \"Mercado\",\n  \"occurred_at\": \"2026-04-08T12:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/transactions"
+          },
+          "response": []
+        },
+        {
+          "name": "GET List transactions",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/transactions?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET Get transaction by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Update transaction",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"account_id\": \"{{accountId}}\",\n  \"category_id\": \"{{categoryId}}\",\n  \"amount_cents\": 20000,\n  \"flow\": \"out\",\n  \"description\": \"Mercado (ajuste)\",\n  \"occurred_at\": \"2026-04-08T15:30:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Transaction",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/transactions/{{transactionId}}"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Budgets",
+      "item": [
+        {
+          "name": "POST Create budget",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_id\": \"{{categoryId}}\",\n  \"year\": 2026,\n  \"month\": 4,\n  \"limit_cents\": 500000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/budgets"
+          },
+          "response": []
+        },
+        {
+          "name": "GET List budgets",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/budgets?limit=20&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "budgets"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST Validate budget (mês)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"year\": 2026,\n  \"month\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/budgets/validate"
+          },
+          "response": []
+        },
+        {
+          "name": "GET Get budget by id",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/budgets/{{budgetId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT Update budget",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit_cents\": 600000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/api/v1/budgets/{{budgetId}}"
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE Budget",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "X-Workspace-ID",
+                "value": "{{workspaceId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/budgets/{{budgetId}}"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
