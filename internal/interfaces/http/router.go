@@ -3,6 +3,7 @@ package http
 import (
 	"log/slog"
 
+	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
@@ -15,6 +16,9 @@ type RouterDeps struct {
 	Log                 *slog.Logger
 	DB                  *gorm.DB
 	Env                 string
+	JWKS                *keyfunc.JWKS
+	ApplicationID       string
+	CORSOrigins         []string
 	AccountService      *appl.AccountService
 	CategoryService     *appl.CategoryService
 	TransactionService  *appl.TransactionService
@@ -24,6 +28,7 @@ type RouterDeps struct {
 func NewRouter(d RouterDeps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.CORS(d.CORSOrigins))
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog(d.Log))
 
@@ -36,7 +41,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	budH := handlers.NewBudgetHandler(d.BudgetService)
 
 	v1 := r.Group("/api/v1")
-	v1.Use(middleware.RequireWorkspace())
+	v1.Use(middleware.RequireAuth(d.JWKS, d.ApplicationID))
 	{
 		v1.POST("/accounts", accH.Create)
 		v1.GET("/accounts", accH.List)

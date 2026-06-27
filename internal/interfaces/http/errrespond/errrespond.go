@@ -26,6 +26,8 @@ const (
 	CodeInternal            = "INTERNAL_ERROR"
 	CodeBadRequest          = "BAD_REQUEST"
 	CodeWorkspaceRequired   = "WORKSPACE_HEADER_REQUIRED"
+	CodeUnauthorized        = "UNAUTHORIZED"
+	CodeForbidden           = "FORBIDDEN"
 )
 
 func Write(c *gin.Context, err error) {

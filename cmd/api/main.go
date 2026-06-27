@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
@@ -99,6 +101,20 @@ func main() {
 	}
 	log.Info("✅ Migrations verificadas e aplicadas!")
 
+	log.Info("🔐 Carregando JWKS do auth...", slog.String("url", cfg.AuthJWKSURL))
+	jwks, err := keyfunc.Get(cfg.AuthJWKSURL, keyfunc.Options{
+		RefreshInterval:   time.Hour,
+		RefreshUnknownKID: true,
+		RefreshErrorHandler: func(err error) {
+			log.Error("⚠️ Falha ao atualizar JWKS", slog.String("error", err.Error()))
+		},
+	})
+	if err != nil {
+		log.Error("❌ Falha ao carregar JWKS do auth", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	log.Info("✅ JWKS carregado!")
+
 	accRepo := persistence.NewAccountRepository(db)
 	catRepo := persistence.NewCategoryRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
@@ -113,6 +129,9 @@ func main() {
 		Log:                log,
 		DB:                 db,
 		Env:                cfg.AppEnv,
+		JWKS:               jwks,
+		ApplicationID:      cfg.AppApplicationID,
+		CORSOrigins:        cfg.CORSOrigins,
 		AccountService:     accSvc,
 		CategoryService:    catSvc,
 		TransactionService: txSvc,
