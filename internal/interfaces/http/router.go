@@ -14,6 +14,7 @@ import (
 type RouterDeps struct {
 	Log                 *slog.Logger
 	DB                  *gorm.DB
+	Env                 string
 	AccountService      *appl.AccountService
 	CategoryService     *appl.CategoryService
 	TransactionService  *appl.TransactionService
@@ -26,7 +27,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog(d.Log))
 
-	hHealth := &handlers.Health{DB: d.DB}
+	hHealth := &handlers.Health{DB: d.DB, Env: d.Env}
 	r.GET("/health", hHealth.Get)
 
 	accH := handlers.NewAccountHandler(d.AccountService)

@@ -5,7 +5,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/api ./cmd/api
+ARG APP_VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+    -ldflags="-s -w -X github.com/retechfin/retechfin-api/internal/version.Version=${APP_VERSION}" \
+    -o /out/api ./cmd/api
 
 FROM alpine:3.21
 RUN apk add --no-cache ca-certificates tzdata && adduser -D -H app
