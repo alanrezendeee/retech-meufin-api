@@ -112,6 +112,7 @@ func main() {
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                log,
 		DB:                 db,
+		Env:                cfg.AppEnv,
 		AccountService:     accSvc,
 		CategoryService:    catSvc,
 		TransactionService: txSvc,

@@ -10,14 +10,16 @@ import (
 )
 
 type healthResponse struct {
-	Service  string `json:"service"`
-	Status   string `json:"status"`
-	DataBase string `json:"dataBase"`
-	Version  string `json:"version"`
+	Service     string `json:"service"`
+	Status      string `json:"status"`
+	DataBase    string `json:"dataBase"`
+	Version     string `json:"version"`
+	Environment string `json:"environment"`
 }
 
 type Health struct {
-	DB *gorm.DB
+	DB  *gorm.DB
+	Env string
 }
 
 func (h *Health) Get(c *gin.Context) {
@@ -39,9 +41,10 @@ func (h *Health) Get(c *gin.Context) {
 	}
 
 	c.JSON(code, healthResponse{
-		Service:  version.Service,
-		Status:   status,
-		DataBase: dataBase,
-		Version:  version.Version,
+		Service:     version.Service,
+		Status:      status,
+		DataBase:    dataBase,
+		Version:     version.Version,
+		Environment: h.Env,
 	})
 }
