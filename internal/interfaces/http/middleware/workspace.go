@@ -1,35 +1,15 @@
 package middleware
 
 import (
-	"net/http"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	"github.com/retechfin/retechfin-api/internal/interfaces/http/errrespond"
 )
 
-const HeaderWorkspaceID = "X-Workspace-ID"
+// CtxWorkspaceID é a chave de contexto do workspace, preenchida por RequireAuth
+// a partir do tenant_id do token validado.
 const CtxWorkspaceID = "workspace_id"
 
-func RequireWorkspace() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		raw := c.GetHeader(HeaderWorkspaceID)
-		if raw == "" {
-			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "cabeçalho X-Workspace-ID é obrigatório")
-			c.Abort()
-			return
-		}
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "X-Workspace-ID deve ser um UUID válido")
-			c.Abort()
-			return
-		}
-		c.Set(CtxWorkspaceID, id)
-		c.Next()
-	}
-}
-
+// WorkspaceID lê o workspace derivado do token no contexto da request.
 func WorkspaceID(c *gin.Context) (uuid.UUID, bool) {
 	v, ok := c.Get(CtxWorkspaceID)
 	if !ok {
