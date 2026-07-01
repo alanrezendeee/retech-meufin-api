@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
@@ -120,10 +121,13 @@ func main() {
 	txRepo := persistence.NewTransactionRepository(db)
 	budRepo := persistence.NewBudgetRepository(db)
 
+	markerRepo := persistence.NewHealthMarkerRepository(db)
+
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
 	txSvc := appl.NewTransactionService(txRepo, accRepo, catRepo)
 	budSvc := appb.NewService(budRepo, catRepo, txRepo)
+	markerSvc := apph.NewMarkerService(markerRepo)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                log,
@@ -136,6 +140,7 @@ func main() {
 		CategoryService:    catSvc,
 		TransactionService: txSvc,
 		BudgetService:      budSvc,
+		HealthMarkerService: markerSvc,
 	})
 
 	addr := ":" + cfg.AppPort

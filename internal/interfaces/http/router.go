@@ -6,6 +6,7 @@ import (
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
@@ -23,6 +24,7 @@ type RouterDeps struct {
 	CategoryService     *appl.CategoryService
 	TransactionService  *appl.TransactionService
 	BudgetService       *appb.Service
+	HealthMarkerService *apph.MarkerService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -67,6 +69,18 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		v1.GET("/budgets/:id", budH.Get)
 		v1.PUT("/budgets/:id", budH.Update)
 		v1.DELETE("/budgets/:id", budH.Delete)
+
+		// Saúde Familiar — catálogo de marcadores (Fase 0)
+		mkH := handlers.NewHealthMarkerHandler(d.HealthMarkerService)
+		health := v1.Group("/health")
+		{
+			health.GET("/markers", mkH.List)
+			health.POST("/markers", mkH.Create)
+			health.POST("/markers/resolve", mkH.Resolve)
+			health.GET("/markers/:id", mkH.Get)
+			health.PUT("/markers/:id", mkH.Update)
+			health.DELETE("/markers/:id", mkH.Delete)
+		}
 	}
 
 	return r
