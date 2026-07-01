@@ -17,17 +17,20 @@ func NewFinancialEntryService(repo dom.FinancialEntryRepository) *FinancialEntry
 }
 
 type CreateEntryInput struct {
-	WorkspaceID    uuid.UUID
-	Kind           string
-	Status         string // opcional, default prevista
-	AmountCents    int64
-	DueDate        time.Time
-	FamilyMemberID *uuid.UUID
-	SourceID       *uuid.UUID
-	Type           *string
-	Description    string
-	Recurrence     string
-	Notes          *string
+	WorkspaceID       uuid.UUID
+	Kind              string
+	Status            string // opcional, default prevista
+	AmountCents       int64
+	DueDate           time.Time
+	FamilyMemberID    *uuid.UUID
+	SourceID          *uuid.UUID
+	Type              *string
+	Description       string
+	Recurrence        string
+	Notes             *string
+	CardID            *uuid.UUID
+	ParentID          *uuid.UUID
+	InstallmentsTotal *int
 }
 
 type UpdateEntryInput struct {
@@ -68,15 +71,31 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		Type:           in.Type,
 		Description:    in.Description,
 		Recurrence:     recurrence,
+		CardID:         in.CardID,
+		ParentID:       in.ParentID,
 		Notes:          in.Notes,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := base.Validate(); err != nil {
-		return nil, err
-	}
 
-	occurrences := dom.GenerateOccurrences(base)
+	// Três caminhos mutuamente exclusivos: parcelado, recorrente ou único.
+	var occurrences []dom.FinancialEntry
+	switch {
+	case in.InstallmentsTotal != nil && *in.InstallmentsTotal > 1:
+		// Parcelado: N lançamentos mensais, recurrence forçada para none.
+		base.Recurrence = dom.RecurrenceNone
+		base.Status = dom.StatusPrevista
+		if err := base.Validate(); err != nil {
+			return nil, err
+		}
+		occurrences = dom.GenerateInstallments(base, *in.InstallmentsTotal)
+	default:
+		// Recorrente (recurrence != none) ou único.
+		if err := base.Validate(); err != nil {
+			return nil, err
+		}
+		occurrences = dom.GenerateOccurrences(base)
+	}
 	batch := make([]*dom.FinancialEntry, len(occurrences))
 	for i := range occurrences {
 		occ := occurrences[i]
@@ -92,6 +111,114 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		out[i] = *batch[i]
 	}
 	return out, nil
+}
+
+// InvoiceItemInput é uma compra/lançamento filho de uma fatura.
+type InvoiceItemInput struct {
+	Description       string
+	AmountCents       int64
+	Date              *time.Time
+	Category          *string
+	InstallmentNumber *int
+	InstallmentTotal  *int
+}
+
+// CreateInvoiceInput descreve a criação de uma fatura de cartão a partir das
+// compras confirmadas (import de fatura via PDF/LLM).
+type CreateInvoiceInput struct {
+	WorkspaceID uuid.UUID
+	CardID      *uuid.UUID
+	DueDate     time.Time
+	Description string
+	Status      string // opcional, default prevista
+	AmountCents *int64 // opcional; se nil, soma dos itens
+	Items       []InvoiceItemInput
+}
+
+// CreateInvoiceWithItems cria a FATURA (pai) e cada compra (filho) numa única
+// transação. A fatura é kind=debit, type='cartao'; cada item é kind=debit com
+// parent_id apontando para a fatura. O amount da fatura é a soma dos itens
+// quando não informado. Retorna (fatura, filhos, error).
+func (s *FinancialEntryService) CreateInvoiceWithItems(ctx context.Context, in CreateInvoiceInput) (*dom.FinancialEntry, []dom.FinancialEntry, error) {
+	if len(in.Items) == 0 {
+		return nil, nil, &dom.ValidationError{Msg: "a fatura precisa de ao menos um item"}
+	}
+	now := time.Now().UTC()
+
+	status := dom.Status(in.Status)
+	if status == "" {
+		status = dom.StatusPrevista
+	}
+
+	var sum int64
+	for _, it := range in.Items {
+		sum += it.AmountCents
+	}
+	amount := sum
+	if in.AmountCents != nil {
+		amount = *in.AmountCents
+	}
+
+	cartaoType := "cartao"
+	invoice := dom.FinancialEntry{
+		ID:          uuid.New(),
+		WorkspaceID: in.WorkspaceID,
+		Kind:        dom.KindDebit,
+		Status:      status,
+		AmountCents: amount,
+		DueDate:     in.DueDate,
+		Type:        &cartaoType,
+		Description: in.Description,
+		Recurrence:  dom.RecurrenceNone,
+		CardID:      in.CardID,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if err := invoice.Validate(); err != nil {
+		return nil, nil, err
+	}
+
+	batch := make([]*dom.FinancialEntry, 0, len(in.Items)+1)
+	batch = append(batch, &invoice)
+
+	for _, it := range in.Items {
+		due := in.DueDate
+		if it.Date != nil {
+			due = *it.Date
+		}
+		invoiceID := invoice.ID
+		child := dom.FinancialEntry{
+			ID:                uuid.New(),
+			WorkspaceID:       in.WorkspaceID,
+			Kind:              dom.KindDebit,
+			Status:            status,
+			AmountCents:       it.AmountCents,
+			DueDate:           due,
+			Type:              it.Category,
+			Description:       it.Description,
+			Recurrence:        dom.RecurrenceNone,
+			CardID:            in.CardID,
+			ParentID:          &invoiceID,
+			InstallmentNumber: it.InstallmentNumber,
+			InstallmentTotal:  it.InstallmentTotal,
+			CreatedAt:         now,
+			UpdatedAt:         now,
+		}
+		if err := child.Validate(); err != nil {
+			return nil, nil, err
+		}
+		batch = append(batch, &child)
+	}
+
+	if err := s.repo.CreateBatch(ctx, batch); err != nil {
+		return nil, nil, err
+	}
+
+	children := make([]dom.FinancialEntry, 0, len(batch)-1)
+	for _, e := range batch[1:] {
+		children = append(children, *e)
+	}
+	return &invoice, children, nil
 }
 
 func (s *FinancialEntryService) Get(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {

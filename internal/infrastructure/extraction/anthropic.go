@@ -166,21 +166,27 @@ func (a *AnthropicExtractor) Extract(ctx context.Context, in ExtractInput) (Extr
 		return ExtractResult{}, err
 	}
 
+	profile := in.Profile
+	if profile == nil {
+		p := LabExamProfile()
+		profile = &p
+	}
+
 	reqBody := anthropicRequest{
 		Model:     a.cfg.Model,
 		MaxTokens: 8192,
-		System:    extractionSystemPrompt,
+		System:    profile.SystemPrompt,
 		Tools: []anthropicTool{{
-			Name:        extractionToolName,
-			Description: "Registra os dados estruturados extraídos do laudo/exame laboratorial. Não interpreta clinicamente.",
-			InputSchema: extractionInputSchema(),
+			Name:        profile.ToolName,
+			Description: profile.ToolDescription,
+			InputSchema: profile.InputSchema,
 		}},
-		ToolChoice: &anthropicToolChoice{Type: "tool", Name: extractionToolName},
+		ToolChoice: &anthropicToolChoice{Type: "tool", Name: profile.ToolName},
 		Messages: []anthropicMessage{{
 			Role: "user",
 			Content: []anthropicContentBlock{
 				docBlock,
-				{Type: "text", Text: "Extraia todos os dados do exame acima e retorne via ferramenta " + extractionToolName + "."},
+				{Type: "text", Text: profile.UserInstruction},
 			},
 		}},
 	}
@@ -226,7 +232,7 @@ func (a *AnthropicExtractor) Extract(ctx context.Context, in ExtractInput) (Extr
 
 	result := ExtractResult{
 		Model:         parsed.Model,
-		PromptVersion: PromptVersion,
+		PromptVersion: profile.PromptVersion,
 		RawResponse:   json.RawMessage(rawBody),
 	}
 	if result.Model == "" {
@@ -237,7 +243,7 @@ func (a *AnthropicExtractor) Extract(ctx context.Context, in ExtractInput) (Extr
 	for _, block := range parsed.Content {
 		switch block.Type {
 		case "tool_use":
-			if block.Name == extractionToolName && len(block.Input) > 0 {
+			if block.Name == profile.ToolName && len(block.Input) > 0 {
 				result.StructuredJSON = block.Input
 			}
 		case "text":

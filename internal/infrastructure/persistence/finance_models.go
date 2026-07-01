@@ -21,6 +21,22 @@ type IncomeSourceModel struct {
 
 func (IncomeSourceModel) TableName() string { return "income_sources" }
 
+type CreditCardModel struct {
+	ID          uuid.UUID `gorm:"type:uuid;primaryKey"`
+	WorkspaceID uuid.UUID `gorm:"type:uuid;not null;index:idx_credit_cards_workspace"`
+	Name        string    `gorm:"size:255;not null"`
+	Brand       *string   `gorm:"size:50"`
+	ClosingDay  *int      `gorm:"column:closing_day"`
+	DueDay      *int      `gorm:"column:due_day"`
+	Active      bool      `gorm:"not null;default:true"`
+	Notes       *string   `gorm:"type:text"`
+	CreatedAt   time.Time `gorm:"not null"`
+	UpdatedAt   time.Time `gorm:"not null"`
+	DeletedAt   gorm.DeletedAt
+}
+
+func (CreditCardModel) TableName() string { return "credit_cards" }
+
 type FinancialEntryModel struct {
 	ID                uuid.UUID  `gorm:"type:uuid;primaryKey"`
 	WorkspaceID       uuid.UUID  `gorm:"type:uuid;not null;index:idx_financial_entries_workspace"`
@@ -34,6 +50,10 @@ type FinancialEntryModel struct {
 	Description       string     `gorm:"type:text;not null;default:''"`
 	Recurrence        string     `gorm:"size:10;not null;default:none"`
 	RecurrenceGroupID *uuid.UUID `gorm:"type:uuid"`
+	CardID            *uuid.UUID `gorm:"column:card_id;type:uuid"`
+	ParentID          *uuid.UUID `gorm:"column:parent_id;type:uuid"`
+	InstallmentNumber *int       `gorm:"column:installment_number"`
+	InstallmentTotal  *int       `gorm:"column:installment_total"`
 	Notes             *string    `gorm:"type:text"`
 	CreatedAt         time.Time  `gorm:"not null"`
 	UpdatedAt         time.Time  `gorm:"not null"`

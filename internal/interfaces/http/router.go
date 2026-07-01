@@ -15,26 +15,29 @@ import (
 )
 
 type RouterDeps struct {
-	Log                   *slog.Logger
-	DB                    *gorm.DB
-	Env                   string
-	JWKS                  *keyfunc.JWKS
-	ApplicationID         string
-	CORSOrigins           []string
-	AccountService        *appl.AccountService
-	CategoryService       *appl.CategoryService
-	TransactionService    *appl.TransactionService
-	BudgetService         *appb.Service
-	HealthMarkerService   *apph.MarkerService
-	FamilyMemberService   *apph.FamilyMemberService
-	LabService            *apph.LabService
-	ExamRequestService    *apph.ExamRequestService
-	ExamResultService     *apph.ExamResultService
-	DashboardService      *apph.DashboardService
-	DocumentService       *apph.DocumentService
-	ExtractionService     *apph.ExtractionService
-	IncomeSourceService   *appf.IncomeSourceService
-	FinancialEntryService *appf.FinancialEntryService
+	Log                      *slog.Logger
+	DB                       *gorm.DB
+	Env                      string
+	JWKS                     *keyfunc.JWKS
+	ApplicationID            string
+	CORSOrigins              []string
+	AccountService           *appl.AccountService
+	CategoryService          *appl.CategoryService
+	TransactionService       *appl.TransactionService
+	BudgetService            *appb.Service
+	HealthMarkerService      *apph.MarkerService
+	FamilyMemberService      *apph.FamilyMemberService
+	LabService               *apph.LabService
+	ExamRequestService       *apph.ExamRequestService
+	ExamResultService        *apph.ExamResultService
+	DashboardService         *apph.DashboardService
+	DocumentService          *apph.DocumentService
+	ExtractionService        *apph.ExtractionService
+	IncomeSourceService      *appf.IncomeSourceService
+	FinancialEntryService    *appf.FinancialEntryService
+	CreditCardService        *appf.CreditCardService
+	FinanceDocumentService   *appf.FinanceDocumentService
+	FinanceExtractionService *appf.FinanceExtractionService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -145,6 +148,10 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	// Financeiro — lançamento único (crédito/débito) + fontes de receita
 	srcH := handlers.NewIncomeSourceHandler(d.IncomeSourceService)
 	entH := handlers.NewFinancialEntryHandler(d.FinancialEntryService)
+	cardH := handlers.NewCreditCardHandler(d.CreditCardService)
+	finDocH := handlers.NewFinanceDocumentHandler(d.FinanceDocumentService)
+	finExtTrigH := handlers.NewFinanceExtractTriggerHandler(d.FinanceDocumentService, d.FinanceExtractionService)
+	finExtH := handlers.NewFinanceExtractionHandler(d.FinanceExtractionService, d.FinanceDocumentService, d.FinancialEntryService)
 	finance := v1.Group("/finance")
 	{
 		finance.GET("/income-sources", srcH.List)
@@ -153,6 +160,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.PUT("/income-sources/:id", srcH.Update)
 		finance.DELETE("/income-sources/:id", srcH.Delete)
 
+		finance.GET("/cards", cardH.List)
+		finance.POST("/cards", cardH.Create)
+		finance.GET("/cards/:id", cardH.Get)
+		finance.PUT("/cards/:id", cardH.Update)
+		finance.DELETE("/cards/:id", cardH.Delete)
+
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)
 		finance.GET("/entries/:id", entH.Get)
@@ -160,6 +173,15 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.DELETE("/entries/:id", entH.Delete)
 		finance.POST("/entries/:id/confirm", entH.Confirm)
 		finance.POST("/entries/:id/cancel", entH.Cancel)
+
+		finance.POST("/documents", finDocH.Upload)
+		finance.GET("/documents", finDocH.List)
+		finance.GET("/documents/:id", finDocH.Get)
+		finance.DELETE("/documents/:id", finDocH.Delete)
+		finance.GET("/documents/:id/download-url", finDocH.DownloadURL)
+		finance.POST("/documents/:id/extract", finExtTrigH.Extract)
+		finance.GET("/documents/:id/extraction-status", finExtH.Status)
+		finance.POST("/documents/:id/confirm", finExtH.Confirm)
 	}
 
 	return r

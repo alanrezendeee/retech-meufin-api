@@ -44,17 +44,21 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 	res := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
 		Where("id = ? AND workspace_id = ?", e.ID, e.WorkspaceID).
 		Updates(map[string]any{
-			"kind":             model.Kind,
-			"status":           model.Status,
-			"amount_cents":     model.AmountCents,
-			"due_date":         model.DueDate,
-			"family_member_id": model.FamilyMemberID,
-			"source_id":        model.SourceID,
-			"type":             model.Type,
-			"description":      model.Description,
-			"recurrence":       model.Recurrence,
-			"notes":            model.Notes,
-			"updated_at":       model.UpdatedAt,
+			"kind":               model.Kind,
+			"status":             model.Status,
+			"amount_cents":       model.AmountCents,
+			"due_date":           model.DueDate,
+			"family_member_id":   model.FamilyMemberID,
+			"source_id":          model.SourceID,
+			"type":               model.Type,
+			"description":        model.Description,
+			"recurrence":         model.Recurrence,
+			"card_id":            model.CardID,
+			"parent_id":          model.ParentID,
+			"installment_number": model.InstallmentNumber,
+			"installment_total":  model.InstallmentTotal,
+			"notes":              model.Notes,
+			"updated_at":         model.UpdatedAt,
 		})
 	if res.Error != nil {
 		return mapFinanceErr(res.Error)
@@ -104,6 +108,15 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	if filter.Type != nil && *filter.Type != "" {
 		base = base.Where("type = ?", *filter.Type)
 	}
+	if filter.CardID != nil {
+		base = base.Where("card_id = ?", *filter.CardID)
+	}
+	if filter.ParentID != nil {
+		base = base.Where("parent_id = ?", *filter.ParentID)
+	}
+	if filter.TopLevelOnly {
+		base = base.Where("parent_id IS NULL")
+	}
 	// Filtro por exercício via range de datas em due_date.
 	if filter.Year != nil {
 		loc := time.UTC
@@ -151,6 +164,10 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		Description:       e.Description,
 		Recurrence:        string(e.Recurrence),
 		RecurrenceGroupID: e.RecurrenceGroupID,
+		CardID:            e.CardID,
+		ParentID:          e.ParentID,
+		InstallmentNumber: e.InstallmentNumber,
+		InstallmentTotal:  e.InstallmentTotal,
 		Notes:             e.Notes,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
@@ -171,6 +188,10 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		Description:       m.Description,
 		Recurrence:        dom.Recurrence(m.Recurrence),
 		RecurrenceGroupID: m.RecurrenceGroupID,
+		CardID:            m.CardID,
+		ParentID:          m.ParentID,
+		InstallmentNumber: m.InstallmentNumber,
+		InstallmentTotal:  m.InstallmentTotal,
 		Notes:             m.Notes,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,

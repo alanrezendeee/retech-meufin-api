@@ -36,6 +36,10 @@ type financialEntryResponse struct {
 	Description       string     `json:"description"`
 	Recurrence        string     `json:"recurrence"`
 	RecurrenceGroupID *uuid.UUID `json:"recurrence_group_id"`
+	CardID            *uuid.UUID `json:"card_id"`
+	ParentID          *uuid.UUID `json:"parent_id"`
+	InstallmentNumber *int       `json:"installment_number"`
+	InstallmentTotal  *int       `json:"installment_total"`
 	Notes             *string    `json:"notes"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
@@ -55,6 +59,10 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		Description:       e.Description,
 		Recurrence:        string(e.Recurrence),
 		RecurrenceGroupID: e.RecurrenceGroupID,
+		CardID:            e.CardID,
+		ParentID:          e.ParentID,
+		InstallmentNumber: e.InstallmentNumber,
+		InstallmentTotal:  e.InstallmentTotal,
 		Notes:             e.Notes,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -62,16 +70,19 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 }
 
 type financialEntryCreateJSON struct {
-	Kind           string     `json:"kind" binding:"required"`
-	Status         string     `json:"status"`
-	AmountCents    int64      `json:"amount_cents"`
-	DueDate        string     `json:"due_date" binding:"required"`
-	FamilyMemberID *uuid.UUID `json:"family_member_id"`
-	SourceID       *uuid.UUID `json:"source_id"`
-	Type           *string    `json:"type"`
-	Description    string     `json:"description"`
-	Recurrence     string     `json:"recurrence"`
-	Notes          *string    `json:"notes"`
+	Kind              string     `json:"kind" binding:"required"`
+	Status            string     `json:"status"`
+	AmountCents       int64      `json:"amount_cents"`
+	DueDate           string     `json:"due_date" binding:"required"`
+	FamilyMemberID    *uuid.UUID `json:"family_member_id"`
+	SourceID          *uuid.UUID `json:"source_id"`
+	Type              *string    `json:"type"`
+	Description       string     `json:"description"`
+	Recurrence        string     `json:"recurrence"`
+	Notes             *string    `json:"notes"`
+	CardID            *uuid.UUID `json:"card_id"`
+	ParentID          *uuid.UUID `json:"parent_id"`
+	InstallmentsTotal *int       `json:"installments_total"`
 }
 
 func (h *FinancialEntryHandler) Create(c *gin.Context) {
@@ -94,6 +105,7 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		WorkspaceID: ws, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
+		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -166,6 +178,30 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 			return
 		}
 		filter.Month = &m
+	}
+	if v := c.Query("card_id"); v != "" {
+		cardID, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "card_id inválido")
+			return
+		}
+		filter.CardID = &cardID
+	}
+	if v := c.Query("parent_id"); v != "" {
+		parentID, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "parent_id inválido")
+			return
+		}
+		filter.ParentID = &parentID
+	}
+	if v := c.Query("top_level"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "top_level inválido")
+			return
+		}
+		filter.TopLevelOnly = b
 	}
 
 	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
