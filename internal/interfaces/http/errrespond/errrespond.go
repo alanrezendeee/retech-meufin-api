@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	domb "github.com/retechfin/retechfin-api/internal/domain/budget"
+	domh "github.com/retechfin/retechfin-api/internal/domain/health"
 	doml "github.com/retechfin/retechfin-api/internal/domain/ledger"
 )
 
@@ -20,14 +21,14 @@ type Detail struct {
 }
 
 const (
-	CodeValidation          = "VALIDATION_ERROR"
-	CodeNotFound            = "NOT_FOUND"
-	CodeConflict            = "CONFLICT"
-	CodeInternal            = "INTERNAL_ERROR"
-	CodeBadRequest          = "BAD_REQUEST"
-	CodeWorkspaceRequired   = "WORKSPACE_HEADER_REQUIRED"
-	CodeUnauthorized        = "UNAUTHORIZED"
-	CodeForbidden           = "FORBIDDEN"
+	CodeValidation        = "VALIDATION_ERROR"
+	CodeNotFound          = "NOT_FOUND"
+	CodeConflict          = "CONFLICT"
+	CodeInternal          = "INTERNAL_ERROR"
+	CodeBadRequest        = "BAD_REQUEST"
+	CodeWorkspaceRequired = "WORKSPACE_HEADER_REQUIRED"
+	CodeUnauthorized      = "UNAUTHORIZED"
+	CodeForbidden         = "FORBIDDEN"
 )
 
 func Write(c *gin.Context, err error) {
@@ -44,8 +45,19 @@ func Write(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: bv.Msg, RequestID: ridStr}})
 		return
 	}
+	var hv *domh.ValidationError
+	if errors.As(err, &hv) {
+		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: hv.Msg, RequestID: ridStr}})
+		return
+	}
 
 	switch {
+	case errors.Is(err, domh.ErrNotFound):
+		c.JSON(http.StatusNotFound, Body{Error: Detail{Code: CodeNotFound, Message: err.Error(), RequestID: ridStr}})
+	case errors.Is(err, domh.ErrImmutable):
+		c.JSON(http.StatusForbidden, Body{Error: Detail{Code: CodeForbidden, Message: err.Error(), RequestID: ridStr}})
+	case errors.Is(err, domh.ErrConflict), errors.Is(err, domh.ErrDuplicate):
+		c.JSON(http.StatusConflict, Body{Error: Detail{Code: CodeConflict, Message: err.Error(), RequestID: ridStr}})
 	case errors.Is(err, doml.ErrNotFound):
 		c.JSON(http.StatusNotFound, Body{Error: Detail{Code: CodeNotFound, Message: err.Error(), RequestID: ridStr}})
 	case errors.Is(err, domb.ErrNotFound):

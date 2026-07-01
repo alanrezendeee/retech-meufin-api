@@ -1,0 +1,9 @@
+DROP TABLE IF EXISTS health_audit_logs;
+DROP TABLE IF EXISTS health_extraction_jobs;
+DROP TABLE IF EXISTS health_documents;
+DROP TABLE IF EXISTS health_exam_result_items;
+DROP TABLE IF EXISTS health_exam_results;
+DROP TABLE IF EXISTS health_exam_request_items;
+DROP TABLE IF EXISTS health_exam_requests;
+DROP TABLE IF EXISTS health_labs;
+DROP TABLE IF EXISTS health_family_members;

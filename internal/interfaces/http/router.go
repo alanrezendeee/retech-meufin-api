@@ -6,6 +6,7 @@ import (
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
@@ -23,6 +24,14 @@ type RouterDeps struct {
 	CategoryService     *appl.CategoryService
 	TransactionService  *appl.TransactionService
 	BudgetService       *appb.Service
+	HealthMarkerService *apph.MarkerService
+	FamilyMemberService *apph.FamilyMemberService
+	LabService          *apph.LabService
+	ExamRequestService  *apph.ExamRequestService
+	ExamResultService   *apph.ExamResultService
+	DashboardService    *apph.DashboardService
+	DocumentService     *apph.DocumentService
+	ExtractionService   *apph.ExtractionService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -67,6 +76,67 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		v1.GET("/budgets/:id", budH.Get)
 		v1.PUT("/budgets/:id", budH.Update)
 		v1.DELETE("/budgets/:id", budH.Delete)
+
+		// Saúde Familiar — catálogo de marcadores (Fase 0)
+		mkH := handlers.NewHealthMarkerHandler(d.HealthMarkerService)
+		fmH := handlers.NewHealthFamilyMemberHandler(d.FamilyMemberService)
+		labH := handlers.NewHealthLabHandler(d.LabService)
+		reqH := handlers.NewHealthExamRequestHandler(d.ExamRequestService)
+		resH := handlers.NewHealthExamResultHandler(d.ExamResultService)
+		dashH := handlers.NewHealthDashboardHandler(d.DashboardService)
+		docH := handlers.NewHealthDocumentHandler(d.DocumentService)
+		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService)
+		extTrigH := handlers.NewHealthExtractTriggerHandler(d.DocumentService, d.ExtractionService)
+		health := v1.Group("/health")
+		{
+			health.GET("/markers", mkH.List)
+			health.POST("/markers", mkH.Create)
+			health.POST("/markers/resolve", mkH.Resolve)
+			health.GET("/markers/:id", mkH.Get)
+			health.PUT("/markers/:id", mkH.Update)
+			health.DELETE("/markers/:id", mkH.Delete)
+
+			health.GET("/family-members", fmH.List)
+			health.POST("/family-members", fmH.Create)
+			health.GET("/family-members/:id", fmH.Get)
+			health.PUT("/family-members/:id", fmH.Update)
+			health.DELETE("/family-members/:id", fmH.Delete)
+
+			health.GET("/labs", labH.List)
+			health.POST("/labs", labH.Create)
+			health.GET("/labs/:id", labH.Get)
+			health.PUT("/labs/:id", labH.Update)
+			health.DELETE("/labs/:id", labH.Delete)
+
+			health.GET("/exam-requests", reqH.List)
+			health.POST("/exam-requests", reqH.Create)
+			health.GET("/exam-requests/:id", reqH.Get)
+			health.PUT("/exam-requests/:id", reqH.Update)
+			health.DELETE("/exam-requests/:id", reqH.Delete)
+			health.POST("/exam-requests/:id/items", reqH.AddItem)
+			health.PUT("/exam-requests/:id/items/:itemId", reqH.UpdateItem)
+			health.DELETE("/exam-requests/:id/items/:itemId", reqH.DeleteItem)
+
+			health.GET("/exam-results", resH.List)
+			health.POST("/exam-results", resH.Create)
+			health.GET("/exam-results/:id", resH.Get)
+			health.PUT("/exam-results/:id", resH.Update)
+			health.DELETE("/exam-results/:id", resH.Delete)
+			health.POST("/exam-results/:id/items", resH.AddItem)
+			health.PUT("/exam-results/:id/items/:itemId", resH.UpdateItem)
+			health.DELETE("/exam-results/:id/items/:itemId", resH.DeleteItem)
+
+			health.GET("/dashboard", dashH.Counts)
+			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
+
+			health.POST("/documents", docH.Upload)
+			health.GET("/documents", docH.List)
+			health.GET("/documents/:id", docH.Get)
+			health.DELETE("/documents/:id", docH.Delete)
+			health.GET("/documents/:id/download-url", docH.DownloadURL)
+			health.POST("/documents/:id/extract", extTrigH.Extract)
+			health.GET("/documents/:id/extraction-status", extStatusH.Status)
+		}
 	}
 
 	return r

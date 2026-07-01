@@ -15,8 +15,11 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
 	"github.com/retechfin/retechfin-api/pkg/logger"
 	gormlogger "gorm.io/gorm/logger"
@@ -120,22 +123,51 @@ func main() {
 	txRepo := persistence.NewTransactionRepository(db)
 	budRepo := persistence.NewBudgetRepository(db)
 
+	markerRepo := persistence.NewHealthMarkerRepository(db)
+	familyRepo := persistence.NewHealthFamilyMemberRepository(db)
+	labRepo := persistence.NewHealthLabRepository(db)
+	examReqRepo := persistence.NewHealthExamRequestRepository(db)
+	examResRepo := persistence.NewHealthExamResultRepository(db)
+	dashboardRepo := persistence.NewHealthDashboardRepository(db)
+	docRepo := persistence.NewHealthDocumentRepository(db)
+	extJobRepo := persistence.NewHealthExtractionJobRepository(db)
+
+	storageCfg := storage.ConfigFromEnv()
+	objStorage := storage.New(storageCfg)
+	extractor := extraction.New(extraction.ConfigFromEnv())
+
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
 	txSvc := appl.NewTransactionService(txRepo, accRepo, catRepo)
 	budSvc := appb.NewService(budRepo, catRepo, txRepo)
+	markerSvc := apph.NewMarkerService(markerRepo)
+	familySvc := apph.NewFamilyMemberService(familyRepo)
+	labSvc := apph.NewLabService(labRepo)
+	examReqSvc := apph.NewExamRequestService(examReqRepo)
+	examResSvc := apph.NewExamResultService(examResRepo)
+	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
+	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
+	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
-		Log:                log,
-		DB:                 db,
-		Env:                cfg.AppEnv,
-		JWKS:               jwks,
-		ApplicationID:      cfg.AppApplicationID,
-		CORSOrigins:        cfg.CORSOrigins,
-		AccountService:     accSvc,
-		CategoryService:    catSvc,
-		TransactionService: txSvc,
-		BudgetService:      budSvc,
+		Log:                 log,
+		DB:                  db,
+		Env:                 cfg.AppEnv,
+		JWKS:                jwks,
+		ApplicationID:       cfg.AppApplicationID,
+		CORSOrigins:         cfg.CORSOrigins,
+		AccountService:      accSvc,
+		CategoryService:     catSvc,
+		TransactionService:  txSvc,
+		BudgetService:       budSvc,
+		HealthMarkerService: markerSvc,
+		FamilyMemberService: familySvc,
+		LabService:          labSvc,
+		ExamRequestService:  examReqSvc,
+		ExamResultService:   examResSvc,
+		DashboardService:    dashboardSvc,
+		DocumentService:     docSvc,
+		ExtractionService:   extractionSvc,
 	})
 
 	addr := ":" + cfg.AppPort
