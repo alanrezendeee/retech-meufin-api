@@ -32,6 +32,8 @@ type ExtractInput struct {
 	InputType string // pdf|image
 	MimeType  string // ex.: application/pdf, image/png, image/jpeg
 	Content   []byte // conteúdo bruto do arquivo
+	// Profile define prompt/schema por tipo de documento. Nil = perfil de exame.
+	Profile *ExtractProfile
 }
 
 // ExtractResult é o resultado da extração produzido por um Extractor.
@@ -68,14 +70,25 @@ type Config struct {
 //	HEALTH_EXTRACTION_MODEL     — default "claude-opus-4-8"
 //	HEALTH_EXTRACTION_API_KEY   — chave do provider
 //	HEALTH_EXTRACTION_BASE_URL  — default "https://api.anthropic.com"
+//
+// Lê EXTRACTION_* (genérico, compartilhado por Saúde e Financeiro) e, como
+// compatibilidade, cai para HEALTH_EXTRACTION_* quando o genérico não existe.
 func ConfigFromEnv() Config {
-	cfg := Config{
-		Provider: getenvDefault("HEALTH_EXTRACTION_PROVIDER", ProviderDisabled),
-		Model:    getenvDefault("HEALTH_EXTRACTION_MODEL", DefaultModel),
-		APIKey:   os.Getenv("HEALTH_EXTRACTION_API_KEY"),
-		BaseURL:  getenvDefault("HEALTH_EXTRACTION_BASE_URL", DefaultBaseURL),
+	return Config{
+		Provider: firstEnv([]string{"EXTRACTION_PROVIDER", "HEALTH_EXTRACTION_PROVIDER"}, ProviderDisabled),
+		Model:    firstEnv([]string{"EXTRACTION_MODEL", "HEALTH_EXTRACTION_MODEL"}, DefaultModel),
+		APIKey:   firstEnv([]string{"EXTRACTION_API_KEY", "HEALTH_EXTRACTION_API_KEY"}, ""),
+		BaseURL:  firstEnv([]string{"EXTRACTION_BASE_URL", "HEALTH_EXTRACTION_BASE_URL"}, DefaultBaseURL),
 	}
-	return cfg
+}
+
+func firstEnv(keys []string, def string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return def
 }
 
 // New devolve o Extractor adequado à configuração. Retorna o adaptador

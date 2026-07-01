@@ -140,6 +140,8 @@ func main() {
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
 	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
 	creditCardRepo := persistence.NewCreditCardRepository(db)
+	finDocRepo := persistence.NewFinanceDocumentRepository(db)
+	finExtJobRepo := persistence.NewFinanceExtractionJobRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
@@ -156,29 +158,33 @@ func main() {
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo)
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
+	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
+	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
-		Log:                   log,
-		DB:                    db,
-		Env:                   cfg.AppEnv,
-		JWKS:                  jwks,
-		ApplicationID:         cfg.AppApplicationID,
-		CORSOrigins:           cfg.CORSOrigins,
-		AccountService:        accSvc,
-		CategoryService:       catSvc,
-		TransactionService:    txSvc,
-		BudgetService:         budSvc,
-		HealthMarkerService:   markerSvc,
-		FamilyMemberService:   familySvc,
-		LabService:            labSvc,
-		ExamRequestService:    examReqSvc,
-		ExamResultService:     examResSvc,
-		DashboardService:      dashboardSvc,
-		DocumentService:       docSvc,
-		ExtractionService:     extractionSvc,
-		IncomeSourceService:   incomeSourceSvc,
-		FinancialEntryService: financialEntrySvc,
-		CreditCardService:     creditCardSvc,
+		Log:                      log,
+		DB:                       db,
+		Env:                      cfg.AppEnv,
+		JWKS:                     jwks,
+		ApplicationID:            cfg.AppApplicationID,
+		CORSOrigins:              cfg.CORSOrigins,
+		AccountService:           accSvc,
+		CategoryService:          catSvc,
+		TransactionService:       txSvc,
+		BudgetService:            budSvc,
+		HealthMarkerService:      markerSvc,
+		FamilyMemberService:      familySvc,
+		LabService:               labSvc,
+		ExamRequestService:       examReqSvc,
+		ExamResultService:        examResSvc,
+		DashboardService:         dashboardSvc,
+		DocumentService:          docSvc,
+		ExtractionService:        extractionSvc,
+		IncomeSourceService:      incomeSourceSvc,
+		FinancialEntryService:    financialEntrySvc,
+		CreditCardService:        creditCardSvc,
+		FinanceDocumentService:   finDocSvc,
+		FinanceExtractionService: finExtSvc,
 	})
 
 	addr := ":" + cfg.AppPort
