@@ -222,8 +222,12 @@ Regras de negócio complexas e críticas devem ficar **documentadas na própria 
 - Renderiza no hover do ícone ⓘ do item de menu; acessível (focus/teclado), responsivo.
 
 ## 14. Estado da implementação
-- **Fase 0 (catálogo) — implementada** neste repo: migration `000002_health_catalog`, domínio `internal/domain/health`, serviço `internal/application/health` (dedup + resolve + seed), repo, handlers, rotas `/api/v1/health/markers` (+`/resolve`), seed `cmd/seed`. Fonte da verdade do schema = a migration.
-- Próximas fases (1–4) conforme §9.
+- **Fase 0 (catálogo)** — migration `000002_health_catalog`, dedup + resolve + seed (`cmd/seed`), rotas `/api/v1/health/markers`.
+- **Fase 1 (CRUD)** — migration `000003_health_domain`; family_members, labs, exam_requests(+items), exam_results(+items) com workspace + soft-delete; parse numérico pt-BR + interpretação.
+- **Fase 4 (dashboard)** — `/health/dashboard` (counts) e `/health/dashboard/markers/:markerId/evolution` (absoluto + normalizado).
+- **Fase 2 (documentos)** — MinIO (`internal/infrastructure/storage`, fallback disabled), `/health/documents` (upload multipart, download-url presigned, list/get/delete). Envs `MINIO_*`/`HEALTH_MAX_UPLOAD_MB` opcionais.
+- **Fase 3 (extração)** — porta/adaptador (`internal/infrastructure/extraction`, Anthropic + fallback disabled), jobs async, `/health/documents/:id/extract` e `/extraction-status`. Envs `HEALTH_EXTRACTION_*` opcionais.
+- Fonte da verdade do schema = as migrations. Frontend das telas de Saúde: em andamento.
 
 ## 15. Decisões ainda em aberto (não bloqueiam Fase 0)
 - Painel de exames (`health_exams`) no MVP ou só marcadores? (sugestão: só marcadores agora)

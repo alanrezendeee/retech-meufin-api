@@ -17,7 +17,9 @@ import (
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
 	"github.com/retechfin/retechfin-api/pkg/logger"
 	gormlogger "gorm.io/gorm/logger"
@@ -127,6 +129,12 @@ func main() {
 	examReqRepo := persistence.NewHealthExamRequestRepository(db)
 	examResRepo := persistence.NewHealthExamResultRepository(db)
 	dashboardRepo := persistence.NewHealthDashboardRepository(db)
+	docRepo := persistence.NewHealthDocumentRepository(db)
+	extJobRepo := persistence.NewHealthExtractionJobRepository(db)
+
+	storageCfg := storage.ConfigFromEnv()
+	objStorage := storage.New(storageCfg)
+	extractor := extraction.New(extraction.ConfigFromEnv())
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
@@ -138,6 +146,8 @@ func main() {
 	examReqSvc := apph.NewExamRequestService(examReqRepo)
 	examResSvc := apph.NewExamResultService(examResRepo)
 	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
+	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
+	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                 log,
@@ -156,6 +166,8 @@ func main() {
 		ExamRequestService:  examReqSvc,
 		ExamResultService:   examResSvc,
 		DashboardService:    dashboardSvc,
+		DocumentService:     docSvc,
+		ExtractionService:   extractionSvc,
 	})
 
 	addr := ":" + cfg.AppPort

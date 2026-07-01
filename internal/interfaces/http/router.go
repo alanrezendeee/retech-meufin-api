@@ -30,6 +30,8 @@ type RouterDeps struct {
 	ExamRequestService  *apph.ExamRequestService
 	ExamResultService   *apph.ExamResultService
 	DashboardService    *apph.DashboardService
+	DocumentService     *apph.DocumentService
+	ExtractionService   *apph.ExtractionService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -82,6 +84,9 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		reqH := handlers.NewHealthExamRequestHandler(d.ExamRequestService)
 		resH := handlers.NewHealthExamResultHandler(d.ExamResultService)
 		dashH := handlers.NewHealthDashboardHandler(d.DashboardService)
+		docH := handlers.NewHealthDocumentHandler(d.DocumentService)
+		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService)
+		extTrigH := handlers.NewHealthExtractTriggerHandler(d.DocumentService, d.ExtractionService)
 		health := v1.Group("/health")
 		{
 			health.GET("/markers", mkH.List)
@@ -123,6 +128,14 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 			health.GET("/dashboard", dashH.Counts)
 			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
+
+			health.POST("/documents", docH.Upload)
+			health.GET("/documents", docH.List)
+			health.GET("/documents/:id", docH.Get)
+			health.DELETE("/documents/:id", docH.Delete)
+			health.GET("/documents/:id/download-url", docH.DownloadURL)
+			health.POST("/documents/:id/extract", extTrigH.Extract)
+			health.GET("/documents/:id/extraction-status", extStatusH.Status)
 		}
 	}
 
