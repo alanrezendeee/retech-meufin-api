@@ -25,6 +25,10 @@ type RouterDeps struct {
 	TransactionService  *appl.TransactionService
 	BudgetService       *appb.Service
 	HealthMarkerService *apph.MarkerService
+	FamilyMemberService *apph.FamilyMemberService
+	LabService          *apph.LabService
+	ExamRequestService  *apph.ExamRequestService
+	ExamResultService   *apph.ExamResultService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -72,6 +76,10 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 		// Saúde Familiar — catálogo de marcadores (Fase 0)
 		mkH := handlers.NewHealthMarkerHandler(d.HealthMarkerService)
+		fmH := handlers.NewHealthFamilyMemberHandler(d.FamilyMemberService)
+		labH := handlers.NewHealthLabHandler(d.LabService)
+		reqH := handlers.NewHealthExamRequestHandler(d.ExamRequestService)
+		resH := handlers.NewHealthExamResultHandler(d.ExamResultService)
 		health := v1.Group("/health")
 		{
 			health.GET("/markers", mkH.List)
@@ -80,6 +88,36 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.GET("/markers/:id", mkH.Get)
 			health.PUT("/markers/:id", mkH.Update)
 			health.DELETE("/markers/:id", mkH.Delete)
+
+			health.GET("/family-members", fmH.List)
+			health.POST("/family-members", fmH.Create)
+			health.GET("/family-members/:id", fmH.Get)
+			health.PUT("/family-members/:id", fmH.Update)
+			health.DELETE("/family-members/:id", fmH.Delete)
+
+			health.GET("/labs", labH.List)
+			health.POST("/labs", labH.Create)
+			health.GET("/labs/:id", labH.Get)
+			health.PUT("/labs/:id", labH.Update)
+			health.DELETE("/labs/:id", labH.Delete)
+
+			health.GET("/exam-requests", reqH.List)
+			health.POST("/exam-requests", reqH.Create)
+			health.GET("/exam-requests/:id", reqH.Get)
+			health.PUT("/exam-requests/:id", reqH.Update)
+			health.DELETE("/exam-requests/:id", reqH.Delete)
+			health.POST("/exam-requests/:id/items", reqH.AddItem)
+			health.PUT("/exam-requests/:id/items/:itemId", reqH.UpdateItem)
+			health.DELETE("/exam-requests/:id/items/:itemId", reqH.DeleteItem)
+
+			health.GET("/exam-results", resH.List)
+			health.POST("/exam-results", resH.Create)
+			health.GET("/exam-results/:id", resH.Get)
+			health.PUT("/exam-results/:id", resH.Update)
+			health.DELETE("/exam-results/:id", resH.Delete)
+			health.POST("/exam-results/:id/items", resH.AddItem)
+			health.PUT("/exam-results/:id/items/:itemId", resH.UpdateItem)
+			health.DELETE("/exam-results/:id/items/:itemId", resH.DeleteItem)
 		}
 	}
 

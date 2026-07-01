@@ -122,25 +122,37 @@ func main() {
 	budRepo := persistence.NewBudgetRepository(db)
 
 	markerRepo := persistence.NewHealthMarkerRepository(db)
+	familyRepo := persistence.NewHealthFamilyMemberRepository(db)
+	labRepo := persistence.NewHealthLabRepository(db)
+	examReqRepo := persistence.NewHealthExamRequestRepository(db)
+	examResRepo := persistence.NewHealthExamResultRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
 	txSvc := appl.NewTransactionService(txRepo, accRepo, catRepo)
 	budSvc := appb.NewService(budRepo, catRepo, txRepo)
 	markerSvc := apph.NewMarkerService(markerRepo)
+	familySvc := apph.NewFamilyMemberService(familyRepo)
+	labSvc := apph.NewLabService(labRepo)
+	examReqSvc := apph.NewExamRequestService(examReqRepo)
+	examResSvc := apph.NewExamResultService(examResRepo)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
-		Log:                log,
-		DB:                 db,
-		Env:                cfg.AppEnv,
-		JWKS:               jwks,
-		ApplicationID:      cfg.AppApplicationID,
-		CORSOrigins:        cfg.CORSOrigins,
-		AccountService:     accSvc,
-		CategoryService:    catSvc,
-		TransactionService: txSvc,
-		BudgetService:      budSvc,
+		Log:                 log,
+		DB:                  db,
+		Env:                 cfg.AppEnv,
+		JWKS:                jwks,
+		ApplicationID:       cfg.AppApplicationID,
+		CORSOrigins:         cfg.CORSOrigins,
+		AccountService:      accSvc,
+		CategoryService:     catSvc,
+		TransactionService:  txSvc,
+		BudgetService:       budSvc,
 		HealthMarkerService: markerSvc,
+		FamilyMemberService: familySvc,
+		LabService:          labSvc,
+		ExamRequestService:  examReqSvc,
+		ExamResultService:   examResSvc,
 	})
 
 	addr := ":" + cfg.AppPort

@@ -155,8 +155,8 @@ func TestCreate_NewTenantMarkerOK(t *testing.T) {
 func TestResolve_MatchedAmbiguousUnresolved(t *testing.T) {
 	svc, ws := seededService(t)
 	res, err := svc.Resolve(context.Background(), ws, []ResolveItemInput{
-		{RawName: "TGP"},           // alias exato -> matched
-		{RawName: "glicoze"},       // erro de digitação -> ambiguous
+		{RawName: "TGP"},             // alias exato -> matched
+		{RawName: "glicoze"},         // erro de digitação -> ambiguous
 		{RawName: "xyzabcnaoexiste"}, // nada -> unresolved
 	})
 	if err != nil {

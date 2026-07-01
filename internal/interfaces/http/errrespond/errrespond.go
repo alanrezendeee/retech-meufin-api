@@ -21,14 +21,14 @@ type Detail struct {
 }
 
 const (
-	CodeValidation          = "VALIDATION_ERROR"
-	CodeNotFound            = "NOT_FOUND"
-	CodeConflict            = "CONFLICT"
-	CodeInternal            = "INTERNAL_ERROR"
-	CodeBadRequest          = "BAD_REQUEST"
-	CodeWorkspaceRequired   = "WORKSPACE_HEADER_REQUIRED"
-	CodeUnauthorized        = "UNAUTHORIZED"
-	CodeForbidden           = "FORBIDDEN"
+	CodeValidation        = "VALIDATION_ERROR"
+	CodeNotFound          = "NOT_FOUND"
+	CodeConflict          = "CONFLICT"
+	CodeInternal          = "INTERNAL_ERROR"
+	CodeBadRequest        = "BAD_REQUEST"
+	CodeWorkspaceRequired = "WORKSPACE_HEADER_REQUIRED"
+	CodeUnauthorized      = "UNAUTHORIZED"
+	CodeForbidden         = "FORBIDDEN"
 )
 
 func Write(c *gin.Context, err error) {
