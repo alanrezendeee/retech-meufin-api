@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	domb "github.com/retechfin/retechfin-api/internal/domain/budget"
+	domf "github.com/retechfin/retechfin-api/internal/domain/finance"
 	domh "github.com/retechfin/retechfin-api/internal/domain/health"
 	doml "github.com/retechfin/retechfin-api/internal/domain/ledger"
 )
@@ -50,6 +51,11 @@ func Write(c *gin.Context, err error) {
 		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: hv.Msg, RequestID: ridStr}})
 		return
 	}
+	var fv *domf.ValidationError
+	if errors.As(err, &fv) {
+		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: fv.Msg, RequestID: ridStr}})
+		return
+	}
 
 	switch {
 	case errors.Is(err, domh.ErrNotFound):
@@ -62,6 +68,10 @@ func Write(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, Body{Error: Detail{Code: CodeNotFound, Message: err.Error(), RequestID: ridStr}})
 	case errors.Is(err, domb.ErrNotFound):
 		c.JSON(http.StatusNotFound, Body{Error: Detail{Code: CodeNotFound, Message: err.Error(), RequestID: ridStr}})
+	case errors.Is(err, domf.ErrNotFound):
+		c.JSON(http.StatusNotFound, Body{Error: Detail{Code: CodeNotFound, Message: err.Error(), RequestID: ridStr}})
+	case errors.Is(err, domf.ErrConflict):
+		c.JSON(http.StatusConflict, Body{Error: Detail{Code: CodeConflict, Message: err.Error(), RequestID: ridStr}})
 	case errors.Is(err, doml.ErrConflict):
 		c.JSON(http.StatusConflict, Body{Error: Detail{Code: CodeConflict, Message: err.Error(), RequestID: ridStr}})
 	case errors.Is(err, domb.ErrConflict):

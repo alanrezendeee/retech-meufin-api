@@ -6,6 +6,7 @@ import (
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
@@ -14,24 +15,26 @@ import (
 )
 
 type RouterDeps struct {
-	Log                 *slog.Logger
-	DB                  *gorm.DB
-	Env                 string
-	JWKS                *keyfunc.JWKS
-	ApplicationID       string
-	CORSOrigins         []string
-	AccountService      *appl.AccountService
-	CategoryService     *appl.CategoryService
-	TransactionService  *appl.TransactionService
-	BudgetService       *appb.Service
-	HealthMarkerService *apph.MarkerService
-	FamilyMemberService *apph.FamilyMemberService
-	LabService          *apph.LabService
-	ExamRequestService  *apph.ExamRequestService
-	ExamResultService   *apph.ExamResultService
-	DashboardService    *apph.DashboardService
-	DocumentService     *apph.DocumentService
-	ExtractionService   *apph.ExtractionService
+	Log                   *slog.Logger
+	DB                    *gorm.DB
+	Env                   string
+	JWKS                  *keyfunc.JWKS
+	ApplicationID         string
+	CORSOrigins           []string
+	AccountService        *appl.AccountService
+	CategoryService       *appl.CategoryService
+	TransactionService    *appl.TransactionService
+	BudgetService         *appb.Service
+	HealthMarkerService   *apph.MarkerService
+	FamilyMemberService   *apph.FamilyMemberService
+	LabService            *apph.LabService
+	ExamRequestService    *apph.ExamRequestService
+	ExamResultService     *apph.ExamResultService
+	DashboardService      *apph.DashboardService
+	DocumentService       *apph.DocumentService
+	ExtractionService     *apph.ExtractionService
+	IncomeSourceService   *appf.IncomeSourceService
+	FinancialEntryService *appf.FinancialEntryService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -137,6 +140,26 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.POST("/documents/:id/extract", extTrigH.Extract)
 			health.GET("/documents/:id/extraction-status", extStatusH.Status)
 		}
+	}
+
+	// Financeiro — lançamento único (crédito/débito) + fontes de receita
+	srcH := handlers.NewIncomeSourceHandler(d.IncomeSourceService)
+	entH := handlers.NewFinancialEntryHandler(d.FinancialEntryService)
+	finance := v1.Group("/finance")
+	{
+		finance.GET("/income-sources", srcH.List)
+		finance.POST("/income-sources", srcH.Create)
+		finance.GET("/income-sources/:id", srcH.Get)
+		finance.PUT("/income-sources/:id", srcH.Update)
+		finance.DELETE("/income-sources/:id", srcH.Delete)
+
+		finance.GET("/entries", entH.List)
+		finance.POST("/entries", entH.Create)
+		finance.GET("/entries/:id", entH.Get)
+		finance.PUT("/entries/:id", entH.Update)
+		finance.DELETE("/entries/:id", entH.Delete)
+		finance.POST("/entries/:id/confirm", entH.Confirm)
+		finance.POST("/entries/:id/cancel", entH.Cancel)
 	}
 
 	return r

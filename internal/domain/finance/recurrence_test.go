@@ -1,0 +1,120 @@
+package finance
+
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+func baseEntry(due time.Time, rec Recurrence) FinancialEntry {
+	return FinancialEntry{
+		ID:          uuid.New(),
+		WorkspaceID: uuid.New(),
+		Kind:        KindDebit,
+		Status:      StatusPrevista,
+		AmountCents: 1000,
+		DueDate:     due,
+		Recurrence:  rec,
+	}
+}
+
+func TestGenerateOccurrences_None(t *testing.T) {
+	due := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	occ := GenerateOccurrences(baseEntry(due, RecurrenceNone))
+	if len(occ) != 1 {
+		t.Fatalf("none: esperado 1 ocorrência, obtido %d", len(occ))
+	}
+	if !occ[0].DueDate.Equal(due) {
+		t.Fatalf("none: due_date esperada %v, obtida %v", due, occ[0].DueDate)
+	}
+	if occ[0].RecurrenceGroupID != nil {
+		t.Fatalf("none: recurrence_group_id deveria ser nil")
+	}
+}
+
+func TestGenerateOccurrences_Yearly(t *testing.T) {
+	due := time.Date(2026, time.March, 10, 0, 0, 0, 0, time.UTC)
+	occ := GenerateOccurrences(baseEntry(due, RecurrenceYearly))
+	if len(occ) != 1 {
+		t.Fatalf("yearly: esperado 1 ocorrência, obtido %d", len(occ))
+	}
+	if occ[0].RecurrenceGroupID == nil {
+		t.Fatalf("yearly: recurrence_group_id não deveria ser nil")
+	}
+	if occ[0].Status != StatusPrevista {
+		t.Fatalf("yearly: status esperado prevista, obtido %s", occ[0].Status)
+	}
+}
+
+func TestGenerateOccurrences_MonthlyJulToDec(t *testing.T) {
+	due := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
+	occ := GenerateOccurrences(baseEntry(due, RecurrenceMonthly))
+	if len(occ) != 6 {
+		t.Fatalf("monthly jul->dez: esperado 6 ocorrências, obtido %d", len(occ))
+	}
+	wantMonths := []time.Month{time.July, time.August, time.September, time.October, time.November, time.December}
+	for i, m := range wantMonths {
+		if occ[i].DueDate.Month() != m {
+			t.Fatalf("monthly: ocorrência %d esperava mês %v, obtido %v", i, m, occ[i].DueDate.Month())
+		}
+		if occ[i].DueDate.Day() != 15 {
+			t.Fatalf("monthly: ocorrência %d esperava dia 15, obtido %d", i, occ[i].DueDate.Day())
+		}
+	}
+	// mesmo group em todas
+	group := occ[0].RecurrenceGroupID
+	if group == nil {
+		t.Fatalf("monthly: group_id nil")
+	}
+	for i := range occ {
+		if occ[i].RecurrenceGroupID == nil || *occ[i].RecurrenceGroupID != *group {
+			t.Fatalf("monthly: group_id divergente na ocorrência %d", i)
+		}
+	}
+}
+
+func TestGenerateOccurrences_MonthlyDayOverflow(t *testing.T) {
+	// 31 de janeiro -> fevereiro deve virar 28 (2026 não é bissexto).
+	due := time.Date(2026, time.January, 31, 0, 0, 0, 0, time.UTC)
+	occ := GenerateOccurrences(baseEntry(due, RecurrenceMonthly))
+	if len(occ) != 12 {
+		t.Fatalf("monthly overflow: esperado 12 ocorrências, obtido %d", len(occ))
+	}
+	feb := occ[1]
+	if feb.DueDate.Month() != time.February {
+		t.Fatalf("monthly overflow: segunda ocorrência esperava fevereiro, obtido %v", feb.DueDate.Month())
+	}
+	if feb.DueDate.Day() != 28 {
+		t.Fatalf("monthly overflow: fevereiro esperava dia 28, obtido %d", feb.DueDate.Day())
+	}
+	// janeiro e março mantêm 31
+	if occ[0].DueDate.Day() != 31 {
+		t.Fatalf("monthly overflow: janeiro esperava dia 31, obtido %d", occ[0].DueDate.Day())
+	}
+	if occ[2].DueDate.Day() != 31 {
+		t.Fatalf("monthly overflow: março esperava dia 31, obtido %d", occ[2].DueDate.Day())
+	}
+}
+
+func TestGenerateOccurrences_Weekly(t *testing.T) {
+	due := time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC)
+	occ := GenerateOccurrences(baseEntry(due, RecurrenceWeekly))
+	// 1, 8, 15, 22, 29 de dezembro = 5 ocorrências (5/jan já é ano seguinte).
+	if len(occ) != 5 {
+		t.Fatalf("weekly: esperado 5 ocorrências, obtido %d", len(occ))
+	}
+	prev := occ[0].DueDate
+	for i := 1; i < len(occ); i++ {
+		diff := occ[i].DueDate.Sub(prev)
+		if diff != 7*24*time.Hour {
+			t.Fatalf("weekly: ocorrência %d não está a 7 dias da anterior (%v)", i, diff)
+		}
+		prev = occ[i].DueDate
+	}
+	last := occ[len(occ)-1].DueDate
+	yearEnd := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
+	if last.After(yearEnd) {
+		t.Fatalf("weekly: última ocorrência %v passou de 31/dez", last)
+	}
+}

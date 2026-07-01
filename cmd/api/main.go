@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
@@ -136,6 +137,9 @@ func main() {
 	objStorage := storage.New(storageCfg)
 	extractor := extraction.New(extraction.ConfigFromEnv())
 
+	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
+	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
+
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
 	txSvc := appl.NewTransactionService(txRepo, accRepo, catRepo)
@@ -148,26 +152,30 @@ func main() {
 	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
 	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
+	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
+	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
-		Log:                 log,
-		DB:                  db,
-		Env:                 cfg.AppEnv,
-		JWKS:                jwks,
-		ApplicationID:       cfg.AppApplicationID,
-		CORSOrigins:         cfg.CORSOrigins,
-		AccountService:      accSvc,
-		CategoryService:     catSvc,
-		TransactionService:  txSvc,
-		BudgetService:       budSvc,
-		HealthMarkerService: markerSvc,
-		FamilyMemberService: familySvc,
-		LabService:          labSvc,
-		ExamRequestService:  examReqSvc,
-		ExamResultService:   examResSvc,
-		DashboardService:    dashboardSvc,
-		DocumentService:     docSvc,
-		ExtractionService:   extractionSvc,
+		Log:                   log,
+		DB:                    db,
+		Env:                   cfg.AppEnv,
+		JWKS:                  jwks,
+		ApplicationID:         cfg.AppApplicationID,
+		CORSOrigins:           cfg.CORSOrigins,
+		AccountService:        accSvc,
+		CategoryService:       catSvc,
+		TransactionService:    txSvc,
+		BudgetService:         budSvc,
+		HealthMarkerService:   markerSvc,
+		FamilyMemberService:   familySvc,
+		LabService:            labSvc,
+		ExamRequestService:    examReqSvc,
+		ExamResultService:     examResSvc,
+		DashboardService:      dashboardSvc,
+		DocumentService:       docSvc,
+		ExtractionService:     extractionSvc,
+		IncomeSourceService:   incomeSourceSvc,
+		FinancialEntryService: financialEntrySvc,
 	})
 
 	addr := ":" + cfg.AppPort
