@@ -17,17 +17,20 @@ func NewFinancialEntryService(repo dom.FinancialEntryRepository) *FinancialEntry
 }
 
 type CreateEntryInput struct {
-	WorkspaceID    uuid.UUID
-	Kind           string
-	Status         string // opcional, default prevista
-	AmountCents    int64
-	DueDate        time.Time
-	FamilyMemberID *uuid.UUID
-	SourceID       *uuid.UUID
-	Type           *string
-	Description    string
-	Recurrence     string
-	Notes          *string
+	WorkspaceID       uuid.UUID
+	Kind              string
+	Status            string // opcional, default prevista
+	AmountCents       int64
+	DueDate           time.Time
+	FamilyMemberID    *uuid.UUID
+	SourceID          *uuid.UUID
+	Type              *string
+	Description       string
+	Recurrence        string
+	Notes             *string
+	CardID            *uuid.UUID
+	ParentID          *uuid.UUID
+	InstallmentsTotal *int
 }
 
 type UpdateEntryInput struct {
@@ -68,15 +71,31 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		Type:           in.Type,
 		Description:    in.Description,
 		Recurrence:     recurrence,
+		CardID:         in.CardID,
+		ParentID:       in.ParentID,
 		Notes:          in.Notes,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	if err := base.Validate(); err != nil {
-		return nil, err
-	}
 
-	occurrences := dom.GenerateOccurrences(base)
+	// Três caminhos mutuamente exclusivos: parcelado, recorrente ou único.
+	var occurrences []dom.FinancialEntry
+	switch {
+	case in.InstallmentsTotal != nil && *in.InstallmentsTotal > 1:
+		// Parcelado: N lançamentos mensais, recurrence forçada para none.
+		base.Recurrence = dom.RecurrenceNone
+		base.Status = dom.StatusPrevista
+		if err := base.Validate(); err != nil {
+			return nil, err
+		}
+		occurrences = dom.GenerateInstallments(base, *in.InstallmentsTotal)
+	default:
+		// Recorrente (recurrence != none) ou único.
+		if err := base.Validate(); err != nil {
+			return nil, err
+		}
+		occurrences = dom.GenerateOccurrences(base)
+	}
 	batch := make([]*dom.FinancialEntry, len(occurrences))
 	for i := range occurrences {
 		occ := occurrences[i]

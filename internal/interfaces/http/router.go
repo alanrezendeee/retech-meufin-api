@@ -35,6 +35,7 @@ type RouterDeps struct {
 	ExtractionService     *apph.ExtractionService
 	IncomeSourceService   *appf.IncomeSourceService
 	FinancialEntryService *appf.FinancialEntryService
+	CreditCardService     *appf.CreditCardService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -145,6 +146,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	// Financeiro — lançamento único (crédito/débito) + fontes de receita
 	srcH := handlers.NewIncomeSourceHandler(d.IncomeSourceService)
 	entH := handlers.NewFinancialEntryHandler(d.FinancialEntryService)
+	cardH := handlers.NewCreditCardHandler(d.CreditCardService)
 	finance := v1.Group("/finance")
 	{
 		finance.GET("/income-sources", srcH.List)
@@ -152,6 +154,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.GET("/income-sources/:id", srcH.Get)
 		finance.PUT("/income-sources/:id", srcH.Update)
 		finance.DELETE("/income-sources/:id", srcH.Delete)
+
+		finance.GET("/cards", cardH.List)
+		finance.POST("/cards", cardH.Create)
+		finance.GET("/cards/:id", cardH.Get)
+		finance.PUT("/cards/:id", cardH.Update)
+		finance.DELETE("/cards/:id", cardH.Delete)
 
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)

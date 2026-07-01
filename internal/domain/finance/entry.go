@@ -49,6 +49,10 @@ type FinancialEntry struct {
 	Description       string
 	Recurrence        Recurrence
 	RecurrenceGroupID *uuid.UUID
+	CardID            *uuid.UUID
+	ParentID          *uuid.UUID
+	InstallmentNumber *int
+	InstallmentTotal  *int
 	Notes             *string
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -96,6 +100,9 @@ type FinancialEntryFilter struct {
 	Type           *string
 	Year           *int
 	Month          *int
+	CardID         *uuid.UUID
+	ParentID       *uuid.UUID
+	TopLevelOnly   bool
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.

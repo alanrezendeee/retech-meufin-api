@@ -139,6 +139,7 @@ func main() {
 
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
 	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
+	creditCardRepo := persistence.NewCreditCardRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
@@ -154,6 +155,7 @@ func main() {
 	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo)
+	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                   log,
@@ -176,6 +178,7 @@ func main() {
 		ExtractionService:     extractionSvc,
 		IncomeSourceService:   incomeSourceSvc,
 		FinancialEntryService: financialEntrySvc,
+		CreditCardService:     creditCardSvc,
 	})
 
 	addr := ":" + cfg.AppPort

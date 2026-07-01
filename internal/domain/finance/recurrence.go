@@ -70,6 +70,44 @@ func GenerateOccurrences(base FinancialEntry) []FinancialEntry {
 	}
 }
 
+// GenerateInstallments gera N lançamentos mensais de uma compra parcelada, um por mês
+// a partir da due_date do base (installment_number 1..total, installment_total = total).
+// Todos compartilham um recurrence_group_id, são criados com status 'prevista' e
+// recurrence 'none'. Diferente das ocorrências recorrentes, as parcelas NÃO param em
+// dezembro — cruzam o ano até completar o total. O dia é limitado ao último dia do mês
+// (clamp) quando não existe (ex.: 31/jan -> 28/fev).
+func GenerateInstallments(base FinancialEntry, total int) []FinancialEntry {
+	if total < 1 {
+		total = 1
+	}
+	loc := base.DueDate.Location()
+	if loc == nil {
+		loc = time.UTC
+	}
+	groupID := uuid.New()
+	day := base.DueDate.Day()
+	baseYear := base.DueDate.Year()
+	baseMonth := int(base.DueDate.Month())
+
+	out := make([]FinancialEntry, 0, total)
+	for i := 0; i < total; i++ {
+		// Avança i meses a partir do mês-base sem depender de AddDate (que
+		// normaliza overflow de dia, ex.: 31/jan +1 mês -> 03/mar).
+		total0 := baseMonth - 1 + i
+		year := baseYear + total0/12
+		month := time.Month(total0%12 + 1)
+		due := dateSameDayClamped(year, month, day, loc)
+		occ := cloneOccurrence(base, due, &groupID)
+		occ.Recurrence = RecurrenceNone
+		num := i + 1
+		tot := total
+		occ.InstallmentNumber = &num
+		occ.InstallmentTotal = &tot
+		out = append(out, occ)
+	}
+	return out
+}
+
 // cloneOccurrence copia o lançamento base ajustando due_date, id, group_id e status.
 func cloneOccurrence(base FinancialEntry, due time.Time, groupID *uuid.UUID) FinancialEntry {
 	occ := base
