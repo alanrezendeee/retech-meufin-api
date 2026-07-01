@@ -29,6 +29,7 @@ type RouterDeps struct {
 	LabService          *apph.LabService
 	ExamRequestService  *apph.ExamRequestService
 	ExamResultService   *apph.ExamResultService
+	DashboardService    *apph.DashboardService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -80,6 +81,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		labH := handlers.NewHealthLabHandler(d.LabService)
 		reqH := handlers.NewHealthExamRequestHandler(d.ExamRequestService)
 		resH := handlers.NewHealthExamResultHandler(d.ExamResultService)
+		dashH := handlers.NewHealthDashboardHandler(d.DashboardService)
 		health := v1.Group("/health")
 		{
 			health.GET("/markers", mkH.List)
@@ -118,6 +120,9 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.POST("/exam-results/:id/items", resH.AddItem)
 			health.PUT("/exam-results/:id/items/:itemId", resH.UpdateItem)
 			health.DELETE("/exam-results/:id/items/:itemId", resH.DeleteItem)
+
+			health.GET("/dashboard", dashH.Counts)
+			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
 		}
 	}
 

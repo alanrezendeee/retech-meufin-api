@@ -126,6 +126,7 @@ func main() {
 	labRepo := persistence.NewHealthLabRepository(db)
 	examReqRepo := persistence.NewHealthExamRequestRepository(db)
 	examResRepo := persistence.NewHealthExamResultRepository(db)
+	dashboardRepo := persistence.NewHealthDashboardRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
@@ -136,6 +137,7 @@ func main() {
 	labSvc := apph.NewLabService(labRepo)
 	examReqSvc := apph.NewExamRequestService(examReqRepo)
 	examResSvc := apph.NewExamResultService(examResRepo)
+	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                 log,
@@ -153,6 +155,7 @@ func main() {
 		LabService:          labSvc,
 		ExamRequestService:  examReqSvc,
 		ExamResultService:   examResSvc,
+		DashboardService:    dashboardSvc,
 	})
 
 	addr := ":" + cfg.AppPort
