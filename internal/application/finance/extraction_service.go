@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"math"
 	"time"
 
@@ -134,11 +135,23 @@ func (s *FinanceExtractionService) runExtraction(
 		job.ErrorMessage = &msg
 		_ = s.jobs.Update(ctx, job)
 		s.markDocumentFailed(ctx, workspaceID, documentID)
+		// Além do error_message no job (que o front mostra), o servidor precisa
+		// registrar a falha — crédito esgotado/rate limit têm que aparecer no log.
+		slog.Error("❌ extração LLM de fatura falhou",
+			slog.String("error", msg),
+			slog.String("document_id", documentID.String()),
+			slog.String("workspace_id", workspaceID.String()),
+			slog.Duration("duration", finished.Sub(started)),
+		)
 		return
 	}
 
 	job.Status = dom.JobCompleted
 	_ = s.jobs.Update(ctx, job)
+	slog.Info("✅ extração LLM de fatura concluída",
+		slog.String("document_id", documentID.String()),
+		slog.Duration("duration", finished.Sub(started)),
+	)
 
 	var text *string
 	if res.Text != "" {
