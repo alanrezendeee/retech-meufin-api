@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,8 +125,20 @@ func (s *ExtractionService) runExtraction(
 		msg := extErr.Error()
 		job.Status = dom.ExtractionFailed
 		job.ErrorMessage = &msg
+		// Além do error_message no job (que o front mostra), o servidor precisa
+		// registrar a falha — crédito esgotado/rate limit têm que aparecer no log.
+		slog.Error("❌ extração LLM de exame falhou",
+			slog.String("error", msg),
+			slog.String("document_id", job.DocumentID.String()),
+			slog.String("workspace_id", job.WorkspaceID.String()),
+			slog.Duration("duration", finished.Sub(started)),
+		)
 	} else {
 		job.Status = dom.ExtractionCompleted
+		slog.Info("✅ extração LLM de exame concluída",
+			slog.String("document_id", job.DocumentID.String()),
+			slog.Duration("duration", finished.Sub(started)),
+		)
 	}
 
 	_ = s.jobs.Update(ctx, job)
