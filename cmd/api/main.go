@@ -135,7 +135,24 @@ func main() {
 
 	storageCfg := storage.ConfigFromEnv()
 	objStorage := storage.New(storageCfg)
-	extractor := extraction.New(extraction.ConfigFromEnv())
+	if objStorage.Enabled() {
+		// NewMinioStorage valida a conexão no boot (BucketExists) — aqui já está operacional.
+		log.Info(fmt.Sprintf("✅ MinIO conectado! endpoint=%s bucket=%s ssl=%t", storageCfg.Endpoint, storageCfg.Bucket, storageCfg.UseSSL))
+	} else {
+		log.Warn("⚠️ MinIO não configurado — upload/download de documentos indisponível (MINIO_ENDPOINT, MINIO_ACCESS_KEY, MINIO_SECRET_KEY, MINIO_BUCKET_HEALTH)")
+	}
+
+	extractionCfg := extraction.ConfigFromEnv()
+	extractor := extraction.New(extractionCfg)
+	if extractor.Enabled() {
+		model := extractionCfg.Model
+		if model == "" {
+			model = extraction.DefaultModel
+		}
+		log.Info(fmt.Sprintf("✅ Extração LLM ativa! provider=%s model=%s", extractor.Provider(), model))
+	} else {
+		log.Warn("⚠️ Extração LLM desabilitada — import de fatura/exames por PDF indisponível (HEALTH_EXTRACTION_PROVIDER, HEALTH_EXTRACTION_API_KEY)")
+	}
 
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
 	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
