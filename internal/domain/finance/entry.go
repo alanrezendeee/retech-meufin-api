@@ -35,6 +35,27 @@ const (
 	RecurrenceYearly  Recurrence = "yearly"
 )
 
+// PaymentMethod é a forma de pagamento (ou recebimento) usada na liquidação.
+type PaymentMethod string
+
+const (
+	PaymentPix           PaymentMethod = "pix"
+	PaymentDebito        PaymentMethod = "debito"
+	PaymentTransferencia PaymentMethod = "transferencia"
+	PaymentBoleto        PaymentMethod = "boleto"
+	PaymentDinheiro      PaymentMethod = "dinheiro"
+	PaymentCartaoCredito PaymentMethod = "cartao_credito"
+)
+
+// ValidPaymentMethod informa se o método de pagamento é conhecido.
+func ValidPaymentMethod(m PaymentMethod) bool {
+	switch m {
+	case PaymentPix, PaymentDebito, PaymentTransferencia, PaymentBoleto, PaymentDinheiro, PaymentCartaoCredito:
+		return true
+	}
+	return false
+}
+
 // FinancialEntry é um lançamento único de crédito ou débito.
 type FinancialEntry struct {
 	ID                uuid.UUID
@@ -54,8 +75,15 @@ type FinancialEntry struct {
 	InstallmentNumber *int
 	InstallmentTotal  *int
 	Notes             *string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// Liquidação: preenchidos quando o lançamento é pago/recebido.
+	// PaidAmountCents pode diferir de AmountCents (juros/multa/desconto).
+	PaidAt           *time.Time
+	PaidAmountCents  *int64
+	PaymentMethod    *PaymentMethod
+	PaymentAccountID *uuid.UUID
+	PaymentCardID    *uuid.UUID
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 // Validate valida invariantes do lançamento.
@@ -103,6 +131,11 @@ type FinancialEntryFilter struct {
 	CardID         *uuid.UUID
 	ParentID       *uuid.UUID
 	TopLevelOnly   bool
+	// Contas do dia: recortes por vencimento.
+	DueOn   *time.Time // due_date == dia (ignora hora)
+	DueFrom *time.Time // due_date >= dia
+	DueTo   *time.Time // due_date <= dia
+	Overdue bool       // due_date < hoje AND status = prevista
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.
@@ -113,4 +146,8 @@ type FinancialEntryRepository interface {
 	Update(ctx context.Context, e *FinancialEntry) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
 	List(ctx context.Context, workspaceID uuid.UUID, filter FinancialEntryFilter, limit, offset int) ([]FinancialEntry, int64, error)
+	// CascadeStatusToChildren propaga o status da fatura pai para os filhos não cancelados
+	// (liquidar/cancelar a fatura liquida/cancela os itens juntos). paidAt só é aplicado
+	// quando status = realizada.
+	CascadeStatusToChildren(ctx context.Context, workspaceID, parentID uuid.UUID, status Status, paidAt *time.Time) error
 }

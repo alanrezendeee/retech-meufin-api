@@ -55,6 +55,11 @@ type FinancialEntryModel struct {
 	InstallmentNumber *int       `gorm:"column:installment_number"`
 	InstallmentTotal  *int       `gorm:"column:installment_total"`
 	Notes             *string    `gorm:"type:text"`
+	PaidAt            *time.Time `gorm:"column:paid_at"`
+	PaidAmountCents   *int64     `gorm:"column:paid_amount_cents"`
+	PaymentMethod     *string    `gorm:"column:payment_method;size:20"`
+	PaymentAccountID  *uuid.UUID `gorm:"column:payment_account_id;type:uuid"`
+	PaymentCardID     *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
 	CreatedAt         time.Time  `gorm:"not null"`
 	UpdatedAt         time.Time  `gorm:"not null"`
 	DeletedAt         gorm.DeletedAt

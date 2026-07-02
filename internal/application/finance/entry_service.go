@@ -271,7 +271,7 @@ func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid
 	return s.repo.SoftDelete(ctx, workspaceID, id)
 }
 
-// Confirm marca o lançamento como realizado.
+// Confirm marca o lançamento como realizado (liquidação rápida, sem detalhes de pagamento).
 func (s *FinancialEntryService) Confirm(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {
 	return s.setStatus(ctx, workspaceID, id, dom.StatusRealizada)
 }
@@ -292,6 +292,78 @@ func (s *FinancialEntryService) setStatus(ctx context.Context, workspaceID, id u
 		return nil, err
 	}
 	if err := s.repo.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	// Fatura pai/filho: o status propaga para os filhos (um pagamento real = uma ação).
+	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, status, e.PaidAt); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// SettleEntryInput detalha a liquidação de um lançamento (pagamento de despesa
+// ou recebimento de receita).
+type SettleEntryInput struct {
+	WorkspaceID     uuid.UUID
+	ID              uuid.UUID
+	PaidAt          *time.Time // default: agora
+	PaidAmountCents *int64     // default: amount_cents; pode diferir (juros/multa/desconto)
+	PaymentMethod   string
+	AccountID       *uuid.UUID
+	CardID          *uuid.UUID
+	Notes           *string
+}
+
+// Settle liquida o lançamento com forma de pagamento e valores. Liquidar uma
+// fatura pai propaga a realização para os filhos (cascata).
+func (s *FinancialEntryService) Settle(ctx context.Context, in SettleEntryInput) (*dom.FinancialEntry, error) {
+	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	if e.Status == dom.StatusCancelada {
+		return nil, &dom.ValidationError{Msg: "lançamento cancelado não pode ser liquidado"}
+	}
+
+	method := dom.PaymentMethod(in.PaymentMethod)
+	if !dom.ValidPaymentMethod(method) {
+		return nil, &dom.ValidationError{Msg: "forma de pagamento inválida"}
+	}
+	if method == dom.PaymentCartaoCredito && in.CardID == nil {
+		return nil, &dom.ValidationError{Msg: "informe o cartão de crédito usado no pagamento"}
+	}
+
+	now := time.Now().UTC()
+	paidAt := now
+	if in.PaidAt != nil {
+		paidAt = in.PaidAt.UTC()
+	}
+	paid := e.AmountCents
+	if in.PaidAmountCents != nil {
+		if *in.PaidAmountCents == 0 {
+			return nil, &dom.ValidationError{Msg: "paid_amount_cents não pode ser zero"}
+		}
+		paid = *in.PaidAmountCents
+	}
+
+	e.Status = dom.StatusRealizada
+	e.PaidAt = &paidAt
+	e.PaidAmountCents = &paid
+	e.PaymentMethod = &method
+	e.PaymentAccountID = in.AccountID
+	e.PaymentCardID = in.CardID
+	if in.Notes != nil {
+		e.Notes = in.Notes
+	}
+	e.UpdatedAt = now
+
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	if err := s.repo.CascadeStatusToChildren(ctx, in.WorkspaceID, e.ID, dom.StatusRealizada, &paidAt); err != nil {
 		return nil, err
 	}
 	return e, nil

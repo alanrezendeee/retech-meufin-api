@@ -33,9 +33,15 @@ func (r *FinanceDocumentRepository) GetByID(ctx context.Context, workspaceID, id
 	return modelToFinanceDocument(&m), nil
 }
 
-func (r *FinanceDocumentRepository) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.FinanceDocument, int64, error) {
+func (r *FinanceDocumentRepository) List(ctx context.Context, workspaceID uuid.UUID, filter dom.FinanceDocumentFilter, limit, offset int) ([]dom.FinanceDocument, int64, error) {
 	base := r.db.WithContext(ctx).Model(&FinanceDocumentModel{}).
 		Where("workspace_id = ?", workspaceID)
+	if filter.Kind != nil {
+		base = base.Where("kind = ?", string(*filter.Kind))
+	}
+	if filter.EntryID != nil {
+		base = base.Where("entry_id = ?", *filter.EntryID)
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -92,6 +98,7 @@ func financeDocumentToModel(d *dom.FinanceDocument) FinanceDocumentModel {
 		WorkspaceID:      d.WorkspaceID,
 		CardID:           d.CardID,
 		EntryID:          d.EntryID,
+		Kind:             string(d.Kind),
 		FileName:         d.FileName,
 		OriginalFileName: d.OriginalFileName,
 		MimeType:         d.MimeType,
@@ -123,6 +130,7 @@ func modelToFinanceDocument(m *FinanceDocumentModel) *dom.FinanceDocument {
 		WorkspaceID:      m.WorkspaceID,
 		CardID:           m.CardID,
 		EntryID:          m.EntryID,
+		Kind:             dom.DocumentKind(m.Kind),
 		FileName:         m.FileName,
 		OriginalFileName: m.OriginalFileName,
 		MimeType:         m.MimeType,

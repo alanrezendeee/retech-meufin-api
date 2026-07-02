@@ -142,6 +142,9 @@ func main() {
 	creditCardRepo := persistence.NewCreditCardRepository(db)
 	finDocRepo := persistence.NewFinanceDocumentRepository(db)
 	finExtJobRepo := persistence.NewFinanceExtractionJobRepository(db)
+	finAccountRepo := persistence.NewFinanceAccountRepository(db)
+	finDashRepo := persistence.NewFinanceDashboardRepository(db)
+	memberDocRepo := persistence.NewHealthMemberDocumentRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
 	catSvc := appl.NewCategoryService(catRepo)
@@ -160,6 +163,9 @@ func main() {
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
 	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor)
+	finAccountSvc := appf.NewAccountService(finAccountRepo)
+	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
+	memberDocSvc := apph.NewMemberDocumentService(memberDocRepo, familyRepo, objStorage, storageCfg.MaxUploadMB)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
@@ -185,6 +191,9 @@ func main() {
 		CreditCardService:        creditCardSvc,
 		FinanceDocumentService:   finDocSvc,
 		FinanceExtractionService: finExtSvc,
+		FinanceAccountService:    finAccountSvc,
+		FinanceDashboardService:  finDashSvc,
+		MemberDocumentService:    memberDocSvc,
 	})
 
 	addr := ":" + cfg.AppPort

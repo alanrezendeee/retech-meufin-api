@@ -41,11 +41,26 @@ type financialEntryResponse struct {
 	InstallmentNumber *int       `json:"installment_number"`
 	InstallmentTotal  *int       `json:"installment_total"`
 	Notes             *string    `json:"notes"`
+	PaidAt            *string    `json:"paid_at"`
+	PaidAmountCents   *int64     `json:"paid_amount_cents"`
+	PaymentMethod     *string    `json:"payment_method"`
+	PaymentAccountID  *uuid.UUID `json:"payment_account_id"`
+	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
 }
 
 func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
+	var paidAt *string
+	if e.PaidAt != nil {
+		v := e.PaidAt.UTC().Format(time.RFC3339Nano)
+		paidAt = &v
+	}
+	var paymentMethod *string
+	if e.PaymentMethod != nil {
+		v := string(*e.PaymentMethod)
+		paymentMethod = &v
+	}
 	return financialEntryResponse{
 		ID:                e.ID,
 		WorkspaceID:       e.WorkspaceID,
@@ -64,6 +79,11 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		InstallmentNumber: e.InstallmentNumber,
 		InstallmentTotal:  e.InstallmentTotal,
 		Notes:             e.Notes,
+		PaidAt:            paidAt,
+		PaidAmountCents:   e.PaidAmountCents,
+		PaymentMethod:     paymentMethod,
+		PaymentAccountID:  e.PaymentAccountID,
+		PaymentCardID:     e.PaymentCardID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
@@ -203,6 +223,38 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 		}
 		filter.TopLevelOnly = b
 	}
+	if v := c.Query("due_on"); v != "" {
+		d, err := time.Parse(entryDateLayout, v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "due_on inválida (use YYYY-MM-DD)")
+			return
+		}
+		filter.DueOn = &d
+	}
+	if v := c.Query("due_from"); v != "" {
+		d, err := time.Parse(entryDateLayout, v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "due_from inválida (use YYYY-MM-DD)")
+			return
+		}
+		filter.DueFrom = &d
+	}
+	if v := c.Query("due_to"); v != "" {
+		d, err := time.Parse(entryDateLayout, v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "due_to inválida (use YYYY-MM-DD)")
+			return
+		}
+		filter.DueTo = &d
+	}
+	if v := c.Query("overdue"); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "overdue inválido")
+			return
+		}
+		filter.Overdue = b
+	}
 
 	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
@@ -292,6 +344,55 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 		return
 	}
 	e, err := h.svc.Confirm(c.Request.Context(), ws, id)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapFinancialEntry(e))
+}
+
+type financialEntrySettleJSON struct {
+	PaidAt          *string    `json:"paid_at"`           // RFC3339 ou YYYY-MM-DD; default: agora
+	PaidAmountCents *int64     `json:"paid_amount_cents"` // default: amount_cents
+	PaymentMethod   string     `json:"payment_method" binding:"required"`
+	AccountID       *uuid.UUID `json:"account_id"`
+	CardID          *uuid.UUID `json:"card_id"`
+	Notes           *string    `json:"notes"`
+}
+
+// Settle liquida o lançamento com forma de pagamento, valor e data.
+func (h *FinancialEntryHandler) Settle(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	var body financialEntrySettleJSON
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	var paidAt *time.Time
+	if body.PaidAt != nil && *body.PaidAt != "" {
+		t, err := time.Parse(time.RFC3339, *body.PaidAt)
+		if err != nil {
+			t, err = time.Parse(entryDateLayout, *body.PaidAt)
+			if err != nil {
+				errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "paid_at inválida (use RFC3339 ou YYYY-MM-DD)")
+				return
+			}
+		}
+		paidAt = &t
+	}
+	e, err := h.svc.Settle(c.Request.Context(), app.SettleEntryInput{
+		WorkspaceID: ws, ID: id, PaidAt: paidAt, PaidAmountCents: body.PaidAmountCents,
+		PaymentMethod: body.PaymentMethod, AccountID: body.AccountID, CardID: body.CardID, Notes: body.Notes,
+	})
 	if err != nil {
 		errrespond.Write(c, err)
 		return
