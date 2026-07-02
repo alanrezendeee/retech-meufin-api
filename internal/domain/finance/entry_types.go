@@ -1,12 +1,12 @@
 package finance
 
-import "strings"
-
 // A coluna `type` de financial_entries serve dois domínios conforme o kind:
-// tipos de receita (credit) e categorias de despesa (debit, incluindo o
-// especial "cartao" da fatura pai). Ambos são catálogos CURADOS — a semântica
-// dos indicadores depende disso — validados aqui (erro amigável) e no banco
-// (CHECK da migration 000008, defesa em profundidade).
+//   - credit: tipos de receita — catálogo CURADO abaixo (semântica fiscal),
+//     validado aqui e no CHECK do banco;
+//   - debit: categorias de despesa — cadastro GERENCIADO por workspace
+//     (finance_expense_categories, com grupo canônico curado); a validação é
+//     dinâmica e acontece no serviço (consulta ao repositório). "cartao" é
+//     reservado à fatura pai criada pelo sistema.
 
 // IncomeTypes é o catálogo de tipos de receita (espelho do front).
 var IncomeTypes = map[string]struct{}{
@@ -15,45 +15,15 @@ var IncomeTypes = map[string]struct{}{
 	"beneficio": {}, "reembolso": {}, "outro": {},
 }
 
-// ExpenseCategories é o catálogo de categorias de despesa (espelho do front).
-// "cartao" é reservado à fatura pai criada pelo sistema.
-var ExpenseCategories = map[string]struct{}{
-	"cartao": {}, "moradia": {}, "alimentacao": {}, "mercado": {}, "saude": {},
-	"transporte": {}, "educacao": {}, "lazer": {}, "contas_fixas": {},
-	"servicos": {}, "impostos": {}, "equipamentos": {}, "outros": {},
-}
-
-// validEntryType valida o type conforme o kind. Type vazio/nulo é permitido.
+// validEntryType valida o que é estático: tipos de receita. Categorias de
+// despesa passam aqui (validação dinâmica no serviço).
 func validEntryType(kind Kind, t *string) bool {
 	if t == nil || *t == "" {
 		return true
 	}
-	switch kind {
-	case KindCredit:
+	if kind == KindCredit {
 		_, ok := IncomeTypes[*t]
 		return ok
-	case KindDebit:
-		_, ok := ExpenseCategories[*t]
-		return ok
 	}
-	return false
-}
-
-// NormalizeExpenseCategory mapeia uma categoria vinda de fora do sistema
-// (ex.: sugestão da LLM na extração de fatura) para o catálogo curado.
-// Desconhecida ou vazia vira "outros" — nunca deixamos valor fora do catálogo
-// entrar no banco.
-func NormalizeExpenseCategory(s *string) *string {
-	fallback := "outros"
-	if s == nil {
-		return &fallback
-	}
-	norm := strings.ToLower(strings.TrimSpace(*s))
-	if norm == "" {
-		return &fallback
-	}
-	if _, ok := ExpenseCategories[norm]; ok && norm != "cartao" {
-		return &norm
-	}
-	return &fallback
+	return true
 }

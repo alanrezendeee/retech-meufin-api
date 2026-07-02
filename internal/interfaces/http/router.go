@@ -39,6 +39,7 @@ type RouterDeps struct {
 	FinanceDocumentService   *appf.FinanceDocumentService
 	FinanceExtractionService *appf.FinanceExtractionService
 	FinanceAccountService    *appf.AccountService
+	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
 	MemberDocumentService    *apph.MemberDocumentService
 	PermsEnforcement         middleware.EnforcementMode
@@ -186,6 +187,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.GET("/accounts/:id", finAccH.Get)
 		finance.PUT("/accounts/:id", finAccH.Update)
 		finance.DELETE("/accounts/:id", finAccH.Delete)
+
+		// Categorias de despesa (gerenciadas por workspace, grupo canônico curado)
+		catFinH := handlers.NewFinanceCategoryHandler(d.FinanceCategoryService)
+		finance.GET("/expense-categories", catFinH.List)
+		finance.POST("/expense-categories", catFinH.Create)
+		finance.PUT("/expense-categories/:id", catFinH.Update)
+		finance.DELETE("/expense-categories/:id", catFinH.Delete)
 
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)

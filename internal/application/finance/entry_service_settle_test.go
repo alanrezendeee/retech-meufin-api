@@ -63,6 +63,10 @@ func (f *fakeEntryRepo) List(_ context.Context, _ uuid.UUID, _ dom.FinancialEntr
 	return nil, 0, nil
 }
 
+func (f *fakeEntryRepo) ListRecurrenceFrontiers(_ context.Context) ([]dom.FinancialEntry, error) {
+	return nil, nil
+}
+
 func (f *fakeEntryRepo) CascadeStatusToChildren(_ context.Context, _, parentID uuid.UUID, status dom.Status, paidAt *time.Time) error {
 	f.cascadeCalls = append(f.cascadeCalls, struct {
 		ParentID uuid.UUID
@@ -70,6 +74,25 @@ func (f *fakeEntryRepo) CascadeStatusToChildren(_ context.Context, _, parentID u
 		PaidAt   *time.Time
 	}{parentID, status, paidAt})
 	return nil
+}
+
+// fakeCategoryRepo aceita qualquer slug (validação dinâmica coberta em testes próprios).
+type fakeCategoryRepo struct{}
+
+func (fakeCategoryRepo) Create(context.Context, *dom.ExpenseCategory) error        { return nil }
+func (fakeCategoryRepo) CreateBatch(context.Context, []*dom.ExpenseCategory) error { return nil }
+func (fakeCategoryRepo) GetByID(context.Context, uuid.UUID, uuid.UUID) (*dom.ExpenseCategory, error) {
+	return nil, dom.ErrNotFound
+}
+func (fakeCategoryRepo) ExistsBySlug(context.Context, uuid.UUID, string) (bool, error) {
+	return true, nil
+}
+func (fakeCategoryRepo) Update(context.Context, *dom.ExpenseCategory) error { return nil }
+func (fakeCategoryRepo) SoftDelete(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+func (fakeCategoryRepo) List(context.Context, uuid.UUID) ([]dom.ExpenseCategory, error) {
+	return nil, nil
 }
 
 func seedEntry(repo *fakeEntryRepo, status dom.Status) *dom.FinancialEntry {
@@ -89,7 +112,7 @@ func seedEntry(repo *fakeEntryRepo, status dom.Status) *dom.FinancialEntry {
 func TestSettleDefaultsAndCascade(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	got, err := svc.Settle(context.Background(), SettleEntryInput{
 		WorkspaceID: e.WorkspaceID, ID: e.ID, PaymentMethod: "pix",
@@ -117,7 +140,7 @@ func TestSettleDefaultsAndCascade(t *testing.T) {
 func TestSettlePaidAmountCanDiffer(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	paid := int64(10_550) // juros
 	got, err := svc.Settle(context.Background(), SettleEntryInput{
@@ -137,7 +160,7 @@ func TestSettlePaidAmountCanDiffer(t *testing.T) {
 func TestSettleRejectsCancelada(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusCancelada)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	_, err := svc.Settle(context.Background(), SettleEntryInput{
 		WorkspaceID: e.WorkspaceID, ID: e.ID, PaymentMethod: "pix",
@@ -150,7 +173,7 @@ func TestSettleRejectsCancelada(t *testing.T) {
 func TestSettleRejectsInvalidMethod(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	_, err := svc.Settle(context.Background(), SettleEntryInput{
 		WorkspaceID: e.WorkspaceID, ID: e.ID, PaymentMethod: "cheque",
@@ -163,7 +186,7 @@ func TestSettleRejectsInvalidMethod(t *testing.T) {
 func TestSettleCartaoCreditoExigeCartao(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	_, err := svc.Settle(context.Background(), SettleEntryInput{
 		WorkspaceID: e.WorkspaceID, ID: e.ID, PaymentMethod: "cartao_credito",
@@ -183,7 +206,7 @@ func TestSettleCartaoCreditoExigeCartao(t *testing.T) {
 func TestConfirmAndCancelCascade(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
-	svc := NewFinancialEntryService(repo)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
 	if _, err := svc.Confirm(context.Background(), e.WorkspaceID, e.ID); err != nil {
 		t.Fatalf("Confirm: %v", err)

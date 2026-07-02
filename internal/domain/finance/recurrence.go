@@ -22,21 +22,25 @@ func dateSameDayClamped(year int, month time.Month, day int, loc *time.Location)
 	return time.Date(year, month, day, 0, 0, 0, 0, loc)
 }
 
-// GenerateOccurrences gera as ocorrências de um lançamento conforme sua recorrência,
-// até 31/dez do ano da due_date (exercício = ano-calendário). Todas as ocorrências
-// compartilham um recurrence_group_id e são criadas com status 'prevista'.
+// RollingMonths é o horizonte de previstos das recorrências: sempre existe
+// ~1 ano à frente (rolling), independente da virada do ano-calendário. O
+// extensor de recorrências (application) completa o horizonte diariamente.
+const RollingMonths = 12
+
+// GenerateOccurrences gera as ocorrências de um lançamento conforme sua
+// recorrência, num horizonte ROLLING de 12 meses a partir da due_date (a regra
+// antiga parava em 31/dez e deixava janeiro vazio). Todas as ocorrências
+// compartilham um recurrence_group_id e nascem 'prevista'.
 //
 //   - none: retorna [base] (1 ocorrência).
-//   - monthly: uma por mês, mesmo dia do mês (com clamp para o último dia), de due_date até dezembro.
-//   - weekly: a cada 7 dias a partir de due_date até 31/dez.
-//   - yearly: apenas a due_date (1 ocorrência no exercício).
+//   - monthly: 12 ocorrências, mesmo dia do mês (clamp p/ último dia).
+//   - weekly: 52 ocorrências, a cada 7 dias.
+//   - yearly: apenas a due_date (o extensor cria a próxima quando entrar no horizonte).
 func GenerateOccurrences(base FinancialEntry) []FinancialEntry {
 	loc := base.DueDate.Location()
 	if loc == nil {
 		loc = time.UTC
 	}
-	year := base.DueDate.Year()
-	yearEnd := time.Date(year, time.December, 31, 0, 0, 0, 0, loc)
 
 	if base.Recurrence == RecurrenceNone || base.Recurrence == "" {
 		base.Recurrence = RecurrenceNone
@@ -44,29 +48,81 @@ func GenerateOccurrences(base FinancialEntry) []FinancialEntry {
 	}
 
 	groupID := uuid.New()
+	return append([]FinancialEntry{}, nextOccurrences(base, base.DueDate, &groupID, true, loc)...)
+}
 
-	switch base.Recurrence {
+// NextOccurrencesAfter gera as ocorrências que faltam para completar o
+// horizonte rolling de um grupo existente: tudo estritamente após `after`,
+// até `horizon`. Usado pelo extensor diário de recorrências.
+func NextOccurrencesAfter(template FinancialEntry, after, horizon time.Time) []FinancialEntry {
+	loc := after.Location()
+	if loc == nil {
+		loc = time.UTC
+	}
+	groupID := template.RecurrenceGroupID
+	if groupID == nil {
+		return nil
+	}
+	out := make([]FinancialEntry, 0, RollingMonths)
+	for _, occ := range nextOccurrences(template, after, groupID, false, loc) {
+		if occ.DueDate.After(after) && !occ.DueDate.After(horizon) {
+			occ.Status = StatusPrevista
+			occ.PaidAt = nil
+			occ.PaidAmountCents = nil
+			occ.PaymentMethod = nil
+			occ.PaymentAccountID = nil
+			occ.PaymentCardID = nil
+			out = append(out, occ)
+		}
+	}
+	return out
+}
+
+// nextOccurrences produz a série a partir de `from` (inclusive quando
+// includeFrom). O dia-base do mês vem do template (DueDate original).
+func nextOccurrences(template FinancialEntry, from time.Time, groupID *uuid.UUID, includeFrom bool, loc *time.Location) []FinancialEntry {
+	switch template.Recurrence {
 	case RecurrenceYearly:
-		return []FinancialEntry{cloneOccurrence(base, base.DueDate, &groupID)}
+		if includeFrom {
+			return []FinancialEntry{cloneOccurrence(template, template.DueDate, groupID)}
+		}
+		// próxima ocorrência anual após `from`, no mesmo dia/mês do template
+		next := time.Date(from.Year(), template.DueDate.Month(), template.DueDate.Day(), 0, 0, 0, 0, loc)
+		for !next.After(from) {
+			next = next.AddDate(1, 0, 0)
+		}
+		return []FinancialEntry{cloneOccurrence(template, next, groupID)}
 
 	case RecurrenceMonthly:
-		out := make([]FinancialEntry, 0, 12)
-		day := base.DueDate.Day()
-		for m := base.DueDate.Month(); m <= time.December; m++ {
-			d := dateSameDayClamped(year, m, day, loc)
-			out = append(out, cloneOccurrence(base, d, &groupID))
+		day := template.DueDate.Day()
+		start := from
+		if !includeFrom {
+			start = from.AddDate(0, 1, 0)
+		}
+		baseYear := start.Year()
+		baseMonth := int(start.Month())
+		out := make([]FinancialEntry, 0, RollingMonths)
+		for i := 0; i < RollingMonths; i++ {
+			total0 := baseMonth - 1 + i
+			year := baseYear + total0/12
+			month := time.Month(total0%12 + 1)
+			out = append(out, cloneOccurrence(template, dateSameDayClamped(year, month, day, loc), groupID))
 		}
 		return out
 
 	case RecurrenceWeekly:
-		out := make([]FinancialEntry, 0, 53)
-		for d := base.DueDate; !d.After(yearEnd); d = d.AddDate(0, 0, 7) {
-			out = append(out, cloneOccurrence(base, d, &groupID))
+		start := from
+		if !includeFrom {
+			start = from.AddDate(0, 0, 7)
+		}
+		out := make([]FinancialEntry, 0, 52)
+		for i, d := 0, start; i < 52; i, d = i+1, d.AddDate(0, 0, 7) {
+			out = append(out, cloneOccurrence(template, d, groupID))
 		}
 		return out
 
 	default:
-		return []FinancialEntry{cloneOccurrence(base, base.DueDate, &groupID)}
+		return []FinancialEntry{cloneOccurrence(template, template.DueDate, groupID)}
 	}
 }
 
