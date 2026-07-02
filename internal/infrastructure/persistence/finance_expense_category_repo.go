@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // FinanceExpenseCategoryModel mapeia a tabela finance_expense_categories.
@@ -37,6 +38,9 @@ func (r *FinanceExpenseCategoryRepository) Create(ctx context.Context, c *dom.Ex
 	return mapFinanceErr(r.db.WithContext(ctx).Create(&model).Error)
 }
 
+// CreateBatch insere ignorando conflitos de (workspace_id, slug) — usado pelo
+// top-up do seed: um slug soft-deletado pelo usuário ocupa a unique e o
+// insert correspondente é ignorado (excluída não ressuscita).
 func (r *FinanceExpenseCategoryRepository) CreateBatch(ctx context.Context, cs []*dom.ExpenseCategory) error {
 	if len(cs) == 0 {
 		return nil
@@ -45,7 +49,9 @@ func (r *FinanceExpenseCategoryRepository) CreateBatch(ctx context.Context, cs [
 	for i := range cs {
 		models[i] = expenseCategoryToModel(cs[i])
 	}
-	return mapFinanceErr(r.db.WithContext(ctx).Create(&models).Error)
+	return mapFinanceErr(r.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&models).Error)
 }
 
 func (r *FinanceExpenseCategoryRepository) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.ExpenseCategory, error) {

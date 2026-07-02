@@ -106,6 +106,13 @@ func (c *ExpenseCategory) Validate() error {
 func DefaultExpenseCategories() []ExpenseCategory {
 	defaults := []struct{ slug, name, group string }{
 		{"moradia", "Moradia", "moradia"},
+		{"agua", "Água", "moradia"},
+		{"luz", "Luz / Energia", "moradia"},
+		{"gas", "Gás", "moradia"},
+		{"condominio", "Condomínio", "moradia"},
+		{"internet", "Internet", "contas_servicos"},
+		{"celular", "Telefone / Celular", "contas_servicos"},
+		{"streaming", "Streaming", "contas_servicos"},
 		{"alimentacao", "Alimentação", "alimentacao"},
 		{"mercado", "Mercado", "alimentacao"},
 		{"saude", "Saúde", "saude"},
