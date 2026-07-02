@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	stdlog "log"
@@ -18,10 +19,12 @@ import (
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
+	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 	"github.com/retechfin/retechfin-api/pkg/logger"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -119,6 +122,27 @@ func main() {
 	}
 	log.Info("✅ JWKS carregado!")
 
+	// Autorização por módulo: lê o claim perms do token (emitido pelo auth).
+	permsMode := middleware.EnforcementModeFromEnv()
+	log.Info(fmt.Sprintf("🛡️ Autorização por módulo: %s (PERMS_ENFORCEMENT)", permsMode))
+
+	// Manifesto de permissions → auth (SyncManifest): telas novas viram
+	// permissions no banco do auth automaticamente a cada deploy.
+	syncCfg := authsync.ConfigFromEnv()
+	if syncCfg.Enabled() {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if summary, err := authsync.Sync(ctx, syncCfg); err != nil {
+				log.Warn("⚠️ Sync do manifesto de permissions falhou", slog.String("error", err.Error()))
+			} else {
+				log.Info(fmt.Sprintf("✅ Manifesto de permissions sincronizado com o auth! %s", summary))
+			}
+		}()
+	} else {
+		log.Warn("⚠️ Sync do manifesto de permissions desabilitado (AUTH_SYNC_URL, AUTH_BOOTSTRAP_SECRET)")
+	}
+
 	accRepo := persistence.NewAccountRepository(db)
 	catRepo := persistence.NewCategoryRepository(db)
 	txRepo := persistence.NewTransactionRepository(db)
@@ -211,6 +235,7 @@ func main() {
 		FinanceAccountService:    finAccountSvc,
 		FinanceDashboardService:  finDashSvc,
 		MemberDocumentService:    memberDocSvc,
+		PermsEnforcement:         permsMode,
 	})
 
 	addr := ":" + cfg.AppPort
