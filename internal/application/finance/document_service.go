@@ -21,6 +21,19 @@ var financeAllowedMimes = map[string]bool{
 	"image/png":       true,
 }
 
+// receiptAllowedMimes são os tipos aceitos para comprovantes de pagamento
+// (mais permissivo: fotos de celular e documentos de texto).
+var receiptAllowedMimes = map[string]bool{
+	"application/pdf":    true,
+	"image/jpeg":         true,
+	"image/png":          true,
+	"image/heic":         true,
+	"image/heif":         true,
+	"image/webp":         true,
+	"application/msword": true,
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": true,
+}
+
 var financeUnsafeFileNameChars = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
 // FinanceDocumentService orquestra upload/download/listagem de documentos
@@ -76,6 +89,7 @@ func (s *FinanceDocumentService) Upload(ctx context.Context, in UploadFinanceDoc
 		ID:               uuid.New(),
 		WorkspaceID:      in.WorkspaceID,
 		CardID:           in.CardID,
+		Kind:             dom.DocumentImport,
 		FileName:         safeName,
 		OriginalFileName: in.OriginalFileName,
 		MimeType:         strings.ToLower(strings.TrimSpace(in.MimeType)),
@@ -132,7 +146,71 @@ type ListFinanceDocumentsResult struct {
 }
 
 func (s *FinanceDocumentService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListFinanceDocumentsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+	// A listagem geral de documentos mostra apenas faturas importadas;
+	// comprovantes são listados pelo lançamento (ListReceipts).
+	kind := dom.DocumentImport
+	items, total, err := s.repo.List(ctx, workspaceID, dom.FinanceDocumentFilter{Kind: &kind}, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	return &ListFinanceDocumentsResult{Items: items, Total: total}, nil
+}
+
+// UploadReceipt anexa um comprovante de pagamento a um lançamento.
+// A existência do lançamento no workspace deve ser validada pelo chamador.
+func (s *FinanceDocumentService) UploadReceipt(ctx context.Context, in UploadFinanceDocInput, entryID uuid.UUID) (*dom.FinanceDocument, error) {
+	if !s.storage.Enabled() {
+		return nil, &dom.ValidationError{Msg: "armazenamento de documentos indisponível (storage não configurado)"}
+	}
+	if in.Size <= 0 {
+		return nil, &dom.ValidationError{Msg: "arquivo vazio"}
+	}
+	if in.Size > s.maxUploadBytes {
+		return nil, &dom.ValidationError{Msg: fmt.Sprintf("arquivo excede o limite de %d MB", s.maxUploadBytes/(1024*1024))}
+	}
+	mime := strings.ToLower(strings.TrimSpace(in.MimeType))
+	if !receiptAllowedMimes[mime] {
+		return nil, &dom.ValidationError{Msg: "tipo de arquivo não permitido para comprovante (PDF, imagem ou DOC)"}
+	}
+
+	safeName := sanitizeFinanceFileName(in.OriginalFileName)
+	objectKey := buildReceiptObjectKey(in.WorkspaceID, entryID, safeName)
+
+	now := time.Now().UTC()
+	doc := &dom.FinanceDocument{
+		ID:               uuid.New(),
+		WorkspaceID:      in.WorkspaceID,
+		EntryID:          &entryID,
+		Kind:             dom.DocumentReceipt,
+		FileName:         safeName,
+		OriginalFileName: in.OriginalFileName,
+		MimeType:         mime,
+		SizeBytes:        in.Size,
+		StorageProvider:  "minio",
+		Bucket:           financeBucket,
+		ObjectKey:        objectKey,
+		UploadedByUserID: in.UploadedByUserID,
+		ExtractionStatus: dom.ExtractionNotRequired,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	if err := doc.Validate(); err != nil {
+		return nil, err
+	}
+
+	if err := s.storage.Put(ctx, objectKey, in.Content, in.Size, doc.MimeType); err != nil {
+		return nil, fmt.Errorf("falha ao enviar arquivo: %w", err)
+	}
+	if err := s.repo.Create(ctx, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
+}
+
+// ListReceipts lista os comprovantes anexados a um lançamento.
+func (s *FinanceDocumentService) ListReceipts(ctx context.Context, workspaceID, entryID uuid.UUID, limit, offset int) (*ListFinanceDocumentsResult, error) {
+	kind := dom.DocumentReceipt
+	items, total, err := s.repo.List(ctx, workspaceID, dom.FinanceDocumentFilter{Kind: &kind, EntryID: &entryID}, limit, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +254,12 @@ func sanitizeFinanceFileName(name string) string {
 		base = base[len(base)-200:]
 	}
 	return base
+}
+
+func buildReceiptObjectKey(workspaceID, entryID uuid.UUID, fileName string) string {
+	now := time.Now().UTC()
+	return fmt.Sprintf("tenants/%s/finance/receipts/%s/%04d/%02d/%s-%s",
+		workspaceID.String(), entryID.String(), now.Year(), int(now.Month()), uuid.New().String(), fileName)
 }
 
 func buildFinanceObjectKey(workspaceID uuid.UUID, cardID *uuid.UUID, fileName string) string {

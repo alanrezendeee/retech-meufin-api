@@ -58,6 +58,11 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"installment_number": model.InstallmentNumber,
 			"installment_total":  model.InstallmentTotal,
 			"notes":              model.Notes,
+			"paid_at":            model.PaidAt,
+			"paid_amount_cents":  model.PaidAmountCents,
+			"payment_method":     model.PaymentMethod,
+			"payment_account_id": model.PaymentAccountID,
+			"payment_card_id":    model.PaymentCardID,
 			"updated_at":         model.UpdatedAt,
 		})
 	if res.Error != nil {
@@ -117,6 +122,21 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	if filter.TopLevelOnly {
 		base = base.Where("parent_id IS NULL")
 	}
+	// Contas do dia: recortes por vencimento (datas normalizadas para o dia em UTC).
+	if filter.DueOn != nil {
+		day := filter.DueOn.UTC().Truncate(24 * time.Hour)
+		base = base.Where("due_date >= ? AND due_date < ?", day, day.AddDate(0, 0, 1))
+	}
+	if filter.DueFrom != nil {
+		base = base.Where("due_date >= ?", filter.DueFrom.UTC().Truncate(24*time.Hour))
+	}
+	if filter.DueTo != nil {
+		base = base.Where("due_date < ?", filter.DueTo.UTC().Truncate(24*time.Hour).AddDate(0, 0, 1))
+	}
+	if filter.Overdue {
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		base = base.Where("due_date < ? AND status = ?", today, "prevista")
+	}
 	// Filtro por exercício via range de datas em due_date.
 	if filter.Year != nil {
 		loc := time.UTC
@@ -148,6 +168,22 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	return out, total, nil
 }
 
+// CascadeStatusToChildren propaga o status da fatura pai para os filhos não
+// cancelados. Filhos já cancelados individualmente não são reativados.
+func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, workspaceID, parentID uuid.UUID, status dom.Status, paidAt *time.Time) error {
+	updates := map[string]any{
+		"status":     string(status),
+		"updated_at": time.Now().UTC(),
+	}
+	if status == dom.StatusRealizada {
+		updates["paid_at"] = paidAt
+	}
+	res := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
+		Where("parent_id = ? AND workspace_id = ? AND status <> ?", parentID, workspaceID, "cancelada").
+		Updates(updates)
+	return mapFinanceErr(res.Error)
+}
+
 // --- conversões ---
 
 func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
@@ -169,9 +205,30 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		InstallmentNumber: e.InstallmentNumber,
 		InstallmentTotal:  e.InstallmentTotal,
 		Notes:             e.Notes,
+		PaidAt:            e.PaidAt,
+		PaidAmountCents:   e.PaidAmountCents,
+		PaymentMethod:     paymentMethodToString(e.PaymentMethod),
+		PaymentAccountID:  e.PaymentAccountID,
+		PaymentCardID:     e.PaymentCardID,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
 	}
+}
+
+func paymentMethodToString(m *dom.PaymentMethod) *string {
+	if m == nil {
+		return nil
+	}
+	s := string(*m)
+	return &s
+}
+
+func stringToPaymentMethod(s *string) *dom.PaymentMethod {
+	if s == nil {
+		return nil
+	}
+	m := dom.PaymentMethod(*s)
+	return &m
 }
 
 func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
@@ -193,6 +250,11 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		InstallmentNumber: m.InstallmentNumber,
 		InstallmentTotal:  m.InstallmentTotal,
 		Notes:             m.Notes,
+		PaidAt:            m.PaidAt,
+		PaidAmountCents:   m.PaidAmountCents,
+		PaymentMethod:     stringToPaymentMethod(m.PaymentMethod),
+		PaymentAccountID:  m.PaymentAccountID,
+		PaymentCardID:     m.PaymentCardID,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
 	}

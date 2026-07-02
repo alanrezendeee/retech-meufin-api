@@ -13,7 +13,8 @@ type FinanceDocumentModel struct {
 	ID               uuid.UUID      `gorm:"type:uuid;primaryKey"`
 	WorkspaceID      uuid.UUID      `gorm:"type:uuid;not null;index:idx_finance_documents_workspace"`
 	CardID           *uuid.UUID     `gorm:"type:uuid;index:idx_finance_documents_card"`
-	EntryID          *uuid.UUID     `gorm:"type:uuid"`
+	EntryID          *uuid.UUID     `gorm:"type:uuid;index:idx_finance_documents_entry"`
+	Kind             string         `gorm:"size:20;not null;default:import"`
 	FileName         string         `gorm:"size:255;not null"`
 	OriginalFileName string         `gorm:"size:255;not null"`
 	MimeType         string         `gorm:"size:100;not null"`

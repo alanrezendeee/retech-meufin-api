@@ -38,6 +38,9 @@ type RouterDeps struct {
 	CreditCardService        *appf.CreditCardService
 	FinanceDocumentService   *appf.FinanceDocumentService
 	FinanceExtractionService *appf.FinanceExtractionService
+	FinanceAccountService    *appf.AccountService
+	FinanceDashboardService  *appf.FinanceDashboardService
+	MemberDocumentService    *apph.MemberDocumentService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -135,6 +138,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.GET("/dashboard", dashH.Counts)
 			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
 
+			// Documentos pessoais dos membros (cpf, rg, cnh, ...)
+			memberDocH := handlers.NewHealthMemberDocumentHandler(d.MemberDocumentService)
+			health.POST("/family-members/:id/documents", memberDocH.Upload)
+			health.GET("/family-members/:id/documents", memberDocH.List)
+			health.GET("/family-members/:id/documents/:docId/download-url", memberDocH.DownloadURL)
+			health.DELETE("/family-members/:id/documents/:docId", memberDocH.Delete)
+
 			health.POST("/documents", docH.Upload)
 			health.GET("/documents", docH.List)
 			health.GET("/documents/:id", docH.Get)
@@ -166,6 +176,14 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.PUT("/cards/:id", cardH.Update)
 		finance.DELETE("/cards/:id", cardH.Delete)
 
+		// Contas (corrente/poupança/carteira/digital) usadas na liquidação.
+		finAccH := handlers.NewFinanceAccountHandler(d.FinanceAccountService)
+		finance.GET("/accounts", finAccH.List)
+		finance.POST("/accounts", finAccH.Create)
+		finance.GET("/accounts/:id", finAccH.Get)
+		finance.PUT("/accounts/:id", finAccH.Update)
+		finance.DELETE("/accounts/:id", finAccH.Delete)
+
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)
 		finance.GET("/entries/:id", entH.Get)
@@ -173,6 +191,19 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.DELETE("/entries/:id", entH.Delete)
 		finance.POST("/entries/:id/confirm", entH.Confirm)
 		finance.POST("/entries/:id/cancel", entH.Cancel)
+		finance.POST("/entries/:id/settle", entH.Settle)
+
+		// Comprovantes de pagamento anexados a lançamentos.
+		receiptH := handlers.NewFinanceReceiptHandler(d.FinanceDocumentService, d.FinancialEntryService)
+		finance.POST("/entries/:id/receipts", receiptH.Upload)
+		finance.GET("/entries/:id/receipts", receiptH.List)
+		finance.GET("/entries/:id/receipts/:receiptId/download-url", receiptH.DownloadURL)
+		finance.DELETE("/entries/:id/receipts/:receiptId", receiptH.Delete)
+
+		// Dashboard financeira (agregados; valores em cents).
+		finDashH := handlers.NewFinanceDashboardHandler(d.FinanceDashboardService)
+		finance.GET("/dashboard", finDashH.Summary)
+		finance.GET("/dashboard/monthly", finDashH.Monthly)
 
 		finance.POST("/documents", finDocH.Upload)
 		finance.GET("/documents", finDocH.List)
