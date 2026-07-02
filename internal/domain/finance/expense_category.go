@@ -45,6 +45,8 @@ var ExpenseGroups = map[string]string{
 	"dividas_financiamentos": "Dívidas & Financiamentos",
 	"equipamentos_bens":      "Equipamentos & Bens",
 	"trabalho_negocio":       "Trabalho & Negócio",
+	"familia_dependentes":    "Família & Dependentes",
+	"servicos_profissionais": "Serviços Profissionais",
 	"investimentos":          "Investimentos & Aportes",
 	"outros":                 "Outros",
 }
@@ -130,6 +132,8 @@ func DefaultExpenseCategories() []ExpenseCategory {
 		{"assinaturas", "Assinaturas", "contas_servicos"},
 		{"financiamentos", "Financiamentos", "dividas_financiamentos"},
 		{"presentes", "Presentes", "presentes_doacoes"},
+		{"pensao", "Pensão alimentícia", "familia_dependentes"},
+		{"servicos_profissionais", "Serviços profissionais", "servicos_profissionais"},
 		{"outros", "Outros", "outros"},
 	}
 	out := make([]ExpenseCategory, len(defaults))
