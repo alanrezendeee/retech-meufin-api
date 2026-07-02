@@ -175,7 +175,7 @@ func main() {
 		}
 		log.Info(fmt.Sprintf("✅ Extração LLM ativa! provider=%s model=%s", extractor.Provider(), model))
 	} else {
-		log.Warn("⚠️ Extração LLM desabilitada — import de fatura/exames por PDF indisponível (HEALTH_EXTRACTION_PROVIDER, HEALTH_EXTRACTION_API_KEY)")
+		log.Warn("⚠️ Extração LLM desabilitada — import de fatura/exames por PDF indisponível (EXTRACTION_PROVIDER, EXTRACTION_API_KEY)")
 	}
 
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
