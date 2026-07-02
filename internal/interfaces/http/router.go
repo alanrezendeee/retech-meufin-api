@@ -41,6 +41,7 @@ type RouterDeps struct {
 	FinanceAccountService    *appf.AccountService
 	FinanceDashboardService  *appf.FinanceDashboardService
 	MemberDocumentService    *apph.MemberDocumentService
+	PermsEnforcement         middleware.EnforcementMode
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -61,30 +62,32 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.RequireAuth(d.JWKS, d.ApplicationID))
 	{
-		v1.POST("/accounts", accH.Create)
-		v1.GET("/accounts", accH.List)
-		v1.GET("/accounts/:id", accH.Get)
-		v1.PUT("/accounts/:id", accH.Update)
-		v1.DELETE("/accounts/:id", accH.Delete)
+		// Módulo legado (ledger/budget) — subjects retechfin.*
+		legacy := v1.Group("", middleware.RequireModule("retechfin", d.PermsEnforcement))
+		legacy.POST("/accounts", accH.Create)
+		legacy.GET("/accounts", accH.List)
+		legacy.GET("/accounts/:id", accH.Get)
+		legacy.PUT("/accounts/:id", accH.Update)
+		legacy.DELETE("/accounts/:id", accH.Delete)
 
-		v1.POST("/categories", catH.Create)
-		v1.GET("/categories", catH.List)
-		v1.GET("/categories/:id", catH.Get)
-		v1.PUT("/categories/:id", catH.Update)
-		v1.DELETE("/categories/:id", catH.Delete)
+		legacy.POST("/categories", catH.Create)
+		legacy.GET("/categories", catH.List)
+		legacy.GET("/categories/:id", catH.Get)
+		legacy.PUT("/categories/:id", catH.Update)
+		legacy.DELETE("/categories/:id", catH.Delete)
 
-		v1.POST("/transactions", txH.Create)
-		v1.GET("/transactions", txH.List)
-		v1.GET("/transactions/:id", txH.Get)
-		v1.PUT("/transactions/:id", txH.Update)
-		v1.DELETE("/transactions/:id", txH.Delete)
+		legacy.POST("/transactions", txH.Create)
+		legacy.GET("/transactions", txH.List)
+		legacy.GET("/transactions/:id", txH.Get)
+		legacy.PUT("/transactions/:id", txH.Update)
+		legacy.DELETE("/transactions/:id", txH.Delete)
 
-		v1.POST("/budgets", budH.Create)
-		v1.GET("/budgets", budH.List)
-		v1.POST("/budgets/validate", budH.Validate)
-		v1.GET("/budgets/:id", budH.Get)
-		v1.PUT("/budgets/:id", budH.Update)
-		v1.DELETE("/budgets/:id", budH.Delete)
+		legacy.POST("/budgets", budH.Create)
+		legacy.GET("/budgets", budH.List)
+		legacy.POST("/budgets/validate", budH.Validate)
+		legacy.GET("/budgets/:id", budH.Get)
+		legacy.PUT("/budgets/:id", budH.Update)
+		legacy.DELETE("/budgets/:id", budH.Delete)
 
 		// Saúde Familiar — catálogo de marcadores (Fase 0)
 		mkH := handlers.NewHealthMarkerHandler(d.HealthMarkerService)
@@ -96,7 +99,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		docH := handlers.NewHealthDocumentHandler(d.DocumentService)
 		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService)
 		extTrigH := handlers.NewHealthExtractTriggerHandler(d.DocumentService, d.ExtractionService)
-		health := v1.Group("/health")
+		health := v1.Group("/health", middleware.RequireModule("health", d.PermsEnforcement))
 		{
 			health.GET("/markers", mkH.List)
 			health.POST("/markers", mkH.Create)
@@ -162,7 +165,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	finDocH := handlers.NewFinanceDocumentHandler(d.FinanceDocumentService)
 	finExtTrigH := handlers.NewFinanceExtractTriggerHandler(d.FinanceDocumentService, d.FinanceExtractionService)
 	finExtH := handlers.NewFinanceExtractionHandler(d.FinanceExtractionService, d.FinanceDocumentService, d.FinancialEntryService)
-	finance := v1.Group("/finance")
+	finance := v1.Group("/finance", middleware.RequireModule("finance", d.PermsEnforcement))
 	{
 		finance.GET("/income-sources", srcH.List)
 		finance.POST("/income-sources", srcH.Create)

@@ -17,6 +17,7 @@ const (
 	CtxUserID = "user_id"
 	CtxEmail  = "email"
 	CtxRoles  = "roles"
+	CtxPerms  = "perms"
 )
 
 // AuthClaims espelha os claims emitidos pelo retech-auth-api (RS256).
@@ -28,6 +29,7 @@ type AuthClaims struct {
 	ApplicationID string   `json:"application_id"`
 	TenantID      *string  `json:"tenant_id"`
 	Roles         []string `json:"roles"`
+	Perms         []string `json:"perms"` // codes "subject:action" das permissions efetivas; master = ["all:manage"]
 	jwt.RegisteredClaims
 }
 
@@ -81,6 +83,7 @@ func RequireAuth(jwks *keyfunc.JWKS, applicationID string) gin.HandlerFunc {
 		c.Set(CtxUserID, claims.UserID)
 		c.Set(CtxEmail, claims.Email)
 		c.Set(CtxRoles, claims.Roles)
+		c.Set(CtxPerms, claims.Perms)
 		c.Next()
 	}
 }
