@@ -116,6 +116,12 @@ func (e *FinancialEntry) Validate() error {
 	if e.DueDate.IsZero() {
 		return &ValidationError{Msg: "due_date é obrigatória"}
 	}
+	if !validEntryType(e.Kind, e.Type) {
+		if e.Kind == KindCredit {
+			return &ValidationError{Msg: "type de receita fora do catálogo"}
+		}
+		return &ValidationError{Msg: "categoria de despesa fora do catálogo"}
+	}
 	e.Description = strings.TrimSpace(e.Description)
 	return nil
 }

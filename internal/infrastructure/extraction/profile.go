@@ -37,7 +37,7 @@ REGRAS OBRIGATÓRIAS:
 - Cada compra vira um item em "purchases" com descrição, valor e data.
 - Valores em reais: use ponto decimal no campo numérico "amount" (ex.: 1234.56).
 - Se a compra for parcelada (ex.: "PARC 03/10", "3/10"), preencha installment_current e installment_total.
-- Sugira uma categoria em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, outros.
+- Sugira uma categoria em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, equipamentos, outros.
 - Não inclua pagamentos/estornos da fatura anterior como compras; registre-os em warnings se relevante.
 - Registre em warnings qualquer ambiguidade, ilegibilidade ou dado faltante.
 
