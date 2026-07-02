@@ -28,16 +28,25 @@ type ExpenseCategory struct {
 // ExpenseGroups é o catálogo CURADO de grupos — nunca editável pelo usuário.
 // É por ele que os indicadores agregam ("pra onde foi o dinheiro" estável).
 var ExpenseGroups = map[string]string{
-	"moradia":           "Moradia",
-	"alimentacao":       "Alimentação",
-	"transporte":        "Transporte",
-	"saude":             "Saúde",
-	"educacao":          "Educação",
-	"lazer":             "Lazer",
-	"contas_servicos":   "Contas & Serviços",
-	"impostos_taxas":    "Impostos & Taxas",
-	"equipamentos_bens": "Equipamentos & Bens",
-	"outros":            "Outros",
+	"moradia":                "Moradia",
+	"alimentacao":            "Alimentação",
+	"transporte":             "Transporte",
+	"saude":                  "Saúde",
+	"educacao":               "Educação",
+	"lazer":                  "Lazer & Cultura",
+	"viagens":                "Viagens",
+	"vestuario":              "Vestuário",
+	"cuidados_pessoais":      "Cuidados Pessoais",
+	"pets":                   "Pets",
+	"presentes_doacoes":      "Presentes & Doações",
+	"contas_servicos":        "Contas & Assinaturas",
+	"seguros_protecao":       "Seguros & Proteção",
+	"impostos_taxas":         "Impostos & Taxas",
+	"dividas_financiamentos": "Dívidas & Financiamentos",
+	"equipamentos_bens":      "Equipamentos & Bens",
+	"trabalho_negocio":       "Trabalho & Negócio",
+	"investimentos":          "Investimentos & Aportes",
+	"outros":                 "Outros",
 }
 
 // CartaoCategorySlug é reservado à fatura pai criada pelo sistema — não pode
@@ -107,6 +116,13 @@ func DefaultExpenseCategories() []ExpenseCategory {
 		{"servicos", "Serviços", "contas_servicos"},
 		{"impostos", "Impostos", "impostos_taxas"},
 		{"equipamentos", "Equipamentos", "equipamentos_bens"},
+		{"vestuario", "Vestuário", "vestuario"},
+		{"viagens", "Viagens", "viagens"},
+		{"pets", "Pets", "pets"},
+		{"seguros", "Seguros", "seguros_protecao"},
+		{"assinaturas", "Assinaturas", "contas_servicos"},
+		{"financiamentos", "Financiamentos", "dividas_financiamentos"},
+		{"presentes", "Presentes", "presentes_doacoes"},
 		{"outros", "Outros", "outros"},
 	}
 	out := make([]ExpenseCategory, len(defaults))
