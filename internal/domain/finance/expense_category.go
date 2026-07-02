@@ -25,8 +25,35 @@ type ExpenseCategory struct {
 	UpdatedAt time.Time
 }
 
-// ExpenseGroups é o catálogo CURADO de grupos — nunca editável pelo usuário.
-// É por ele que os indicadores agregam ("pra onde foi o dinheiro" estável).
+// ExpenseGroupDescriptions dá exemplos de uso de cada grupo — exibidos na UI
+// para orientar o vínculo categoria→grupo. São dica, não regra.
+var ExpenseGroupDescriptions = map[string]string{
+	"moradia":                "Aluguel, condomínio, água, luz, gás, manutenção",
+	"alimentacao":            "Mercado, restaurantes, delivery",
+	"transporte":             "Combustível, apps, ônibus, manutenção do carro",
+	"saude":                  "Plano, farmácia, consultas, terapia",
+	"educacao":               "Escola, faculdade, cursos, material, transporte escolar",
+	"lazer":                  "Cinema, shows, hobbies, esportes",
+	"viagens":                "Passagens, hospedagem, passeios",
+	"vestuario":              "Roupas, calçados, acessórios",
+	"cuidados_pessoais":      "Cabelo, estética, academia, higiene",
+	"pets":                   "Ração, veterinário, banho e tosa",
+	"presentes_doacoes":      "Aniversários, dízimo, caridade",
+	"contas_servicos":        "Internet, celular, streaming, assinaturas",
+	"seguros_protecao":       "Seguro auto, vida, residencial",
+	"impostos_taxas":         "IPTU, IPVA, DAS, taxas públicas",
+	"dividas_financiamentos": "Empréstimos, financiamentos, juros, consórcio",
+	"equipamentos_bens":      "Eletrônicos, eletrodomésticos, móveis",
+	"trabalho_negocio":       "Contador, software, coworking, despesas do PJ",
+	"familia_dependentes":    "Pensão, mesada, cuidador, babá",
+	"servicos_profissionais": "Advogado, cartório, despachante, diarista",
+	"investimentos":          "Aportes, previdência, reserva de emergência",
+	"outros":                 "O que não couber nos demais",
+}
+
+// ExpenseGroups é o catálogo CURADO de grupos — nunca editável pelo usuário,
+// igual para TODOS os tenants (vive no código + CHECK no banco; só as
+// categorias são por workspace). É por ele que os indicadores agregam.
 var ExpenseGroups = map[string]string{
 	"moradia":                "Moradia",
 	"alimentacao":            "Alimentação",
@@ -45,6 +72,8 @@ var ExpenseGroups = map[string]string{
 	"dividas_financiamentos": "Dívidas & Financiamentos",
 	"equipamentos_bens":      "Equipamentos & Bens",
 	"trabalho_negocio":       "Trabalho & Negócio",
+	"familia_dependentes":    "Família & Dependentes",
+	"servicos_profissionais": "Serviços Profissionais",
 	"investimentos":          "Investimentos & Aportes",
 	"outros":                 "Outros",
 }
@@ -106,6 +135,13 @@ func (c *ExpenseCategory) Validate() error {
 func DefaultExpenseCategories() []ExpenseCategory {
 	defaults := []struct{ slug, name, group string }{
 		{"moradia", "Moradia", "moradia"},
+		{"agua", "Água", "moradia"},
+		{"luz", "Luz / Energia", "moradia"},
+		{"gas", "Gás", "moradia"},
+		{"condominio", "Condomínio", "moradia"},
+		{"internet", "Internet", "contas_servicos"},
+		{"celular", "Telefone / Celular", "contas_servicos"},
+		{"streaming", "Streaming", "contas_servicos"},
 		{"alimentacao", "Alimentação", "alimentacao"},
 		{"mercado", "Mercado", "alimentacao"},
 		{"saude", "Saúde", "saude"},
@@ -123,6 +159,8 @@ func DefaultExpenseCategories() []ExpenseCategory {
 		{"assinaturas", "Assinaturas", "contas_servicos"},
 		{"financiamentos", "Financiamentos", "dividas_financiamentos"},
 		{"presentes", "Presentes", "presentes_doacoes"},
+		{"pensao", "Pensão alimentícia", "familia_dependentes"},
+		{"servicos_profissionais", "Serviços profissionais", "servicos_profissionais"},
 		{"outros", "Outros", "outros"},
 	}
 	out := make([]ExpenseCategory, len(defaults))

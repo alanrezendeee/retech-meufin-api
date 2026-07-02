@@ -20,27 +20,37 @@ func NewExpenseCategoryService(repo dom.ExpenseCategoryRepository) *ExpenseCateg
 	return &ExpenseCategoryService{repo: repo}
 }
 
-// List retorna as categorias do workspace, semeando as padrão se vazio.
+// List retorna as categorias do workspace, completando as padrão que
+// faltarem (top-up): workspace novo ganha o seed inteiro; workspace antigo
+// ganha as padrão adicionadas depois. Excluídas pelo usuário NÃO voltam —
+// o slug soft-deletado ainda ocupa a unique e o insert é ignorado.
 func (s *ExpenseCategoryService) List(ctx context.Context, workspaceID uuid.UUID) ([]dom.ExpenseCategory, error) {
 	cats, err := s.repo.List(ctx, workspaceID)
 	if err != nil {
 		return nil, err
 	}
-	if len(cats) > 0 {
+	existing := make(map[string]struct{}, len(cats))
+	for i := range cats {
+		existing[cats[i].Slug] = struct{}{}
+	}
+
+	now := time.Now().UTC()
+	var missing []*dom.ExpenseCategory
+	for _, c := range dom.DefaultExpenseCategories() {
+		if _, ok := existing[c.Slug]; ok {
+			continue
+		}
+		cc := c
+		cc.ID = uuid.New()
+		cc.WorkspaceID = workspaceID
+		cc.CreatedAt = now
+		cc.UpdatedAt = now
+		missing = append(missing, &cc)
+	}
+	if len(missing) == 0 {
 		return cats, nil
 	}
-	now := time.Now().UTC()
-	seed := dom.DefaultExpenseCategories()
-	batch := make([]*dom.ExpenseCategory, len(seed))
-	for i := range seed {
-		c := seed[i]
-		c.ID = uuid.New()
-		c.WorkspaceID = workspaceID
-		c.CreatedAt = now
-		c.UpdatedAt = now
-		batch[i] = &c
-	}
-	if err := s.repo.CreateBatch(ctx, batch); err != nil {
+	if err := s.repo.CreateBatch(ctx, missing); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, workspaceID)
