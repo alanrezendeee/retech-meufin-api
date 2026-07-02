@@ -2,6 +2,7 @@ package errrespond
 
 import (
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -79,6 +80,14 @@ func Write(c *gin.Context, err error) {
 	case errors.Is(err, doml.ErrCategoryKindMismatch):
 		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: err.Error(), RequestID: ridStr}})
 	default:
+		// O cliente recebe mensagem genérica, mas a causa real precisa ficar
+		// rastreável no log — 500 mudo é indiagnosticável.
+		slog.Error("❌ erro interno não mapeado",
+			slog.String("error", err.Error()),
+			slog.String("request_id", ridStr),
+			slog.String("method", c.Request.Method),
+			slog.String("path", c.Request.URL.Path),
+		)
 		c.JSON(http.StatusInternalServerError, Body{Error: Detail{Code: CodeInternal, Message: "erro interno", RequestID: ridStr}})
 	}
 }

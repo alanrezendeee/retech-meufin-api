@@ -138,8 +138,8 @@ func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspac
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN amount_cents ELSE 0 END), 0) AS expense_expected`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status <> 'cancelada'", workspaceID).
 		Where("due_date >= ? AND due_date < ?", start, end).
-		Group("1").
-		Order("1 ASC")
+		Group("EXTRACT(MONTH FROM due_date)").
+		Order("month ASC")
 	if familyMemberID != nil {
 		q = q.Where("family_member_id = ?", *familyMemberID)
 	}
