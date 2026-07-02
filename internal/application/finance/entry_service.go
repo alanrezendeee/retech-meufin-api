@@ -194,7 +194,7 @@ func (s *FinancialEntryService) CreateInvoiceWithItems(ctx context.Context, in C
 			Status:            status,
 			AmountCents:       it.AmountCents,
 			DueDate:           due,
-			Type:              it.Category,
+			Type:              dom.NormalizeExpenseCategory(it.Category),
 			Description:       it.Description,
 			Recurrence:        dom.RecurrenceNone,
 			CardID:            in.CardID,
