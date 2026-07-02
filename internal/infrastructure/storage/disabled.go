@@ -35,8 +35,9 @@ func (DisabledStorage) Get(_ context.Context, _ string) (io.ReadCloser, error) {
 // New retorna um MinioStorage quando a configuracao esta completa e valida;
 // caso contrário (ou se a construção falhar) retorna DisabledStorage para que a API não quebre.
 func New(cfg Config) ObjectStorage {
+	// Config incompleta não loga aqui: o main loga o estado de todas as
+	// conexões no boot (✅/⚠️) com a lista de envs esperadas.
 	if cfg.Endpoint == "" || cfg.AccessKey == "" || cfg.SecretKey == "" || cfg.Bucket == "" {
-		log.Printf("storage: MinIO não configurado; documentos de saúde ficarão indisponíveis (upload/download)")
 		return DisabledStorage{}
 	}
 	s, err := NewMinioStorage(cfg)
