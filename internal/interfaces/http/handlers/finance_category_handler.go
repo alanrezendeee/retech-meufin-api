@@ -64,7 +64,11 @@ func (h *FinanceCategoryHandler) List(c *gin.Context) {
 	}
 	groups := make([]gin.H, 0, len(dom.ExpenseGroups))
 	for slug, name := range dom.ExpenseGroups {
-		groups = append(groups, gin.H{"slug": slug, "name": name})
+		groups = append(groups, gin.H{
+			"slug":        slug,
+			"name":        name,
+			"description": dom.ExpenseGroupDescriptions[slug],
+		})
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items), "groups": groups})
 }
