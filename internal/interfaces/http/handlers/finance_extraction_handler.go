@@ -127,12 +127,25 @@ func mapPurchaseSuggestions(ps []app.PurchaseSuggestion) []purchaseSuggestionRes
 }
 
 type confirmInvoiceItemRequest struct {
-	Description       string   `json:"description"`
-	Amount            *float64 `json:"amount"` // em reais
-	Date              *string  `json:"date"`   // YYYY-MM-DD (opcional)
+	Description string `json:"description"`
+	// AmountCents é o contrato canônico: dinheiro trafega como inteiro de
+	// centavos (menor unidade da moeda), nunca float — regra do sistema todo.
+	AmountCents *int64 `json:"amount_cents"`
+	// Amount em reais (float) é o contrato legado, mantido por compatibilidade
+	// de deploy; usado apenas quando amount_cents não vier. Remover na v2.
+	Amount            *float64 `json:"amount"`
+	Date              *string  `json:"date"` // YYYY-MM-DD (opcional)
 	Category          *string  `json:"category"`
 	InstallmentNumber *int     `json:"installment_number"`
 	InstallmentTotal  *int     `json:"installment_total"`
+}
+
+// cents resolve o valor do item priorizando o contrato inteiro.
+func (it confirmInvoiceItemRequest) cents() int64 {
+	if it.AmountCents != nil {
+		return *it.AmountCents
+	}
+	return reaisToCents(it.Amount)
 }
 
 type confirmInvoiceRequest struct {
@@ -197,7 +210,7 @@ func (h *FinanceExtractionHandler) Confirm(c *gin.Context) {
 		}
 		items = append(items, app.InvoiceItemInput{
 			Description:       it.Description,
-			AmountCents:       reaisToCents(it.Amount),
+			AmountCents:       it.cents(),
 			Date:              date,
 			Category:          it.Category,
 			InstallmentNumber: it.InstallmentNumber,
