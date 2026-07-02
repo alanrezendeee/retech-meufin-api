@@ -184,6 +184,7 @@ func main() {
 	finDocRepo := persistence.NewFinanceDocumentRepository(db)
 	finExtJobRepo := persistence.NewFinanceExtractionJobRepository(db)
 	finAccountRepo := persistence.NewFinanceAccountRepository(db)
+	finCategoryRepo := persistence.NewFinanceExpenseCategoryRepository(db)
 	finDashRepo := persistence.NewFinanceDashboardRepository(db)
 	memberDocRepo := persistence.NewHealthMemberDocumentRepository(db)
 
@@ -200,7 +201,8 @@ func main() {
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
 	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
-	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo)
+	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo)
+	finCategorySvc := appf.NewExpenseCategoryService(finCategoryRepo)
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
 	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor)
@@ -233,10 +235,30 @@ func main() {
 		FinanceDocumentService:   finDocSvc,
 		FinanceExtractionService: finExtSvc,
 		FinanceAccountService:    finAccountSvc,
+		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,
 		MemberDocumentService:    memberDocSvc,
 		PermsEnforcement:         permsMode,
 	})
+
+	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.
+	go func() {
+		run := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if n, err := financialEntrySvc.ExtendRecurrences(ctx); err != nil {
+				log.Warn("⚠️ Extensão de recorrências falhou", slog.String("error", err.Error()))
+			} else if n > 0 {
+				log.Info(fmt.Sprintf("🔁 Recorrências estendidas: %d ocorrências previstas criadas", n))
+			}
+		}
+		run()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			run()
+		}
+	}()
 
 	addr := ":" + cfg.AppPort
 	base := httpPublicBase(cfg.AppPort)

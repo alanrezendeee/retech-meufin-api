@@ -103,6 +103,8 @@ type financialEntryCreateJSON struct {
 	CardID            *uuid.UUID `json:"card_id"`
 	ParentID          *uuid.UUID `json:"parent_id"`
 	InstallmentsTotal *int       `json:"installments_total"`
+	// Lançamento retroativo: ocorrências vencidas nascem realizadas.
+	ConfirmPastOccurrences bool `json:"confirm_past_occurrences"`
 }
 
 func (h *FinancialEntryHandler) Create(c *gin.Context) {
@@ -126,6 +128,7 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
+		ConfirmPastOccurrences: body.ConfirmPastOccurrences,
 	})
 	if err != nil {
 		errrespond.Write(c, err)

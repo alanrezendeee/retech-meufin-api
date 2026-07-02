@@ -47,13 +47,16 @@ func TestGenerateOccurrences_Yearly(t *testing.T) {
 	}
 }
 
-func TestGenerateOccurrences_MonthlyJulToDec(t *testing.T) {
+func TestGenerateOccurrences_MonthlyRolling12(t *testing.T) {
 	due := time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC)
 	occ := GenerateOccurrences(baseEntry(due, RecurrenceMonthly))
-	if len(occ) != 6 {
-		t.Fatalf("monthly jul->dez: esperado 6 ocorrências, obtido %d", len(occ))
+	if len(occ) != 12 {
+		t.Fatalf("monthly rolling: esperado 12 ocorrências (cruzando o ano), obtido %d", len(occ))
 	}
-	wantMonths := []time.Month{time.July, time.August, time.September, time.October, time.November, time.December}
+	wantMonths := []time.Month{
+		time.July, time.August, time.September, time.October, time.November, time.December,
+		time.January, time.February, time.March, time.April, time.May, time.June,
+	}
 	for i, m := range wantMonths {
 		if occ[i].DueDate.Month() != m {
 			t.Fatalf("monthly: ocorrência %d esperava mês %v, obtido %v", i, m, occ[i].DueDate.Month())
@@ -100,9 +103,9 @@ func TestGenerateOccurrences_MonthlyDayOverflow(t *testing.T) {
 func TestGenerateOccurrences_Weekly(t *testing.T) {
 	due := time.Date(2026, time.December, 1, 0, 0, 0, 0, time.UTC)
 	occ := GenerateOccurrences(baseEntry(due, RecurrenceWeekly))
-	// 1, 8, 15, 22, 29 de dezembro = 5 ocorrências (5/jan já é ano seguinte).
-	if len(occ) != 5 {
-		t.Fatalf("weekly: esperado 5 ocorrências, obtido %d", len(occ))
+	// Rolling: 52 semanas a partir da due_date, cruzando o ano.
+	if len(occ) != 52 {
+		t.Fatalf("weekly rolling: esperado 52 ocorrências, obtido %d", len(occ))
 	}
 	prev := occ[0].DueDate
 	for i := 1; i < len(occ); i++ {
@@ -113,9 +116,8 @@ func TestGenerateOccurrences_Weekly(t *testing.T) {
 		prev = occ[i].DueDate
 	}
 	last := occ[len(occ)-1].DueDate
-	yearEnd := time.Date(2026, time.December, 31, 0, 0, 0, 0, time.UTC)
-	if last.After(yearEnd) {
-		t.Fatalf("weekly: última ocorrência %v passou de 31/dez", last)
+	if last.Year() != 2027 {
+		t.Fatalf("weekly rolling: última ocorrência deveria cruzar pra 2027, obtido %v", last)
 	}
 }
 
@@ -179,5 +181,30 @@ func TestGenerateInstallments_ClampJan31(t *testing.T) {
 	}
 	if occ[2].DueDate.Month() != time.March || occ[2].DueDate.Day() != 31 {
 		t.Fatalf("clamp: março esperava 31, obtido %v/%d", occ[2].DueDate.Month(), occ[2].DueDate.Day())
+	}
+}
+
+func TestNextOccurrencesAfter_Monthly(t *testing.T) {
+	group := uuid.New()
+	template := baseEntry(time.Date(2026, time.July, 15, 0, 0, 0, 0, time.UTC), RecurrenceMonthly)
+	template.RecurrenceGroupID = &group
+
+	after := time.Date(2027, time.June, 15, 0, 0, 0, 0, time.UTC) // fronteira atual do grupo
+	horizon := time.Date(2027, time.October, 15, 0, 0, 0, 0, time.UTC)
+	occ := NextOccurrencesAfter(template, after, horizon)
+
+	if len(occ) != 4 {
+		t.Fatalf("extensor: esperado 4 (jul..out/27), obtido %d", len(occ))
+	}
+	if !occ[0].DueDate.After(after) {
+		t.Fatalf("extensor: primeira ocorrência %v não é posterior à fronteira %v", occ[0].DueDate, after)
+	}
+	for i := range occ {
+		if occ[i].Status != StatusPrevista {
+			t.Fatalf("extensor: ocorrência %d deveria nascer prevista", i)
+		}
+		if occ[i].RecurrenceGroupID == nil || *occ[i].RecurrenceGroupID != group {
+			t.Fatalf("extensor: ocorrência %d fora do grupo", i)
+		}
 	}
 }

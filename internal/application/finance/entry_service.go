@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -9,11 +10,48 @@ import (
 )
 
 type FinancialEntryService struct {
-	repo dom.FinancialEntryRepository
+	repo       dom.FinancialEntryRepository
+	categories dom.ExpenseCategoryRepository
 }
 
-func NewFinancialEntryService(repo dom.FinancialEntryRepository) *FinancialEntryService {
-	return &FinancialEntryService{repo: repo}
+func NewFinancialEntryService(repo dom.FinancialEntryRepository, categories dom.ExpenseCategoryRepository) *FinancialEntryService {
+	return &FinancialEntryService{repo: repo, categories: categories}
+}
+
+// validateExpenseCategory garante que a categoria da despesa existe no
+// workspace (cadastro gerenciado) e que 'cartao' não é usado pelo usuário.
+func (s *FinancialEntryService) validateExpenseCategory(ctx context.Context, workspaceID uuid.UUID, kind dom.Kind, t *string) error {
+	if kind != dom.KindDebit || t == nil || *t == "" {
+		return nil
+	}
+	if *t == dom.CartaoCategorySlug {
+		return &dom.ValidationError{Msg: "'cartao' é reservado às faturas do sistema"}
+	}
+	ok, err := s.categories.ExistsBySlug(ctx, workspaceID, *t)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return &dom.ValidationError{Msg: "categoria de despesa não cadastrada no workspace"}
+	}
+	return nil
+}
+
+// normalizeCategory mapeia categoria vinda de fora (LLM) para o cadastro do
+// workspace; desconhecida vira o fallback 'outros'.
+func (s *FinancialEntryService) normalizeCategory(ctx context.Context, workspaceID uuid.UUID, t *string) *string {
+	fallback := dom.FallbackCategorySlug
+	if t == nil {
+		return &fallback
+	}
+	norm := strings.ToLower(strings.TrimSpace(*t))
+	if norm == "" || norm == dom.CartaoCategorySlug {
+		return &fallback
+	}
+	if ok, err := s.categories.ExistsBySlug(ctx, workspaceID, norm); err == nil && ok {
+		return &norm
+	}
+	return &fallback
 }
 
 type CreateEntryInput struct {
@@ -31,6 +69,10 @@ type CreateEntryInput struct {
 	CardID            *uuid.UUID
 	ParentID          *uuid.UUID
 	InstallmentsTotal *int
+	// ConfirmPastOccurrences: em lançamento retroativo (ex.: financiamento
+	// começado ano passado), as ocorrências com vencimento até hoje nascem
+	// 'realizada' — evita confirmar dezenas de parcelas uma a uma.
+	ConfirmPastOccurrences bool
 }
 
 type UpdateEntryInput struct {
@@ -78,6 +120,10 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		UpdatedAt:      now,
 	}
 
+	if err := s.validateExpenseCategory(ctx, in.WorkspaceID, base.Kind, base.Type); err != nil {
+		return nil, err
+	}
+
 	// Três caminhos mutuamente exclusivos: parcelado, recorrente ou único.
 	var occurrences []dom.FinancialEntry
 	switch {
@@ -96,6 +142,17 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		}
 		occurrences = dom.GenerateOccurrences(base)
 	}
+	if in.ConfirmPastOccurrences {
+		today := time.Now().UTC().Truncate(24 * time.Hour)
+		for i := range occurrences {
+			if occurrences[i].Status == dom.StatusPrevista && !occurrences[i].DueDate.After(today) {
+				occurrences[i].Status = dom.StatusRealizada
+				paidAt := occurrences[i].DueDate
+				occurrences[i].PaidAt = &paidAt
+			}
+		}
+	}
+
 	batch := make([]*dom.FinancialEntry, len(occurrences))
 	for i := range occurrences {
 		occ := occurrences[i]
@@ -194,7 +251,7 @@ func (s *FinancialEntryService) CreateInvoiceWithItems(ctx context.Context, in C
 			Status:            status,
 			AmountCents:       it.AmountCents,
 			DueDate:           due,
-			Type:              dom.NormalizeExpenseCategory(it.Category),
+			Type:              s.normalizeCategory(ctx, in.WorkspaceID, it.Category),
 			Description:       it.Description,
 			Recurrence:        dom.RecurrenceNone,
 			CardID:            in.CardID,
@@ -261,6 +318,9 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
+	if err := s.validateExpenseCategory(ctx, in.WorkspaceID, e.Kind, e.Type); err != nil {
+		return nil, err
+	}
 	if err := s.repo.Update(ctx, e); err != nil {
 		return nil, err
 	}
@@ -299,6 +359,44 @@ func (s *FinancialEntryService) setStatus(ctx context.Context, workspaceID, id u
 		return nil, err
 	}
 	return e, nil
+}
+
+// ExtendRecurrences completa o horizonte rolling (12 meses) de todos os
+// grupos de recorrência. Roda no boot e diariamente (ticker no main).
+// Grupo cuja ocorrência mais recente está cancelada é tratado como encerrado.
+func (s *FinancialEntryService) ExtendRecurrences(ctx context.Context) (int, error) {
+	frontiers, err := s.repo.ListRecurrenceFrontiers(ctx)
+	if err != nil {
+		return 0, err
+	}
+	now := time.Now().UTC()
+	horizon := now.AddDate(0, dom.RollingMonths, 0)
+	created := 0
+	for i := range frontiers {
+		f := frontiers[i]
+		if f.Status == dom.StatusCancelada {
+			continue // recorrência encerrada pelo usuário
+		}
+		if !f.DueDate.Before(horizon.AddDate(0, -1, 0)) {
+			continue // horizonte ainda completo
+		}
+		occs := dom.NextOccurrencesAfter(f, f.DueDate, horizon)
+		if len(occs) == 0 {
+			continue
+		}
+		batch := make([]*dom.FinancialEntry, len(occs))
+		ts := time.Now().UTC()
+		for j := range occs {
+			occs[j].CreatedAt = ts
+			occs[j].UpdatedAt = ts
+			batch[j] = &occs[j]
+		}
+		if err := s.repo.CreateBatch(ctx, batch); err != nil {
+			return created, err
+		}
+		created += len(batch)
+	}
+	return created, nil
 }
 
 // SettleEntryInput detalha a liquidação de um lançamento (pagamento de despesa

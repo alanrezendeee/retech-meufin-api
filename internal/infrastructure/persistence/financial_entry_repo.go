@@ -184,6 +184,26 @@ func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, 
 	return mapFinanceErr(res.Error)
 }
 
+// ListRecurrenceFrontiers retorna a ocorrência mais recente de cada grupo de
+// recorrência (todas as workspaces) — insumo do extensor rolling.
+func (r *FinancialEntryRepository) ListRecurrenceFrontiers(ctx context.Context) ([]dom.FinancialEntry, error) {
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Raw(`SELECT DISTINCT ON (recurrence_group_id) *
+		     FROM financial_entries
+		     WHERE recurrence <> 'none' AND recurrence_group_id IS NOT NULL AND deleted_at IS NULL
+		     ORDER BY recurrence_group_id, due_date DESC`).
+		Scan(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 // --- conversões ---
 
 func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {

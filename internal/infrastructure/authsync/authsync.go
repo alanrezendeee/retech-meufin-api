@@ -86,6 +86,8 @@ func buildManifest() manifest {
 		perm("finance.invoices", "manage", "Importar e confirmar faturas"),
 		perm("finance.accounts", "view", "Contas (corrente/poupança/carteira)"),
 		perm("finance.accounts", "manage", "Gerenciar contas"),
+		perm("finance.categories", "view", "Categorias de despesa"),
+		perm("finance.categories", "manage", "Gerenciar categorias de despesa"),
 
 		// Saúde Familiar
 		perm("health.dashboard", "view", "Dashboard de saúde"),
