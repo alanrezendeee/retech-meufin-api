@@ -98,8 +98,8 @@ type ListLabsResult struct {
 	Total int64
 }
 
-func (s *LabService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListLabsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *LabService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.LabFilter, limit, offset int) (*ListLabsResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

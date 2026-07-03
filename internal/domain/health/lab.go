@@ -41,11 +41,17 @@ func (l *Lab) Validate() error {
 	return nil
 }
 
+// LabFilter recorta a listagem da tela de gestão.
+type LabFilter struct {
+	Query  string // busca por nome (case-insensitive)
+	Active *bool
+}
+
 // LabRepository abstrai a persistência dos laboratórios, sempre no escopo do tenant.
 type LabRepository interface {
 	Create(ctx context.Context, l *Lab) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*Lab, error)
 	Update(ctx context.Context, l *Lab) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]Lab, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter LabFilter, limit, offset int) ([]Lab, int64, error)
 }

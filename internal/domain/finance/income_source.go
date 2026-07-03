@@ -58,11 +58,18 @@ func (s *IncomeSource) Validate() error {
 	return nil
 }
 
+// IncomeSourceFilter recorta a listagem da tela de gestão.
+type IncomeSourceFilter struct {
+	Query  string // busca por nome (case-insensitive)
+	Kind   string
+	Active *bool
+}
+
 // IncomeSourceRepository persiste fontes de receita com escopo de workspace.
 type IncomeSourceRepository interface {
 	Create(ctx context.Context, s *IncomeSource) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*IncomeSource, error)
 	Update(ctx context.Context, s *IncomeSource) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]IncomeSource, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter IncomeSourceFilter, limit, offset int) ([]IncomeSource, int64, error)
 }

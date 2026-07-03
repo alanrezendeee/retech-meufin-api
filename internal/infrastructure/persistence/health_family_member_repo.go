@@ -67,9 +67,18 @@ func (r *HealthFamilyMemberRepository) SoftDelete(ctx context.Context, workspace
 	return nil
 }
 
-func (r *HealthFamilyMemberRepository) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.FamilyMember, int64, error) {
+func (r *HealthFamilyMemberRepository) List(ctx context.Context, workspaceID uuid.UUID, filter dom.FamilyMemberFilter, limit, offset int) ([]dom.FamilyMember, int64, error) {
 	var total int64
 	q := r.db.WithContext(ctx).Model(&HealthFamilyMemberModel{}).Where("workspace_id = ?", workspaceID)
+	if filter.Query != "" {
+		q = q.Where("full_name ILIKE ?", "%"+filter.Query+"%")
+	}
+	if filter.Relationship != "" {
+		q = q.Where("relationship = ?", filter.Relationship)
+	}
+	if filter.Active != nil {
+		q = q.Where("active = ?", *filter.Active)
+	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, mapHealthErr(err)
 	}

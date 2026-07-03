@@ -128,6 +128,7 @@ func (e *FinancialEntry) Validate() error {
 
 // FinancialEntryFilter filtra a listagem de lançamentos.
 type FinancialEntryFilter struct {
+	Query          string // busca na descrição (case-insensitive)
 	Kind           *string
 	Status         *string
 	FamilyMemberID *uuid.UUID

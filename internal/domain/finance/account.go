@@ -55,11 +55,18 @@ func (a *Account) Validate() error {
 	return nil
 }
 
+// AccountFilter recorta a listagem da tela de gestão.
+type AccountFilter struct {
+	Query  string // busca por nome ou banco (case-insensitive)
+	Kind   string
+	Active *bool
+}
+
 // AccountRepository persiste contas com escopo de workspace.
 type AccountRepository interface {
 	Create(ctx context.Context, a *Account) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*Account, error)
 	Update(ctx context.Context, a *Account) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]Account, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter AccountFilter, limit, offset int) ([]Account, int64, error)
 }

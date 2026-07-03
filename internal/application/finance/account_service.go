@@ -70,8 +70,8 @@ type ListAccountsResult struct {
 	Total int64
 }
 
-func (s *AccountService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListAccountsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *AccountService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.AccountFilter, limit, offset int) (*ListAccountsResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

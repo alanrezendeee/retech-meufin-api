@@ -207,13 +207,20 @@ func ComputeInterpretation(value *float64, min, max *float64) *string {
 	return &res
 }
 
+// ExamResultFilter recorta a listagem da tela de gestão.
+type ExamResultFilter struct {
+	Query          string // busca no resumo (case-insensitive)
+	FamilyMemberID *uuid.UUID
+	Status         string
+}
+
 // ExamResultRepository abstrai a persistência de resultados e seus itens, escopo do tenant.
 type ExamResultRepository interface {
 	Create(ctx context.Context, r *ExamResult) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*ExamResult, error)
 	Update(ctx context.Context, r *ExamResult) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]ExamResult, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter ExamResultFilter, limit, offset int) ([]ExamResult, int64, error)
 
 	AddItem(ctx context.Context, workspaceID uuid.UUID, item *ExamResultItem) error
 	UpdateItem(ctx context.Context, item *ExamResultItem) error

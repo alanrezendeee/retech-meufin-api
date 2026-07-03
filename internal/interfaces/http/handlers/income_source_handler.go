@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -98,7 +99,12 @@ func (h *IncomeSourceHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, limit, offset)
+	filter := dom.IncomeSourceFilter{
+		Query:  strings.TrimSpace(c.Query("query")),
+		Kind:   c.Query("kind"),
+		Active: boolQuery(c, "active"),
+	}
+	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return

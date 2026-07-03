@@ -83,8 +83,18 @@ func (r *FinanceAccountRepository) GetByID(ctx context.Context, workspaceID, id 
 	return modelToFinanceAccount(&m), nil
 }
 
-func (r *FinanceAccountRepository) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Account, int64, error) {
+func (r *FinanceAccountRepository) List(ctx context.Context, workspaceID uuid.UUID, filter dom.AccountFilter, limit, offset int) ([]dom.Account, int64, error) {
 	base := r.db.WithContext(ctx).Model(&FinanceAccountModel{}).Where("workspace_id = ?", workspaceID)
+	if filter.Query != "" {
+		like := "%" + filter.Query + "%"
+		base = base.Where("name ILIKE ? OR bank_name ILIKE ?", like, like)
+	}
+	if filter.Kind != "" {
+		base = base.Where("kind = ?", filter.Kind)
+	}
+	if filter.Active != nil {
+		base = base.Where("active = ?", *filter.Active)
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
