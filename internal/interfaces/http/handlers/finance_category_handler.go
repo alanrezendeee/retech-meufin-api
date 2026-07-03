@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +59,25 @@ func (h *FinanceCategoryHandler) List(c *gin.Context) {
 	if err != nil {
 		errrespond.Write(c, err)
 		return
+	}
+	// Filtros opcionais da tela de gestão. O slug é sem acento, então
+	// buscar por nome OU slug dá matching acento-insensível de graça.
+	if q := strings.ToLower(strings.TrimSpace(c.Query("query"))); q != "" {
+		cats = slices.DeleteFunc(cats, func(cat dom.ExpenseCategory) bool {
+			return !strings.Contains(strings.ToLower(cat.Name), q) &&
+				!strings.Contains(cat.Slug, q)
+		})
+	}
+	if g := c.Query("group"); g != "" {
+		cats = slices.DeleteFunc(cats, func(cat dom.ExpenseCategory) bool {
+			return cat.GroupSlug != g
+		})
+	}
+	if a := c.Query("active"); a != "" {
+		want := a == "true"
+		cats = slices.DeleteFunc(cats, func(cat dom.ExpenseCategory) bool {
+			return cat.Active != want
+		})
 	}
 	total := len(cats)
 	// limit/offset opcionais: a tela de gestão pagina; os selects (sem
