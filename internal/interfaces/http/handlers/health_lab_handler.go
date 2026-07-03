@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -184,7 +185,11 @@ func (h *HealthLabHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, limit, offset)
+	filter := dom.LabFilter{
+		Query:  strings.TrimSpace(c.Query("query")),
+		Active: boolQuery(c, "active"),
+	}
+	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return

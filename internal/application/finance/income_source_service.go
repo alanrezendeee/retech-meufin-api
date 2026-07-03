@@ -67,8 +67,8 @@ type ListIncomeSourcesResult struct {
 	Total int64
 }
 
-func (s *IncomeSourceService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListIncomeSourcesResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *IncomeSourceService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.IncomeSourceFilter, limit, offset int) (*ListIncomeSourcesResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

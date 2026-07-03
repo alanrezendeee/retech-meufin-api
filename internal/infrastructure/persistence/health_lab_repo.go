@@ -68,9 +68,15 @@ func (r *HealthLabRepository) SoftDelete(ctx context.Context, workspaceID, id uu
 	return nil
 }
 
-func (r *HealthLabRepository) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Lab, int64, error) {
+func (r *HealthLabRepository) List(ctx context.Context, workspaceID uuid.UUID, filter dom.LabFilter, limit, offset int) ([]dom.Lab, int64, error) {
 	var total int64
 	q := r.db.WithContext(ctx).Model(&HealthLabModel{}).Where("workspace_id = ?", workspaceID)
+	if filter.Query != "" {
+		q = q.Where("name ILIKE ?", "%"+filter.Query+"%")
+	}
+	if filter.Active != nil {
+		q = q.Where("active = ?", *filter.Active)
+	}
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, mapHealthErr(err)
 	}

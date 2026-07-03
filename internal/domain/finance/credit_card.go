@@ -47,11 +47,17 @@ func (c *CreditCard) Validate() error {
 	return nil
 }
 
+// CreditCardFilter recorta a listagem da tela de gestão.
+type CreditCardFilter struct {
+	Query  string // busca por nome (case-insensitive)
+	Active *bool
+}
+
 // CreditCardRepository persiste cartões de crédito com escopo de workspace.
 type CreditCardRepository interface {
 	Create(ctx context.Context, c *CreditCard) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*CreditCard, error)
 	Update(ctx context.Context, c *CreditCard) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]CreditCard, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter CreditCardFilter, limit, offset int) ([]CreditCard, int64, error)
 }

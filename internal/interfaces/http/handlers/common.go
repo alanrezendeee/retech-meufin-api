@@ -29,3 +29,17 @@ func pagination(c *gin.Context) (limit, offset int) {
 	}
 	return limit, offset
 }
+
+// boolQuery lê um query param booleano ("true"/"false"); nil quando ausente
+// ou inválido — filtro tri-state (todos / só true / só false).
+func boolQuery(c *gin.Context, name string) *bool {
+	switch c.Query(name) {
+	case "true":
+		v := true
+		return &v
+	case "false":
+		v := false
+		return &v
+	}
+	return nil
+}

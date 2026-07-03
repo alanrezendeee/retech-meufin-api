@@ -104,6 +104,9 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	if filter.Kind != nil && *filter.Kind != "" {
 		base = base.Where("kind = ?", *filter.Kind)
 	}
+	if filter.Query != "" {
+		base = base.Where("description ILIKE ?", "%"+filter.Query+"%")
+	}
 	if filter.Status != nil && *filter.Status != "" {
 		base = base.Where("status = ?", *filter.Status)
 	}

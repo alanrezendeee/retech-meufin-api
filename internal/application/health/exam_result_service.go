@@ -188,8 +188,8 @@ type ListExamResultsResult struct {
 	Total int64
 }
 
-func (s *ExamResultService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListExamResultsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *ExamResultService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.ExamResultFilter, limit, offset int) (*ListExamResultsResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

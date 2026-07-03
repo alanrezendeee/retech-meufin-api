@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -290,7 +291,19 @@ func (h *HealthExamResultHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, limit, offset)
+	filter := dom.ExamResultFilter{
+		Query:  strings.TrimSpace(c.Query("query")),
+		Status: c.Query("status"),
+	}
+	if v := c.Query("family_member_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "family_member_id inválido")
+			return
+		}
+		filter.FamilyMemberID = &id
+	}
+	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return

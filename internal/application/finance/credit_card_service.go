@@ -73,8 +73,8 @@ type ListCreditCardsResult struct {
 	Total int64
 }
 
-func (s *CreditCardService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListCreditCardsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *CreditCardService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.CreditCardFilter, limit, offset int) (*ListCreditCardsResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

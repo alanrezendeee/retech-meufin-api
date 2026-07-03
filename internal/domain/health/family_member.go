@@ -90,11 +90,18 @@ func (f *FamilyMember) Validate() error {
 	return nil
 }
 
+// FamilyMemberFilter recorta a listagem da tela de gestão.
+type FamilyMemberFilter struct {
+	Query        string // busca por nome (case-insensitive)
+	Relationship string
+	Active       *bool
+}
+
 // FamilyMemberRepository abstrai a persistência de membros da família (workspace-scoped).
 type FamilyMemberRepository interface {
 	Create(ctx context.Context, f *FamilyMember) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*FamilyMember, error)
 	Update(ctx context.Context, f *FamilyMember) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]FamilyMember, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter FamilyMemberFilter, limit, offset int) ([]FamilyMember, int64, error)
 }

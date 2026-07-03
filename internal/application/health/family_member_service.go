@@ -104,8 +104,8 @@ type ListFamilyMembersResult struct {
 	Total int64
 }
 
-func (s *FamilyMemberService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListFamilyMembersResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *FamilyMemberService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.FamilyMemberFilter, limit, offset int) (*ListFamilyMembersResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -169,6 +170,7 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 	limit, offset := pagination(c)
 
 	var filter dom.FinancialEntryFilter
+	filter.Query = strings.TrimSpace(c.Query("query"))
 	if v := c.Query("kind"); v != "" {
 		filter.Kind = &v
 	}
