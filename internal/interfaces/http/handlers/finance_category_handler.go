@@ -58,6 +58,20 @@ func (h *FinanceCategoryHandler) List(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
+	total := len(cats)
+	// limit/offset opcionais: a tela de gestão pagina; os selects (sem
+	// params) continuam recebendo o cadastro inteiro.
+	if v := c.Query("limit"); v != "" {
+		limit, offset := pagination(c)
+		if offset > len(cats) {
+			offset = len(cats)
+		}
+		end := offset + limit
+		if end > len(cats) {
+			end = len(cats)
+		}
+		cats = cats[offset:end]
+	}
 	items := make([]expenseCategoryResponse, len(cats))
 	for i := range cats {
 		items[i] = mapExpenseCategory(&cats[i])
@@ -70,7 +84,7 @@ func (h *FinanceCategoryHandler) List(c *gin.Context) {
 			"description": dom.ExpenseGroupDescriptions[slug],
 		})
 	}
-	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items), "groups": groups})
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": total, "groups": groups})
 }
 
 type expenseCategoryCreateJSON struct {

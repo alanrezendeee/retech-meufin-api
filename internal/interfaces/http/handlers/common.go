@@ -7,7 +7,9 @@ import (
 )
 
 const defaultLimit = 20
-const maxLimit = 100
+
+// maxLimit acompanha a maior opção de "itens por página" do front (500).
+const maxLimit = 500
 
 func pagination(c *gin.Context) (limit, offset int) {
 	limit = defaultLimit
