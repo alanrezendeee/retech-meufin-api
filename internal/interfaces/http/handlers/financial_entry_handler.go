@@ -47,6 +47,7 @@ type financialEntryResponse struct {
 	PaymentMethod     *string    `json:"payment_method"`
 	PaymentAccountID  *uuid.UUID `json:"payment_account_id"`
 	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
+	SupplierID        *uuid.UUID `json:"supplier_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
 }
@@ -85,6 +86,7 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		PaymentMethod:     paymentMethod,
 		PaymentAccountID:  e.PaymentAccountID,
 		PaymentCardID:     e.PaymentCardID,
+		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
@@ -104,6 +106,7 @@ type financialEntryCreateJSON struct {
 	CardID            *uuid.UUID `json:"card_id"`
 	ParentID          *uuid.UUID `json:"parent_id"`
 	InstallmentsTotal *int       `json:"installments_total"`
+	SupplierID        *uuid.UUID `json:"supplier_id"`
 	// Lançamento retroativo: ocorrências vencidas nascem realizadas.
 	ConfirmPastOccurrences bool `json:"confirm_past_occurrences"`
 }
@@ -129,7 +132,7 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
-		ConfirmPastOccurrences: body.ConfirmPastOccurrences,
+		SupplierID: body.SupplierID, ConfirmPastOccurrences: body.ConfirmPastOccurrences,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -252,6 +255,14 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 		}
 		filter.DueTo = &d
 	}
+	if v := c.Query("supplier_id"); v != "" {
+		sID, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "supplier_id inválido")
+			return
+		}
+		filter.SupplierID = &sID
+	}
 	if v := c.Query("overdue"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -284,6 +295,7 @@ type financialEntryUpdateJSON struct {
 	Description    string     `json:"description"`
 	Recurrence     string     `json:"recurrence"`
 	Notes          *string    `json:"notes"`
+	SupplierID     *uuid.UUID `json:"supplier_id"`
 }
 
 func (h *FinancialEntryHandler) Update(c *gin.Context) {
@@ -311,6 +323,7 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		WorkspaceID: ws, ID: id, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
+		SupplierID: body.SupplierID,
 	})
 	if err != nil {
 		errrespond.Write(c, err)

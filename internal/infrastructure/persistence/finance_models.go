@@ -37,6 +37,23 @@ type CreditCardModel struct {
 
 func (CreditCardModel) TableName() string { return "credit_cards" }
 
+type SupplierModel struct {
+	ID                 uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	WorkspaceID        *uuid.UUID `gorm:"type:uuid"`
+	Name               string     `gorm:"size:150;not null"`
+	Category           string     `gorm:"size:30;not null;default:outros"`
+	DefaultBillingType *string    `gorm:"column:default_billing_type;size:20"`
+	PixKey             *string    `gorm:"column:pix_key;size:150"`
+	BankName           *string    `gorm:"column:bank_name;size:100"`
+	Notes              *string    `gorm:"type:text"`
+	Active             bool       `gorm:"not null;default:true"`
+	CreatedAt          time.Time  `gorm:"not null"`
+	UpdatedAt          time.Time  `gorm:"not null"`
+	DeletedAt          gorm.DeletedAt
+}
+
+func (SupplierModel) TableName() string { return "suppliers" }
+
 type FinancialEntryModel struct {
 	ID                uuid.UUID  `gorm:"type:uuid;primaryKey"`
 	WorkspaceID       uuid.UUID  `gorm:"type:uuid;not null;index:idx_financial_entries_workspace"`
@@ -60,6 +77,7 @@ type FinancialEntryModel struct {
 	PaymentMethod     *string    `gorm:"column:payment_method;size:20"`
 	PaymentAccountID  *uuid.UUID `gorm:"column:payment_account_id;type:uuid"`
 	PaymentCardID     *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
+	SupplierID        *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
 	CreatedAt         time.Time  `gorm:"not null"`
 	UpdatedAt         time.Time  `gorm:"not null"`
 	DeletedAt         gorm.DeletedAt

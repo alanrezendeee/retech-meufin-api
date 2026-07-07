@@ -178,6 +178,7 @@ func main() {
 		log.Warn("⚠️ Extração LLM desabilitada — import de fatura/exames por PDF indisponível (EXTRACTION_PROVIDER, EXTRACTION_API_KEY)")
 	}
 
+	supplierRepo := persistence.NewSupplierRepository(db)
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
 	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
 	creditCardRepo := persistence.NewCreditCardRepository(db)
@@ -200,6 +201,7 @@ func main() {
 	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
 	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
+	supplierSvc := appf.NewSupplierService(supplierRepo)
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo)
 	finCategorySvc := appf.NewExpenseCategoryService(finCategoryRepo)
@@ -237,6 +239,7 @@ func main() {
 		FinanceAccountService:    finAccountSvc,
 		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,
+		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
 		PermsEnforcement:         permsMode,
 	})

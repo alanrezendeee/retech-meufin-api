@@ -69,6 +69,7 @@ type CreateEntryInput struct {
 	CardID            *uuid.UUID
 	ParentID          *uuid.UUID
 	InstallmentsTotal *int
+	SupplierID        *uuid.UUID
 	// ConfirmPastOccurrences: em lançamento retroativo (ex.: financiamento
 	// começado ano passado), as ocorrências com vencimento até hoje nascem
 	// 'realizada' — evita confirmar dezenas de parcelas uma a uma.
@@ -88,6 +89,7 @@ type UpdateEntryInput struct {
 	Description    string
 	Recurrence     string
 	Notes          *string
+	SupplierID     *uuid.UUID
 }
 
 // Create monta o lançamento base, gera as ocorrências recorrentes e persiste em lote.
@@ -116,6 +118,7 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		CardID:         in.CardID,
 		ParentID:       in.ParentID,
 		Notes:          in.Notes,
+		SupplierID:     in.SupplierID,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -314,6 +317,7 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 		e.Recurrence = dom.Recurrence(in.Recurrence)
 	}
 	e.Notes = in.Notes
+	e.SupplierID = in.SupplierID
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
 		return nil, err

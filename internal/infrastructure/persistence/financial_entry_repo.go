@@ -63,6 +63,7 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"payment_method":     model.PaymentMethod,
 			"payment_account_id": model.PaymentAccountID,
 			"payment_card_id":    model.PaymentCardID,
+			"supplier_id":        model.SupplierID,
 			"updated_at":         model.UpdatedAt,
 		})
 	if res.Error != nil {
@@ -155,6 +156,9 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	} else if filter.Month != nil {
 		base = base.Where("EXTRACT(MONTH FROM due_date) = ?", *filter.Month)
 	}
+	if filter.SupplierID != nil {
+		base = base.Where("supplier_id = ?", *filter.SupplierID)
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
@@ -233,6 +237,7 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		PaymentMethod:     paymentMethodToString(e.PaymentMethod),
 		PaymentAccountID:  e.PaymentAccountID,
 		PaymentCardID:     e.PaymentCardID,
+		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
 	}
@@ -278,6 +283,7 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		PaymentMethod:     stringToPaymentMethod(m.PaymentMethod),
 		PaymentAccountID:  m.PaymentAccountID,
 		PaymentCardID:     m.PaymentCardID,
+		SupplierID:        m.SupplierID,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
 	}
