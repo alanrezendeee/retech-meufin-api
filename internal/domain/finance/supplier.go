@@ -24,6 +24,7 @@ const (
 	SupplierCategoryAlimentacao      SupplierCategory = "alimentacao"
 	SupplierCategoryTransporte       SupplierCategory = "transporte"
 	SupplierCategoryAcademia         SupplierCategory = "academia"
+	SupplierCategoryMoradia          SupplierCategory = "moradia"
 	SupplierCategoryTecnologia       SupplierCategory = "tecnologia"
 	SupplierCategoryPet              SupplierCategory = "pet"
 	SupplierCategoryJuridico         SupplierCategory = "juridico"
@@ -59,6 +60,7 @@ type Supplier struct {
 	Category           SupplierCategory
 	DefaultBillingType *SupplierBillingType
 	PixKey             *string
+	PixKeyHolder       *string
 	BankName           *string
 	BankAgency         *string
 	BankAccount        *string
@@ -86,7 +88,7 @@ func (s *Supplier) Validate() error {
 		SupplierCategoryVarejo, SupplierCategoryFarmacia, SupplierCategorySaude,
 		SupplierCategorySeguros, SupplierCategoryFinanceiro, SupplierCategoryEducacao,
 		SupplierCategoryAlimentacao, SupplierCategoryTransporte, SupplierCategoryAcademia,
-		SupplierCategoryTecnologia, SupplierCategoryPet, SupplierCategoryJuridico,
+		SupplierCategoryMoradia, SupplierCategoryTecnologia, SupplierCategoryPet, SupplierCategoryJuridico,
 		SupplierCategoryContabil, SupplierCategoryCondominio, SupplierCategoryVestuario,
 		SupplierCategoryBeleza, SupplierCategoryViagem, SupplierCategoryEntretenimento,
 		SupplierCategoryOutros:

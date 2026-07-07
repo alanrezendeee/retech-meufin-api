@@ -22,6 +22,7 @@ type CreateSupplierInput struct {
 	Category           string
 	DefaultBillingType *string
 	PixKey             *string
+	PixKeyHolder       *string
 	BankName           *string
 	BankAgency         *string
 	BankAccount        *string
@@ -37,6 +38,7 @@ type UpdateSupplierInput struct {
 	Category           string
 	DefaultBillingType *string
 	PixKey             *string
+	PixKeyHolder       *string
 	BankName           *string
 	BankAgency         *string
 	BankAccount        *string
@@ -64,6 +66,7 @@ func (s *SupplierService) Create(ctx context.Context, in CreateSupplierInput) (*
 		Category:           dom.SupplierCategory(in.Category),
 		DefaultBillingType: billing,
 		PixKey:             in.PixKey,
+		PixKeyHolder:       in.PixKeyHolder,
 		BankName:           in.BankName,
 		BankAgency:         in.BankAgency,
 		BankAccount:        in.BankAccount,
@@ -116,6 +119,7 @@ func (s *SupplierService) Update(ctx context.Context, in UpdateSupplierInput) (*
 		sup.DefaultBillingType = nil
 	}
 	sup.PixKey = in.PixKey
+	sup.PixKeyHolder = in.PixKeyHolder
 	sup.BankName = in.BankName
 	sup.BankAgency = in.BankAgency
 	sup.BankAccount = in.BankAccount

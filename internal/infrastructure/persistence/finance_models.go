@@ -44,6 +44,7 @@ type SupplierModel struct {
 	Category           string     `gorm:"size:30;not null;default:outros"`
 	DefaultBillingType *string    `gorm:"column:default_billing_type;size:20"`
 	PixKey             *string    `gorm:"column:pix_key;size:150"`
+	PixKeyHolder       *string    `gorm:"column:pix_key_holder;size:150"`
 	BankName           *string    `gorm:"column:bank_name;size:100"`
 	BankAgency         *string    `gorm:"column:bank_agency;size:20"`
 	BankAccount        *string    `gorm:"column:bank_account;size:30"`
