@@ -30,6 +30,9 @@ type supplierResponse struct {
 	DefaultBillingType *string    `json:"default_billing_type"`
 	PixKey             *string    `json:"pix_key"`
 	BankName           *string    `json:"bank_name"`
+	BankAgency         *string    `json:"bank_agency"`
+	BankAccount        *string    `json:"bank_account"`
+	BankAccountType    *string    `json:"bank_account_type"`
 	Notes              *string    `json:"notes"`
 	Active             bool       `json:"active"`
 	CreatedAt          string     `json:"created_at"`
@@ -51,6 +54,9 @@ func mapSupplier(s *dom.Supplier) supplierResponse {
 		DefaultBillingType: billing,
 		PixKey:             s.PixKey,
 		BankName:           s.BankName,
+		BankAgency:         s.BankAgency,
+		BankAccount:        s.BankAccount,
+		BankAccountType:    s.BankAccountType,
 		Notes:              s.Notes,
 		Active:             s.Active,
 		CreatedAt:          s.CreatedAt.UTC().Format(time.RFC3339Nano),
@@ -64,6 +70,9 @@ type supplierCreateJSON struct {
 	DefaultBillingType *string `json:"default_billing_type"`
 	PixKey             *string `json:"pix_key"`
 	BankName           *string `json:"bank_name"`
+	BankAgency         *string `json:"bank_agency"`
+	BankAccount        *string `json:"bank_account"`
+	BankAccountType    *string `json:"bank_account_type"`
 	Notes              *string `json:"notes"`
 	Active             *bool   `json:"active"`
 }
@@ -86,6 +95,9 @@ func (h *SupplierHandler) Create(c *gin.Context) {
 		DefaultBillingType: body.DefaultBillingType,
 		PixKey:             body.PixKey,
 		BankName:           body.BankName,
+		BankAgency:         body.BankAgency,
+		BankAccount:        body.BankAccount,
+		BankAccountType:    body.BankAccountType,
 		Notes:              body.Notes,
 		Active:             body.Active,
 	})
@@ -145,6 +157,9 @@ type supplierUpdateJSON struct {
 	DefaultBillingType *string `json:"default_billing_type"`
 	PixKey             *string `json:"pix_key"`
 	BankName           *string `json:"bank_name"`
+	BankAgency         *string `json:"bank_agency"`
+	BankAccount        *string `json:"bank_account"`
+	BankAccountType    *string `json:"bank_account_type"`
 	Notes              *string `json:"notes"`
 	Active             *bool   `json:"active"`
 }
@@ -173,6 +188,9 @@ func (h *SupplierHandler) Update(c *gin.Context) {
 		DefaultBillingType: body.DefaultBillingType,
 		PixKey:             body.PixKey,
 		BankName:           body.BankName,
+		BankAgency:         body.BankAgency,
+		BankAccount:        body.BankAccount,
+		BankAccountType:    body.BankAccountType,
 		Notes:              body.Notes,
 		Active:             body.Active,
 	})

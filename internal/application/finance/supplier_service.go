@@ -23,6 +23,9 @@ type CreateSupplierInput struct {
 	DefaultBillingType *string
 	PixKey             *string
 	BankName           *string
+	BankAgency         *string
+	BankAccount        *string
+	BankAccountType    *string
 	Notes              *string
 	Active             *bool
 }
@@ -35,6 +38,9 @@ type UpdateSupplierInput struct {
 	DefaultBillingType *string
 	PixKey             *string
 	BankName           *string
+	BankAgency         *string
+	BankAccount        *string
+	BankAccountType    *string
 	Notes              *string
 	Active             *bool
 }
@@ -59,6 +65,9 @@ func (s *SupplierService) Create(ctx context.Context, in CreateSupplierInput) (*
 		DefaultBillingType: billing,
 		PixKey:             in.PixKey,
 		BankName:           in.BankName,
+		BankAgency:         in.BankAgency,
+		BankAccount:        in.BankAccount,
+		BankAccountType:    in.BankAccountType,
 		Notes:              in.Notes,
 		Active:             active,
 		CreatedAt:          now,
@@ -108,6 +117,9 @@ func (s *SupplierService) Update(ctx context.Context, in UpdateSupplierInput) (*
 	}
 	sup.PixKey = in.PixKey
 	sup.BankName = in.BankName
+	sup.BankAgency = in.BankAgency
+	sup.BankAccount = in.BankAccount
+	sup.BankAccountType = in.BankAccountType
 	sup.Notes = in.Notes
 	if in.Active != nil {
 		sup.Active = *in.Active
