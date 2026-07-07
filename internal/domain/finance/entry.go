@@ -82,6 +82,7 @@ type FinancialEntry struct {
 	PaymentMethod    *PaymentMethod
 	PaymentAccountID *uuid.UUID
 	PaymentCardID    *uuid.UUID
+	SupplierID       *uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
@@ -139,10 +140,11 @@ type FinancialEntryFilter struct {
 	ParentID       *uuid.UUID
 	TopLevelOnly   bool
 	// Contas do dia: recortes por vencimento.
-	DueOn   *time.Time // due_date == dia (ignora hora)
-	DueFrom *time.Time // due_date >= dia
-	DueTo   *time.Time // due_date <= dia
-	Overdue bool       // due_date < hoje AND status = prevista
+	DueOn      *time.Time // due_date == dia (ignora hora)
+	DueFrom    *time.Time // due_date >= dia
+	DueTo      *time.Time // due_date <= dia
+	Overdue    bool       // due_date < hoje AND status = prevista
+	SupplierID *uuid.UUID // filtra pelo fornecedor vinculado
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.

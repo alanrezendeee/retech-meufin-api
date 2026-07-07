@@ -41,6 +41,7 @@ type RouterDeps struct {
 	FinanceAccountService    *appf.AccountService
 	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
+	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
 	PermsEnforcement         middleware.EnforcementMode
 }
@@ -160,6 +161,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	}
 
 	// Financeiro — lançamento único (crédito/débito) + fontes de receita
+	supplierH := handlers.NewSupplierHandler(d.SupplierService)
 	srcH := handlers.NewIncomeSourceHandler(d.IncomeSourceService)
 	entH := handlers.NewFinancialEntryHandler(d.FinancialEntryService)
 	cardH := handlers.NewCreditCardHandler(d.CreditCardService)
@@ -168,6 +170,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	finExtH := handlers.NewFinanceExtractionHandler(d.FinanceExtractionService, d.FinanceDocumentService, d.FinancialEntryService)
 	finance := v1.Group("/finance", middleware.RequireModule("finance", d.PermsEnforcement))
 	{
+		finance.GET("/suppliers", supplierH.List)
+		finance.POST("/suppliers", supplierH.Create)
+		finance.GET("/suppliers/:id", supplierH.Get)
+		finance.PUT("/suppliers/:id", supplierH.Update)
+		finance.DELETE("/suppliers/:id", supplierH.Delete)
+
 		finance.GET("/income-sources", srcH.List)
 		finance.POST("/income-sources", srcH.Create)
 		finance.GET("/income-sources/:id", srcH.Get)
