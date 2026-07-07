@@ -252,9 +252,13 @@ Estados da página:
 
 ---
 
+## Decisões
+
+1. **Nome do membro:** expor o nome completo do membro na página pública (não apenas iniciais).
+2. **Notificação de acesso:** sim — notificar o dono do workspace quando o link for acessado pela primeira vez (canal a definir: push ou e-mail).
+3. **Limite de links ativos por workspace:** máximo de **50 links ativos** por tenant. Será necessária uma área de gerenciamento para: listar links ativos, ver contagem de acessos, revogar links manualmente e filtrar por status (ativo/expirado/revogado). Implementar durante Sprint 2 (frontend admin).
+4. **URL pública:** domínio do próprio app, via variável de ambiente `PUBLIC_BASE_URL` obrigatória (padrão do projeto). A API monta a URL completa no response de criação do link.
+
 ## Open Questions
 
-1. **Nome do membro:** expor apenas primeiro nome, ou iniciais? (ex.: "Ana M.")
-2. **Notificação de acesso:** avisar o usuário por push/e-mail quando o link for acessado pela primeira vez?
-3. **Limite de links ativos por workspace:** evitar abuso (ex.: máx. 50 links ativos)?
-4. **WhatsApp Business API:** integração futura para envio programático, não só link deep?
+1. **WhatsApp Business API:** integração futura para envio programático, não só link deep?
