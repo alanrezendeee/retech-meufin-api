@@ -24,6 +24,15 @@ const (
 	SupplierCategoryAlimentacao      SupplierCategory = "alimentacao"
 	SupplierCategoryTransporte       SupplierCategory = "transporte"
 	SupplierCategoryAcademia         SupplierCategory = "academia"
+	SupplierCategoryTecnologia       SupplierCategory = "tecnologia"
+	SupplierCategoryPet              SupplierCategory = "pet"
+	SupplierCategoryJuridico         SupplierCategory = "juridico"
+	SupplierCategoryContabil         SupplierCategory = "contabil"
+	SupplierCategoryCondominio       SupplierCategory = "condominio"
+	SupplierCategoryVestuario        SupplierCategory = "vestuario"
+	SupplierCategoryBeleza           SupplierCategory = "beleza"
+	SupplierCategoryViagem           SupplierCategory = "viagem"
+	SupplierCategoryEntretenimento   SupplierCategory = "entretenimento"
 	SupplierCategoryOutros           SupplierCategory = "outros"
 )
 
@@ -37,6 +46,7 @@ const (
 	SupplierBillingDebitoAutomtico SupplierBillingType = "debito_automatico"
 	SupplierBillingDebito          SupplierBillingType = "debito"
 	SupplierBillingTransferencia   SupplierBillingType = "transferencia"
+	SupplierBillingDescontoFolha   SupplierBillingType = "desconto_folha"
 )
 
 // Supplier é um credor/payee que pode ser vinculado a despesas.
@@ -50,6 +60,9 @@ type Supplier struct {
 	DefaultBillingType *SupplierBillingType
 	PixKey             *string
 	BankName           *string
+	BankAgency         *string
+	BankAccount        *string
+	BankAccountType    *string
 	Notes              *string
 	Active             bool
 	CreatedAt          time.Time
@@ -73,6 +86,9 @@ func (s *Supplier) Validate() error {
 		SupplierCategoryVarejo, SupplierCategoryFarmacia, SupplierCategorySaude,
 		SupplierCategorySeguros, SupplierCategoryFinanceiro, SupplierCategoryEducacao,
 		SupplierCategoryAlimentacao, SupplierCategoryTransporte, SupplierCategoryAcademia,
+		SupplierCategoryTecnologia, SupplierCategoryPet, SupplierCategoryJuridico,
+		SupplierCategoryContabil, SupplierCategoryCondominio, SupplierCategoryVestuario,
+		SupplierCategoryBeleza, SupplierCategoryViagem, SupplierCategoryEntretenimento,
 		SupplierCategoryOutros:
 	case "":
 		s.Category = SupplierCategoryOutros
@@ -82,7 +98,8 @@ func (s *Supplier) Validate() error {
 	if s.DefaultBillingType != nil {
 		switch *s.DefaultBillingType {
 		case SupplierBillingBoleto, SupplierBillingPix, SupplierBillingCartaoCredito,
-			SupplierBillingDebitoAutomtico, SupplierBillingDebito, SupplierBillingTransferencia:
+			SupplierBillingDebitoAutomtico, SupplierBillingDebito, SupplierBillingTransferencia,
+			SupplierBillingDescontoFolha:
 		default:
 			return &ValidationError{Msg: "tipo de cobrança inválido"}
 		}
