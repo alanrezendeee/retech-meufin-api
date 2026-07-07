@@ -29,6 +29,7 @@ type supplierResponse struct {
 	Category           string     `json:"category"`
 	DefaultBillingType *string    `json:"default_billing_type"`
 	PixKey             *string    `json:"pix_key"`
+	PixKeyHolder       *string    `json:"pix_key_holder"`
 	BankName           *string    `json:"bank_name"`
 	BankAgency         *string    `json:"bank_agency"`
 	BankAccount        *string    `json:"bank_account"`
@@ -53,6 +54,7 @@ func mapSupplier(s *dom.Supplier) supplierResponse {
 		Category:           string(s.Category),
 		DefaultBillingType: billing,
 		PixKey:             s.PixKey,
+		PixKeyHolder:       s.PixKeyHolder,
 		BankName:           s.BankName,
 		BankAgency:         s.BankAgency,
 		BankAccount:        s.BankAccount,
@@ -69,6 +71,7 @@ type supplierCreateJSON struct {
 	Category           string  `json:"category"`
 	DefaultBillingType *string `json:"default_billing_type"`
 	PixKey             *string `json:"pix_key"`
+	PixKeyHolder       *string `json:"pix_key_holder"`
 	BankName           *string `json:"bank_name"`
 	BankAgency         *string `json:"bank_agency"`
 	BankAccount        *string `json:"bank_account"`
@@ -94,6 +97,7 @@ func (h *SupplierHandler) Create(c *gin.Context) {
 		Category:           body.Category,
 		DefaultBillingType: body.DefaultBillingType,
 		PixKey:             body.PixKey,
+		PixKeyHolder:       body.PixKeyHolder,
 		BankName:           body.BankName,
 		BankAgency:         body.BankAgency,
 		BankAccount:        body.BankAccount,
@@ -156,6 +160,7 @@ type supplierUpdateJSON struct {
 	Category           string  `json:"category"`
 	DefaultBillingType *string `json:"default_billing_type"`
 	PixKey             *string `json:"pix_key"`
+	PixKeyHolder       *string `json:"pix_key_holder"`
 	BankName           *string `json:"bank_name"`
 	BankAgency         *string `json:"bank_agency"`
 	BankAccount        *string `json:"bank_account"`
@@ -187,6 +192,7 @@ func (h *SupplierHandler) Update(c *gin.Context) {
 		Category:           body.Category,
 		DefaultBillingType: body.DefaultBillingType,
 		PixKey:             body.PixKey,
+		PixKeyHolder:       body.PixKeyHolder,
 		BankName:           body.BankName,
 		BankAgency:         body.BankAgency,
 		BankAccount:        body.BankAccount,
