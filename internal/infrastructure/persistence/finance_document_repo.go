@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
@@ -41,6 +42,19 @@ func (r *FinanceDocumentRepository) List(ctx context.Context, workspaceID uuid.U
 	}
 	if filter.EntryID != nil {
 		base = base.Where("entry_id = ?", *filter.EntryID)
+	}
+	if q := strings.TrimSpace(filter.Query); q != "" {
+		base = base.Where("original_file_name ILIKE ?", "%"+q+"%")
+	}
+	if filter.Status != nil {
+		base = base.Where("extraction_status = ?", string(*filter.Status))
+	}
+	if filter.Linked != nil {
+		if *filter.Linked {
+			base = base.Where("entry_id IS NOT NULL")
+		} else {
+			base = base.Where("entry_id IS NULL")
+		}
 	}
 
 	var total int64

@@ -151,13 +151,14 @@ type ListFinanceDocumentsResult struct {
 	Total int64
 }
 
-func (s *FinanceDocumentService) List(ctx context.Context, workspaceID uuid.UUID, kind dom.DocumentKind, limit, offset int) (*ListFinanceDocumentsResult, error) {
+func (s *FinanceDocumentService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.FinanceDocumentFilter, limit, offset int) (*ListFinanceDocumentsResult, error) {
 	// A listagem geral mostra faturas importadas (default) ou cupons/notas
 	// fiscais (kind=fiscal); comprovantes são listados pelo lançamento.
-	if kind == "" || kind == dom.DocumentReceipt {
-		kind = dom.DocumentImport
+	if filter.Kind == nil || *filter.Kind == "" || *filter.Kind == dom.DocumentReceipt {
+		kind := dom.DocumentImport
+		filter.Kind = &kind
 	}
-	items, total, err := s.repo.List(ctx, workspaceID, dom.FinanceDocumentFilter{Kind: &kind}, limit, offset)
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}

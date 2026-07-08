@@ -137,7 +137,27 @@ func (h *FinanceDocumentHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, dom.DocumentKind(c.Query("kind")), limit, offset)
+	kind := dom.DocumentKind(c.Query("kind"))
+	filter := dom.FinanceDocumentFilter{
+		Kind:  &kind,
+		Query: c.Query("q"),
+	}
+	if raw := c.Query("status"); raw != "" {
+		st := dom.ExtractionStatus(raw)
+		switch st {
+		case dom.ExtractionPending, dom.ExtractionProcessing, dom.ExtractionExtracted,
+			dom.ExtractionFailed, dom.ExtractionNotRequired:
+			filter.Status = &st
+		default:
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "status inválido")
+			return
+		}
+	}
+	if raw := c.Query("linked"); raw != "" {
+		linked := raw == "true" || raw == "1"
+		filter.Linked = &linked
+	}
+	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
