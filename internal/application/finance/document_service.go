@@ -61,6 +61,8 @@ type UploadFinanceDocInput struct {
 	WorkspaceID      uuid.UUID
 	UploadedByUserID uuid.UUID
 	CardID           *uuid.UUID
+	// Kind: papel do documento ('import' fatura, 'fiscal' cupom/nota). Default: import.
+	Kind             dom.DocumentKind
 	OriginalFileName string
 	MimeType         string
 	Size             int64
@@ -81,6 +83,10 @@ func (s *FinanceDocumentService) Upload(ctx context.Context, in UploadFinanceDoc
 		return nil, &dom.ValidationError{Msg: "tipo de arquivo não permitido (apenas PDF, JPEG ou PNG)"}
 	}
 
+	kind := in.Kind
+	if kind == "" {
+		kind = dom.DocumentImport
+	}
 	safeName := sanitizeFinanceFileName(in.OriginalFileName)
 	objectKey := buildFinanceObjectKey(in.WorkspaceID, in.CardID, safeName)
 
@@ -89,7 +95,7 @@ func (s *FinanceDocumentService) Upload(ctx context.Context, in UploadFinanceDoc
 		ID:               uuid.New(),
 		WorkspaceID:      in.WorkspaceID,
 		CardID:           in.CardID,
-		Kind:             dom.DocumentImport,
+		Kind:             kind,
 		FileName:         safeName,
 		OriginalFileName: in.OriginalFileName,
 		MimeType:         strings.ToLower(strings.TrimSpace(in.MimeType)),
@@ -145,10 +151,12 @@ type ListFinanceDocumentsResult struct {
 	Total int64
 }
 
-func (s *FinanceDocumentService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListFinanceDocumentsResult, error) {
-	// A listagem geral de documentos mostra apenas faturas importadas;
-	// comprovantes são listados pelo lançamento (ListReceipts).
-	kind := dom.DocumentImport
+func (s *FinanceDocumentService) List(ctx context.Context, workspaceID uuid.UUID, kind dom.DocumentKind, limit, offset int) (*ListFinanceDocumentsResult, error) {
+	// A listagem geral mostra faturas importadas (default) ou cupons/notas
+	// fiscais (kind=fiscal); comprovantes são listados pelo lançamento.
+	if kind == "" || kind == dom.DocumentReceipt {
+		kind = dom.DocumentImport
+	}
 	items, total, err := s.repo.List(ctx, workspaceID, dom.FinanceDocumentFilter{Kind: &kind}, limit, offset)
 	if err != nil {
 		return nil, err
@@ -173,6 +181,10 @@ func (s *FinanceDocumentService) UploadReceipt(ctx context.Context, in UploadFin
 		return nil, &dom.ValidationError{Msg: "tipo de arquivo não permitido para comprovante (PDF, imagem ou DOC)"}
 	}
 
+	kind := in.Kind
+	if kind == "" {
+		kind = dom.DocumentImport
+	}
 	safeName := sanitizeFinanceFileName(in.OriginalFileName)
 	objectKey := buildReceiptObjectKey(in.WorkspaceID, entryID, safeName)
 

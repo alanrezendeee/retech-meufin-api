@@ -51,6 +51,7 @@ type financialEntryResponse struct {
 	DiscountReason    *string    `json:"discount_reason"`
 	ResidualOfID      *uuid.UUID `json:"residual_of_id"`
 	PurchaseDate      *string    `json:"purchase_date"`
+	FiscalDocumentID  *uuid.UUID `json:"fiscal_document_id"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
@@ -99,6 +100,7 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		DiscountReason:    e.DiscountReason,
 		ResidualOfID:      e.ResidualOfID,
 		PurchaseDate:      purchaseDate,
+		FiscalDocumentID:  e.FiscalDocumentID,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),

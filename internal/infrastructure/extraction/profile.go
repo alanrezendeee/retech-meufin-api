@@ -78,6 +78,68 @@ func invoiceInputSchema() map[string]any {
 	}
 }
 
+// FiscalPromptVersion versiona o prompt/schema de extração de cupom/nota fiscal.
+const FiscalPromptVersion = "fiscal-extract-v1"
+
+const fiscalToolName = "registrar_cupom_fiscal"
+
+const fiscalSystemPrompt = `Você é um extrator de dados estruturados de CUPONS FISCAIS e NOTAS FISCAIS brasileiras (NFC-e, NF-e, SAT, cupom de supermercado).
+Sua ÚNICA tarefa é TRANSCREVER e ESTRUTURAR os itens comprados presentes no documento.
+
+REGRAS OBRIGATÓRIAS:
+- Extraia apenas o que está literalmente no documento. NÃO invente valores.
+- Cada item comprado vira um elemento em "items" com descrição, quantidade, valor unitário e valor total do item.
+- Valores em reais: use ponto decimal nos campos numéricos (ex.: 12.90).
+- "quantity": número (ex.: 2, 0.455 para itens por peso). Se ausente, use 1.
+- "unit_amount": valor unitário; "amount": total do item (quantity × unit_amount, como impresso).
+- DATAS sempre no formato YYYY-MM-DD. Se a data estiver ilegível ou ausente, use "" (string vazia).
+- Preencha "merchant" (nome do estabelecimento), "cnpj" (apenas dígitos, se visível) e "total_amount" (total do cupom).
+- Descontos no cupom: registre o item pelo valor efetivamente cobrado; anote o desconto em warnings.
+- Sugira uma categoria por item em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, equipamentos, outros.
+- Registre em warnings qualquer ambiguidade, ilegibilidade ou dado faltante.
+
+Use SEMPRE a ferramenta ` + fiscalToolName + ` para retornar o resultado estruturado.`
+
+// fiscalInputSchema é o schema alvo (tool input_schema) do cupom/nota fiscal.
+func fiscalInputSchema() map[string]any {
+	item := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"description":         map[string]any{"type": "string"},
+			"quantity":            map[string]any{"type": []string{"number", "null"}, "description": "Quantidade (ex.: 2, 0.455 p/ peso); null se ausente"},
+			"unit_amount":         map[string]any{"type": []string{"number", "null"}, "description": "Valor unitário em reais"},
+			"amount":              map[string]any{"type": []string{"number", "null"}, "description": "Valor total do item em reais"},
+			"category_suggestion": map[string]any{"type": "string"},
+			"raw_text":            map[string]any{"type": "string"},
+		},
+		"required": []string{"description"},
+	}
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"merchant":     map[string]any{"type": "string", "description": "Nome do estabelecimento"},
+			"cnpj":         map[string]any{"type": "string", "description": "CNPJ, apenas dígitos"},
+			"date":         map[string]any{"type": "string", "description": "Data da compra em YYYY-MM-DD; \"\" se ilegível"},
+			"total_amount": map[string]any{"type": []string{"number", "null"}, "description": "Total do cupom em reais"},
+			"items":        map[string]any{"type": "array", "items": item},
+			"warnings":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+		},
+		"required": []string{"items"},
+	}
+}
+
+// FiscalReceiptProfile é o perfil de cupom/nota fiscal (detalhamento de despesa).
+func FiscalReceiptProfile() ExtractProfile {
+	return ExtractProfile{
+		SystemPrompt:    fiscalSystemPrompt,
+		ToolName:        fiscalToolName,
+		ToolDescription: "Registra os itens estruturados extraídos do cupom/nota fiscal.",
+		InputSchema:     fiscalInputSchema(),
+		PromptVersion:   FiscalPromptVersion,
+		UserInstruction: "Extraia todos os itens do cupom/nota fiscal acima e retorne via ferramenta " + fiscalToolName + ".",
+	}
+}
+
 // CreditCardInvoiceProfile é o perfil do módulo Financeiro (fatura de cartão).
 func CreditCardInvoiceProfile() ExtractProfile {
 	return ExtractProfile{

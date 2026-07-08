@@ -187,6 +187,7 @@ func main() {
 	finAccountRepo := persistence.NewFinanceAccountRepository(db)
 	finCategoryRepo := persistence.NewFinanceExpenseCategoryRepository(db)
 	finDashRepo := persistence.NewFinanceDashboardRepository(db)
+	finFiscalItemRepo := persistence.NewFiscalItemRepository(db)
 	memberDocRepo := persistence.NewHealthMemberDocumentRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
@@ -210,6 +211,7 @@ func main() {
 	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor)
 	finAccountSvc := appf.NewAccountService(finAccountRepo)
 	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
+	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc)
 	memberDocSvc := apph.NewMemberDocumentService(memberDocRepo, familyRepo, objStorage, storageCfg.MaxUploadMB)
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
@@ -239,6 +241,7 @@ func main() {
 		FinanceAccountService:    finAccountSvc,
 		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,
+		FinanceFiscalService:     finFiscalSvc,
 		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
 		PermsEnforcement:         permsMode,

@@ -29,6 +29,9 @@ const (
 	DocumentImport DocumentKind = "import"
 	// DocumentReceipt é um comprovante de pagamento anexado a um lançamento.
 	DocumentReceipt DocumentKind = "receipt"
+	// DocumentFiscal é um cupom/nota fiscal importado para extração de itens
+	// (detalhamento item a item de uma despesa).
+	DocumentFiscal DocumentKind = "fiscal"
 )
 
 // FinanceDocument é um arquivo (PDF/imagem) vinculado ao módulo Financeiro

@@ -109,7 +109,11 @@ func (s *FinanceExtractionService) runExtraction(
 	}
 	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionProcessing, nil, nil)
 
+	// Perfil por tipo de documento: fatura (default) ou cupom/nota fiscal.
 	profile := extraction.CreditCardInvoiceProfile()
+	if doc, derr := s.docs.GetByID(ctx, workspaceID, documentID); derr == nil && doc.Kind == dom.DocumentFiscal {
+		profile = extraction.FiscalReceiptProfile()
+	}
 	res, extErr := s.extractor.Extract(ctx, extraction.ExtractInput{
 		InputType: string(inputType),
 		MimeType:  mimeType,
@@ -265,6 +269,81 @@ func reaisToCents(v *float64) int64 {
 		return 0
 	}
 	return int64(math.Round(*v * 100))
+}
+
+// FiscalItemSuggestion é um item de cupom/nota fiscal sugerido pela extração.
+// Valores em centavos; quantidade em milésimos (1un = 1000).
+type FiscalItemSuggestion struct {
+	Description   string
+	QuantityMilli int64
+	UnitCents     int64
+	AmountCents   int64
+	Category      string
+	RawText       string
+}
+
+// FiscalSuggestion é o cupom/nota fiscal estruturado sugerido pela extração.
+type FiscalSuggestion struct {
+	Merchant   string
+	CNPJ       string
+	Date       string // YYYY-MM-DD ("" quando ilegível)
+	TotalCents int64
+	Items      []FiscalItemSuggestion
+	Warnings   []string
+}
+
+// fiscalExtraction espelha o schema fiscal-extract-v1 (profile.go).
+type fiscalExtraction struct {
+	Merchant    string       `json:"merchant"`
+	CNPJ        string       `json:"cnpj"`
+	Date        string       `json:"date"`
+	TotalAmount *float64     `json:"total_amount"`
+	Items       []fiscalItem `json:"items"`
+	Warnings    []string     `json:"warnings"`
+}
+
+type fiscalItem struct {
+	Description        string   `json:"description"`
+	Quantity           *float64 `json:"quantity"`
+	UnitAmount         *float64 `json:"unit_amount"`
+	Amount             *float64 `json:"amount"`
+	CategorySuggestion string   `json:"category_suggestion"`
+	RawText            string   `json:"raw_text"`
+}
+
+// ParseFiscal faz o unmarshal do extracted_json de um documento fiscal
+// (cupom/nota) e retorna a sugestão com valores em centavos.
+func (s *FinanceExtractionService) ParseFiscal(doc *dom.FinanceDocument) (*FiscalSuggestion, error) {
+	if doc == nil || len(doc.ExtractedJSON) == 0 {
+		return &FiscalSuggestion{Items: []FiscalItemSuggestion{}}, nil
+	}
+	var f fiscalExtraction
+	if err := json.Unmarshal(doc.ExtractedJSON, &f); err != nil {
+		return nil, &dom.ValidationError{Msg: "extracted_json inválido: " + err.Error()}
+	}
+	out := &FiscalSuggestion{
+		Merchant:   strings.TrimSpace(f.Merchant),
+		CNPJ:       strings.TrimSpace(f.CNPJ),
+		Date:       normalizePurchaseDate(f.Date, ""),
+		TotalCents: reaisToCents(f.TotalAmount),
+		Items:      make([]FiscalItemSuggestion, 0, len(f.Items)),
+		Warnings:   f.Warnings,
+	}
+	for _, it := range f.Items {
+		qty := int64(1000) // default 1 unidade
+		if it.Quantity != nil {
+			qty = int64(math.Round(*it.Quantity * 1000))
+		}
+		out.Items = append(out.Items, FiscalItemSuggestion{
+			Description:   it.Description,
+			QuantityMilli: qty,
+			UnitCents:     reaisToCents(it.UnitAmount),
+			AmountCents:   reaisToCents(it.Amount),
+			Category:      it.CategorySuggestion,
+			RawText:       it.RawText,
+		})
+	}
+	return out, nil
 }
 
 var ddmmRe = regexp.MustCompile(`^(\d{1,2})[/.\-](\d{1,2})$`)
