@@ -86,6 +86,11 @@ func (d *FinanceDocument) Validate() error {
 type FinanceDocumentFilter struct {
 	Kind    *DocumentKind
 	EntryID *uuid.UUID
+	// Query busca (case-insensitive) no nome original do arquivo.
+	Query string
+	Status *ExtractionStatus
+	// Linked filtra pelo vínculo com lançamento: true = com entry_id, false = sem.
+	Linked *bool
 }
 
 // FinanceDocumentRepository persiste documentos financeiros (workspace-scoped, soft-delete).
