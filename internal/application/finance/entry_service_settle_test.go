@@ -463,6 +463,40 @@ func TestReopenBlockedByPaidResidual(t *testing.T) {
 	}
 }
 
+func TestConfirmWithPaidAt(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	paidAt := time.Date(2026, 7, 5, 0, 0, 0, 0, time.UTC)
+	got, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaidAt: &paidAt,
+	})
+	if err != nil {
+		t.Fatalf("Confirm com paid_at: %v", err)
+	}
+	if got.PaidAt == nil || !got.PaidAt.Equal(paidAt) {
+		t.Fatalf("paid_at deve ser a data informada (%v), veio %v", paidAt, got.PaidAt)
+	}
+	if got.Status != dom.StatusRealizada {
+		t.Fatalf("status deve ser realizada, veio %s", got.Status)
+	}
+	// paid_at informado junto com desconto
+	e2 := seedEntry(repo, dom.StatusPrevista)
+	discount := int64(500)
+	reason := "pontualidade"
+	got2, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e2.WorkspaceID, ID: e2.ID, PaidAt: &paidAt,
+		DiscountCents: &discount, DiscountReason: &reason,
+	})
+	if err != nil {
+		t.Fatalf("Confirm paid_at+desconto: %v", err)
+	}
+	if got2.PaidAt == nil || !got2.PaidAt.Equal(paidAt) {
+		t.Fatalf("paid_at com desconto deve ser a data informada, veio %v", got2.PaidAt)
+	}
+}
+
 func TestConfirmAndCancelCascade(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
