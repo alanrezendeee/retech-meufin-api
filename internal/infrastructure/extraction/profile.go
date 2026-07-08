@@ -25,7 +25,8 @@ func LabExamProfile() ExtractProfile {
 }
 
 // InvoicePromptVersion versiona o prompt/schema de extração de faturas.
-const InvoicePromptVersion = "invoice-extract-v1"
+// v2: datas normalizadas para YYYY-MM-DD com inferência de ano.
+const InvoicePromptVersion = "invoice-extract-v2"
 
 const invoiceToolName = "registrar_fatura"
 
@@ -36,6 +37,11 @@ REGRAS OBRIGATÓRIAS:
 - Extraia apenas o que está literalmente no documento. NÃO invente valores.
 - Cada compra vira um item em "purchases" com descrição, valor e data.
 - Valores em reais: use ponto decimal no campo numérico "amount" (ex.: 1234.56).
+- DATAS sempre no formato YYYY-MM-DD. Faturas costumam imprimir a data da
+  compra sem o ano (ex.: "07/06", "07 JUN"): infira o ano a partir do período
+  da fatura (statement_month/due_date). Compra de mês posterior ao vencimento
+  pertence ao ano anterior (ex.: compra de dezembro em fatura que vence em
+  janeiro). Se a data estiver ilegível ou ausente, use "" (string vazia).
 - Se a compra for parcelada (ex.: "PARC 03/10", "3/10"), preencha installment_current e installment_total.
 - Sugira uma categoria em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, equipamentos, outros.
 - Não inclua pagamentos/estornos da fatura anterior como compras; registre-os em warnings se relevante.
@@ -50,7 +56,7 @@ func invoiceInputSchema() map[string]any {
 		"properties": map[string]any{
 			"description":         map[string]any{"type": "string"},
 			"amount":              map[string]any{"type": []string{"number", "null"}},
-			"date":                map[string]any{"type": "string"},
+			"date":                map[string]any{"type": "string", "description": "Data da compra em YYYY-MM-DD (ano inferido do período da fatura); \"\" se ilegível"},
 			"category_suggestion": map[string]any{"type": "string"},
 			"installment_current": map[string]any{"type": []string{"integer", "null"}},
 			"installment_total":   map[string]any{"type": []string{"integer", "null"}},

@@ -70,6 +70,8 @@ type CreateEntryInput struct {
 	ParentID          *uuid.UUID
 	InstallmentsTotal *int
 	SupplierID        *uuid.UUID
+	// PurchaseDate: data da compra (informacional, itens de fatura).
+	PurchaseDate *time.Time
 	// ConfirmPastOccurrences: em lançamento retroativo (ex.: financiamento
 	// começado ano passado), as ocorrências com vencimento até hoje nascem
 	// 'realizada' — evita confirmar dezenas de parcelas uma a uma.
@@ -119,6 +121,7 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		ParentID:       in.ParentID,
 		Notes:          in.Notes,
 		SupplierID:     in.SupplierID,
+		PurchaseDate:   in.PurchaseDate,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -242,18 +245,17 @@ func (s *FinancialEntryService) CreateInvoiceWithItems(ctx context.Context, in C
 	batch = append(batch, &invoice)
 
 	for _, it := range in.Items {
-		due := in.DueDate
-		if it.Date != nil {
-			due = *it.Date
-		}
 		invoiceID := invoice.ID
+		// O vencimento do item é SEMPRE o da fatura (o dinheiro sai no
+		// pagamento da fatura); a data da compra é informacional.
 		child := dom.FinancialEntry{
 			ID:                uuid.New(),
 			WorkspaceID:       in.WorkspaceID,
 			Kind:              dom.KindDebit,
 			Status:            status,
 			AmountCents:       it.AmountCents,
-			DueDate:           due,
+			DueDate:           in.DueDate,
+			PurchaseDate:      it.Date,
 			Type:              s.normalizeCategory(ctx, in.WorkspaceID, it.Category),
 			Description:       it.Description,
 			Recurrence:        dom.RecurrenceNone,

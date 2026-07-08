@@ -89,6 +89,9 @@ type FinancialEntry struct {
 	// ResidualOfID aponta para o lançamento de origem quando este lançamento
 	// nasceu de um pagamento parcial (desdobramento do saldo não pago).
 	ResidualOfID *uuid.UUID
+	// PurchaseDate é a data em que a compra foi realizada (itens de fatura).
+	// Informacional: o vencimento do item é sempre o vencimento da fatura.
+	PurchaseDate *time.Time
 	SupplierID       *uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
