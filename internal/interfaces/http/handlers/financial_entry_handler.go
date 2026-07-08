@@ -493,6 +493,7 @@ func (h *FinancialEntryHandler) Installments(c *gin.Context) {
 	for i, g := range proj.Groups {
 		groups[i] = gin.H{
 			"description":       g.Description,
+			"source":            string(g.Source),
 			"card_id":           g.CardID,
 			"category":          g.Category,
 			"installment_cents": g.InstallmentCents,

@@ -23,9 +23,23 @@ import (
 // IMPORTANTE: é PROJEÇÃO CALCULADA, nunca lançamentos previstos — criar
 // previstos duplicaria tudo no import da fatura seguinte.
 
-// InstallmentGroup é um parcelamento ativo identificado nas faturas.
+// InstallmentSource distingue a origem do parcelamento.
+type InstallmentSource string
+
+const (
+	// SourceInvoice: compra parcelada identificada nas faturas de cartão
+	// (parcelas futuras são PROJEÇÃO, não lançamentos).
+	SourceInvoice InstallmentSource = "invoice"
+	// SourceExpense: despesa parcelada direta (financiamento etc.) — as
+	// parcelas futuras EXISTEM como lançamentos previstos.
+	SourceExpense InstallmentSource = "expense"
+)
+
+// InstallmentGroup é um parcelamento ativo identificado nas faturas ou nas
+// despesas parceladas diretas.
 type InstallmentGroup struct {
 	Description      string
+	Source           InstallmentSource
 	CardID           *uuid.UUID
 	Category         *string
 	InstallmentCents int64
@@ -111,6 +125,7 @@ func (s *FinancialEntryService) InstallmentsProjection(ctx context.Context, work
 		}
 		grp := InstallmentGroup{
 			Description:      strings.TrimSpace(g.norm),
+			Source:           SourceInvoice,
 			CardID:           e.CardID,
 			Category:         e.Type,
 			InstallmentCents: e.AmountCents,
@@ -136,6 +151,10 @@ func (s *FinancialEntryService) InstallmentsProjection(ctx context.Context, work
 		}
 	}
 
+	if err := s.appendStandaloneInstallments(ctx, workspaceID, out, monthly); err != nil {
+		return nil, err
+	}
+
 	for _, b := range monthly {
 		out.Monthly = append(out.Monthly, *b)
 	}
@@ -147,4 +166,80 @@ func (s *FinancialEntryService) InstallmentsProjection(ctx context.Context, work
 		return out.Groups[i].Description < out.Groups[j].Description
 	})
 	return out, nil
+}
+
+// appendStandaloneInstallments soma à projeção as despesas parceladas diretas
+// (financiamentos etc.). Diferente das compras em fatura, as parcelas futuras
+// EXISTEM como lançamentos previstos — o restante vem das linhas reais
+// (status prevista), com valores e vencimentos reais, não projetados.
+func (s *FinancialEntryService) appendStandaloneInstallments(ctx context.Context, workspaceID uuid.UUID, out *InstallmentProjection, monthly map[string]*MonthlyCommitment) error {
+	rows, err := s.repo.ListStandaloneInstallments(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+
+	byGroup := map[string][]dom.FinancialEntry{}
+	for i := range rows {
+		e := rows[i]
+		if e.InstallmentTotal == nil || *e.InstallmentTotal < 1 || e.InstallmentNumber == nil {
+			continue
+		}
+		key := ""
+		if e.RecurrenceGroupID != nil {
+			key = e.RecurrenceGroupID.String()
+		} else {
+			// Parcela avulsa sem grupo (X/N digitado à mão): agrupa por identidade.
+			key = strings.Join([]string{normalizeInstallmentDesc(e.Description),
+				strconv.Itoa(*e.InstallmentTotal), strconv.FormatInt(e.AmountCents, 10)}, "|")
+		}
+		byGroup[key] = append(byGroup[key], e)
+	}
+
+	for _, entries := range byGroup {
+		var pending []dom.FinancialEntry // previstas = parcelas em aberto
+		latest := entries[0]
+		for _, e := range entries {
+			if e.Status == dom.StatusPrevista {
+				pending = append(pending, e)
+			}
+			if *e.InstallmentNumber > *latest.InstallmentNumber {
+				latest = e
+			}
+		}
+		if len(pending) == 0 {
+			continue // quitado (ou tudo cancelado)
+		}
+		sort.Slice(pending, func(i, j int) bool { return pending[i].DueDate.Before(pending[j].DueDate) })
+
+		var remainingCents int64
+		for _, e := range pending {
+			remainingCents += e.AmountCents
+			m := e.DueDate.Format("2006-01")
+			b, ok := monthly[m]
+			if !ok {
+				b = &MonthlyCommitment{Month: m}
+				monthly[m] = b
+			}
+			b.TotalCents += e.AmountCents
+			b.Count++
+		}
+
+		total := *latest.InstallmentTotal
+		grp := InstallmentGroup{
+			Description:      latest.Description,
+			Source:           SourceExpense,
+			CardID:           latest.CardID,
+			Category:         latest.Type,
+			InstallmentCents: latest.AmountCents,
+			InstallmentTotal: total,
+			LastKnownNumber:  total - len(pending),
+			RemainingCount:   len(pending),
+			RemainingCents:   remainingCents,
+			LastDueDate:      pending[0].DueDate,
+			EndsAt:           pending[len(pending)-1].DueDate,
+		}
+		out.Groups = append(out.Groups, grp)
+		out.RemainingTotalCents += grp.RemainingCents
+	}
+	return nil
 }

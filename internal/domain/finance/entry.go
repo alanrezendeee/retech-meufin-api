@@ -201,6 +201,9 @@ type FinancialEntryRepository interface {
 	// ListInvoiceInstallments retorna compras parceladas dentro de faturas
 	// (filhos com installment_number/total) — insumo da projeção.
 	ListInvoiceInstallments(ctx context.Context, workspaceID uuid.UUID) ([]FinancialEntry, error)
+	// ListStandaloneInstallments retorna despesas parceladas diretas (sem
+	// fatura-pai; parcelas existem como lançamentos reais) — insumo da projeção.
+	ListStandaloneInstallments(ctx context.Context, workspaceID uuid.UUID) ([]FinancialEntry, error)
 	// ListFutureGroupSiblings retorna as ocorrências 'prevista' do grupo de
 	// recorrência com due_date posterior a `after`, excluindo excludeID —
 	// alvo da edição em série ("aplicar às próximas").

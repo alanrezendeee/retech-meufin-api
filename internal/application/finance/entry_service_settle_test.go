@@ -90,6 +90,18 @@ func (f *fakeEntryRepo) ListFutureGroupSiblings(_ context.Context, workspaceID, 
 	return out, nil
 }
 
+func (f *fakeEntryRepo) ListStandaloneInstallments(_ context.Context, workspaceID uuid.UUID) ([]dom.FinancialEntry, error) {
+	out := []dom.FinancialEntry{}
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.Kind == dom.KindDebit && e.ParentID == nil &&
+			e.InstallmentNumber != nil && e.InstallmentTotal != nil {
+			out = append(out, *e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DueDate.Before(out[j].DueDate) })
+	return out, nil
+}
+
 func (f *fakeEntryRepo) ListResiduals(_ context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var out []dom.FinancialEntry
 	for _, e := range f.entries {
