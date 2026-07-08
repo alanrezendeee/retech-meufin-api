@@ -26,6 +26,7 @@ type creditCardResponse struct {
 	WorkspaceID uuid.UUID `json:"workspace_id"`
 	Name        string    `json:"name"`
 	Brand       *string   `json:"brand"`
+	Bank        *string   `json:"bank"`
 	ClosingDay  *int      `json:"closing_day"`
 	DueDay      *int      `json:"due_day"`
 	Active      bool      `json:"active"`
@@ -40,6 +41,7 @@ func mapCreditCard(c *dom.CreditCard) creditCardResponse {
 		WorkspaceID: c.WorkspaceID,
 		Name:        c.Name,
 		Brand:       c.Brand,
+		Bank:        c.Bank,
 		ClosingDay:  c.ClosingDay,
 		DueDay:      c.DueDay,
 		Active:      c.Active,
@@ -52,6 +54,7 @@ func mapCreditCard(c *dom.CreditCard) creditCardResponse {
 type creditCardCreateJSON struct {
 	Name       string  `json:"name" binding:"required"`
 	Brand      *string `json:"brand"`
+	Bank       *string `json:"bank"`
 	ClosingDay *int    `json:"closing_day"`
 	DueDay     *int    `json:"due_day"`
 	Active     *bool   `json:"active"`
@@ -70,7 +73,7 @@ func (h *CreditCardHandler) Create(c *gin.Context) {
 		return
 	}
 	card, err := h.svc.Create(c.Request.Context(), app.CreateCreditCardInput{
-		WorkspaceID: ws, Name: body.Name, Brand: body.Brand,
+		WorkspaceID: ws, Name: body.Name, Brand: body.Brand, Bank: body.Bank,
 		ClosingDay: body.ClosingDay, DueDay: body.DueDay, Active: body.Active, Notes: body.Notes,
 	})
 	if err != nil {
@@ -125,6 +128,7 @@ func (h *CreditCardHandler) List(c *gin.Context) {
 type creditCardUpdateJSON struct {
 	Name       string  `json:"name" binding:"required"`
 	Brand      *string `json:"brand"`
+	Bank       *string `json:"bank"`
 	ClosingDay *int    `json:"closing_day"`
 	DueDay     *int    `json:"due_day"`
 	Active     *bool   `json:"active"`
@@ -148,7 +152,7 @@ func (h *CreditCardHandler) Update(c *gin.Context) {
 		return
 	}
 	card, err := h.svc.Update(c.Request.Context(), app.UpdateCreditCardInput{
-		WorkspaceID: ws, ID: id, Name: body.Name, Brand: body.Brand,
+		WorkspaceID: ws, ID: id, Name: body.Name, Brand: body.Brand, Bank: body.Bank,
 		ClosingDay: body.ClosingDay, DueDay: body.DueDay, Active: body.Active, Notes: body.Notes,
 	})
 	if err != nil {
@@ -156,6 +160,15 @@ func (h *CreditCardHandler) Update(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, mapCreditCard(card))
+}
+
+// Brands lista o catálogo global de bandeiras de cartão.
+func (h *CreditCardHandler) Brands(c *gin.Context) {
+	items := make([]gin.H, len(dom.CardBrands))
+	for i, b := range dom.CardBrands {
+		items[i] = gin.H{"slug": b.Slug, "name": b.Name}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
 
 func (h *CreditCardHandler) Delete(c *gin.Context) {

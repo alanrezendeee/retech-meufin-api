@@ -26,6 +26,7 @@ type CreditCardModel struct {
 	WorkspaceID uuid.UUID `gorm:"type:uuid;not null;index:idx_credit_cards_workspace"`
 	Name        string    `gorm:"size:255;not null"`
 	Brand       *string   `gorm:"size:50"`
+	Bank        *string   `gorm:"size:100"`
 	ClosingDay  *int      `gorm:"column:closing_day"`
 	DueDay      *int      `gorm:"column:due_day"`
 	Active      bool      `gorm:"not null;default:true"`

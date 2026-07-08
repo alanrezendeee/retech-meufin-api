@@ -20,6 +20,7 @@ type CreateCreditCardInput struct {
 	WorkspaceID uuid.UUID
 	Name        string
 	Brand       *string
+	Bank        *string
 	ClosingDay  *int
 	DueDay      *int
 	Active      *bool
@@ -31,6 +32,7 @@ type UpdateCreditCardInput struct {
 	ID          uuid.UUID
 	Name        string
 	Brand       *string
+	Bank        *string
 	ClosingDay  *int
 	DueDay      *int
 	Active      *bool
@@ -48,6 +50,7 @@ func (s *CreditCardService) Create(ctx context.Context, in CreateCreditCardInput
 		WorkspaceID: in.WorkspaceID,
 		Name:        in.Name,
 		Brand:       in.Brand,
+		Bank:        in.Bank,
 		ClosingDay:  in.ClosingDay,
 		DueDay:      in.DueDay,
 		Active:      active,
@@ -88,6 +91,7 @@ func (s *CreditCardService) Update(ctx context.Context, in UpdateCreditCardInput
 	}
 	card.Name = in.Name
 	card.Brand = in.Brand
+	card.Bank = in.Bank
 	card.ClosingDay = in.ClosingDay
 	card.DueDay = in.DueDay
 	if in.Active != nil {
