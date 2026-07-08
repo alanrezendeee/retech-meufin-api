@@ -381,8 +381,8 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 
 // SeriesUpdateStats resume o alcance da edição em série.
 type SeriesUpdateStats struct {
-	// DueDates: lançamentos (qualquer status, passados e futuros) que tiveram
-	// o dia do vencimento ajustado.
+	// DueDates: lançamentos da edição em diante (qualquer status exceto
+	// cancelada) que tiveram o dia do vencimento ajustado.
 	DueDates int
 	// Fields: previstas futuras que receberam valor/descrição/categoria.
 	Fields int
@@ -393,10 +393,12 @@ type SeriesUpdateStats struct {
 // propagateToSeries replica no grupo apenas o que mudou nesta edição, com
 // alcance por campo:
 //
-//   - Dia do vencimento: TODOS os lançamentos não cancelados da série
-//     (passados e futuros, inclusive realizados) — corrigir o dia errado de
-//     um financiamento deve valer para a série inteira. Cada lançamento
-//     mantém seu mês, com clamp de fim de mês. Semanal não propaga dia.
+//   - Dia do vencimento: lançamentos da série DESTA edição em diante
+//     (due_date posterior, qualquer status exceto cancelada) — "banco mudou
+//     o dia" vale daqui pra frente; parcelas passadas venceram no dia antigo
+//     de fato. Para corrigir a série inteira, edita-se a primeira parcela.
+//     Cada lançamento mantém seu mês, com clamp de fim de mês. Semanal não
+//     propaga dia.
 //   - Valor, descrição e categoria: apenas previstas futuras — valor de
 //     realizada é fato histórico; reajuste vale daqui pra frente.
 //
@@ -422,7 +424,7 @@ func (s *FinancialEntryService) propagateToSeries(ctx context.Context, orig, upd
 	for i := range siblings {
 		sib := siblings[i]
 		touched := false
-		if dayChanged {
+		if dayChanged && sib.DueDate.After(orig.DueDate) {
 			sib.DueDate = dom.WithDayClamped(sib.DueDate, updated.DueDate.Day())
 			stats.DueDates++
 			touched = true
