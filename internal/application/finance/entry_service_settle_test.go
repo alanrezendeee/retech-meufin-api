@@ -67,6 +67,16 @@ func (f *fakeEntryRepo) ListRecurrenceFrontiers(_ context.Context) ([]dom.Financ
 	return nil, nil
 }
 
+func (f *fakeEntryRepo) ListResiduals(_ context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var out []dom.FinancialEntry
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.ResidualOfID != nil && *e.ResidualOfID == originID {
+			out = append(out, *e)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeEntryRepo) CascadeStatusToChildren(_ context.Context, _, parentID uuid.UUID, status dom.Status, paidAt *time.Time) error {
 	f.cascadeCalls = append(f.cascadeCalls, struct {
 		ParentID uuid.UUID
@@ -306,6 +316,150 @@ func TestReopenClearsDiscount(t *testing.T) {
 	}
 	if got.PaidAt != nil || got.PaidAmountCents != nil {
 		t.Fatalf("reopen deve limpar liquidação, veio %v/%v", got.PaidAt, got.PaidAmountCents)
+	}
+}
+
+func findResidual(repo *fakeEntryRepo, originID uuid.UUID) *dom.FinancialEntry {
+	for _, e := range repo.entries {
+		if e.ResidualOfID != nil && *e.ResidualOfID == originID {
+			return e
+		}
+	}
+	return nil
+}
+
+func TestConfirmPartialCreatesResidual(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista) // 10_000
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	paid := int64(1_500)
+	got, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaidAmountCents: &paid,
+	})
+	if err != nil {
+		t.Fatalf("Confirm parcial: %v", err)
+	}
+	if got.Status != dom.StatusRealizada || got.PaidAmountCents == nil || *got.PaidAmountCents != paid {
+		t.Fatalf("origem deve ficar realizada com paid=%d, veio %+v", paid, got)
+	}
+	res := findResidual(repo, e.ID)
+	if res == nil {
+		t.Fatal("residual não criado")
+	}
+	if res.AmountCents != 8_500 {
+		t.Fatalf("residual deve ser 8500, veio %d", res.AmountCents)
+	}
+	if res.Status != dom.StatusPrevista {
+		t.Fatalf("residual deve nascer prevista, veio %s", res.Status)
+	}
+	if !res.DueDate.Equal(e.DueDate) {
+		t.Fatalf("residual deve vencer na data original %v, veio %v", e.DueDate, res.DueDate)
+	}
+}
+
+func TestConfirmPartialWithDiscount(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista) // 10_000
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	paid := int64(7_000)
+	discount := int64(1_000)
+	reason := "negociacao"
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID,
+		PaidAmountCents: &paid, DiscountCents: &discount, DiscountReason: &reason,
+	}); err != nil {
+		t.Fatalf("Confirm parcial+desconto: %v", err)
+	}
+	res := findResidual(repo, e.ID)
+	if res == nil || res.AmountCents != 2_000 {
+		t.Fatalf("residual deve ser amount - desconto - pago = 2000, veio %+v", res)
+	}
+}
+
+func TestConfirmPartialValidation(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	// pago > devido não suportado (juros/multa é fase futura)
+	e := seedEntry(repo, dom.StatusPrevista)
+	over := int64(12_000)
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaidAmountCents: &over,
+	}); err == nil {
+		t.Fatal("pago > devido deveria falhar")
+	}
+
+	// pago igual ao devido não gera residual
+	e2 := seedEntry(repo, dom.StatusPrevista)
+	full := int64(10_000)
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e2.WorkspaceID, ID: e2.ID, PaidAmountCents: &full,
+	}); err != nil {
+		t.Fatalf("pago integral deve liquidar: %v", err)
+	}
+	if findResidual(repo, e2.ID) != nil {
+		t.Fatal("pago integral não deve gerar residual")
+	}
+
+	// fatura de cartão bloqueia parcial
+	cartao := "cartao"
+	inv := &dom.FinancialEntry{
+		ID: uuid.New(), WorkspaceID: uuid.New(), Kind: dom.KindDebit,
+		Status: dom.StatusPrevista, AmountCents: 10_000, Type: &cartao,
+		DueDate: time.Date(2026, 7, 10, 0, 0, 0, 0, time.UTC), Description: "fatura",
+	}
+	repo.entries[inv.ID] = inv
+	part := int64(4_000)
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: inv.WorkspaceID, ID: inv.ID, PaidAmountCents: &part,
+	}); err == nil {
+		t.Fatal("parcial em fatura deveria falhar")
+	}
+}
+
+func TestReopenPartialRemovesResidual(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	paid := int64(1_500)
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaidAmountCents: &paid,
+	}); err != nil {
+		t.Fatalf("Confirm parcial: %v", err)
+	}
+	if _, err := svc.Reopen(context.Background(), e.WorkspaceID, e.ID); err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	if findResidual(repo, e.ID) != nil {
+		t.Fatal("reopen deve remover o residual previsto")
+	}
+}
+
+func TestReopenBlockedByPaidResidual(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	paid := int64(1_500)
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaidAmountCents: &paid,
+	}); err != nil {
+		t.Fatalf("Confirm parcial: %v", err)
+	}
+	res := findResidual(repo, e.ID)
+	if res == nil {
+		t.Fatal("residual não criado")
+	}
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: res.WorkspaceID, ID: res.ID,
+	}); err != nil {
+		t.Fatalf("Confirm do residual: %v", err)
+	}
+	if _, err := svc.Reopen(context.Background(), e.WorkspaceID, e.ID); err == nil {
+		t.Fatal("reopen com residual pago deveria falhar")
 	}
 }
 

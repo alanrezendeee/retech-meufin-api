@@ -49,6 +49,7 @@ type financialEntryResponse struct {
 	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
 	DiscountCents     *int64     `json:"discount_cents"`
 	DiscountReason    *string    `json:"discount_reason"`
+	ResidualOfID      *uuid.UUID `json:"residual_of_id"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
@@ -90,6 +91,7 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		PaymentCardID:     e.PaymentCardID,
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
+		ResidualOfID:      e.ResidualOfID,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -373,9 +375,19 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 			return
 		}
 	}
+	var residualDue *time.Time
+	if body.ResidualDueDate != nil && *body.ResidualDueDate != "" {
+		t, err := time.Parse(entryDateLayout, *body.ResidualDueDate)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "residual_due_date inválida (use YYYY-MM-DD)")
+			return
+		}
+		residualDue = &t
+	}
 	e, err := h.svc.Confirm(c.Request.Context(), app.ConfirmEntryInput{
 		WorkspaceID: ws, ID: id,
 		DiscountCents: body.DiscountCents, DiscountReason: body.DiscountReason,
+		PaidAmountCents: body.PaidAmountCents, ResidualDueDate: residualDue,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -387,6 +399,9 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 type financialEntryConfirmJSON struct {
 	DiscountCents  *int64  `json:"discount_cents"`
 	DiscountReason *string `json:"discount_reason"`
+	// Pagamento parcial: valor efetivamente pago; a diferença vira residual.
+	PaidAmountCents *int64  `json:"paid_amount_cents"`
+	ResidualDueDate *string `json:"residual_due_date"` // YYYY-MM-DD; default: vencimento original
 }
 
 // DiscountReasons lista o catálogo global de motivos de desconto.

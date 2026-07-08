@@ -65,6 +65,7 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"payment_card_id":    model.PaymentCardID,
 			"discount_cents":     model.DiscountCents,
 			"discount_reason":    model.DiscountReason,
+			"residual_of_id":     model.ResidualOfID,
 			"supplier_id":        model.SupplierID,
 			"updated_at":         model.UpdatedAt,
 		})
@@ -203,6 +204,22 @@ func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, 
 	return mapFinanceErr(res.Error)
 }
 
+// ListResiduals retorna os lançamentos residuais gerados a partir da origem.
+func (r *FinancialEntryRepository) ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND residual_of_id = ?", workspaceID, originID).
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 // ListRecurrenceFrontiers retorna a ocorrência mais recente de cada grupo de
 // recorrência (todas as workspaces) — insumo do extensor rolling.
 func (r *FinancialEntryRepository) ListRecurrenceFrontiers(ctx context.Context) ([]dom.FinancialEntry, error) {
@@ -251,6 +268,7 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		PaymentCardID:     e.PaymentCardID,
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
+		ResidualOfID:      e.ResidualOfID,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
@@ -299,6 +317,7 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		PaymentCardID:     m.PaymentCardID,
 		DiscountCents:     m.DiscountCents,
 		DiscountReason:    m.DiscountReason,
+		ResidualOfID:      m.ResidualOfID,
 		SupplierID:        m.SupplierID,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
