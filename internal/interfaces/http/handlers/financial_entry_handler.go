@@ -448,6 +448,45 @@ type financialEntryConfirmJSON struct {
 	PaidAt          *string `json:"paid_at"`           // YYYY-MM-DD; default: agora
 }
 
+// Installments responde GET /finance/installments: projeção de compromissos
+// parcelados dentro de faturas (calculada, não são lançamentos).
+func (h *FinancialEntryHandler) Installments(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	proj, err := h.svc.InstallmentsProjection(c.Request.Context(), ws)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	groups := make([]gin.H, len(proj.Groups))
+	for i, g := range proj.Groups {
+		groups[i] = gin.H{
+			"description":       g.Description,
+			"card_id":           g.CardID,
+			"category":          g.Category,
+			"installment_cents": g.InstallmentCents,
+			"installment_total": g.InstallmentTotal,
+			"last_known_number": g.LastKnownNumber,
+			"remaining_count":   g.RemainingCount,
+			"remaining_cents":   g.RemainingCents,
+			"last_due_date":     g.LastDueDate.Format(entryDateLayout),
+			"ends_at":           g.EndsAt.Format("2006-01"),
+		}
+	}
+	monthly := make([]gin.H, len(proj.Monthly))
+	for i, m := range proj.Monthly {
+		monthly[i] = gin.H{"month": m.Month, "total_cents": m.TotalCents, "count": m.Count}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"groups":                groups,
+		"monthly":               monthly,
+		"remaining_total_cents": proj.RemainingTotalCents,
+	})
+}
+
 // DiscountReasons lista o catálogo global de motivos de desconto.
 func (h *FinancialEntryHandler) DiscountReasons(c *gin.Context) {
 	items := make([]gin.H, len(dom.DiscountReasons))
