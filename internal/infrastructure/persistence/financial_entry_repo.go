@@ -262,6 +262,25 @@ func (r *FinancialEntryRepository) ListStandaloneInstallments(ctx context.Contex
 	return out, nil
 }
 
+// YearBounds retorna o menor e o maior ano de vencimento do workspace.
+func (r *FinancialEntryRepository) YearBounds(ctx context.Context, workspaceID uuid.UUID) (int, int, error) {
+	var row struct {
+		Min *time.Time
+		Max *time.Time
+	}
+	err := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
+		Select("MIN(due_date) AS min, MAX(due_date) AS max").
+		Where("workspace_id = ?", workspaceID).
+		Scan(&row).Error
+	if err != nil {
+		return 0, 0, mapFinanceErr(err)
+	}
+	if row.Min == nil || row.Max == nil {
+		return 0, 0, nil
+	}
+	return row.Min.Year(), row.Max.Year(), nil
+}
+
 // ListResiduals retorna os lançamentos residuais gerados a partir da origem.
 func (r *FinancialEntryRepository) ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel

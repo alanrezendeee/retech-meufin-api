@@ -461,6 +461,11 @@ func strPtrEqual(a, b *string) bool {
 	return *a == *b
 }
 
+// YearBounds expõe o intervalo de anos com lançamentos no workspace.
+func (s *FinancialEntryService) YearBounds(ctx context.Context, workspaceID uuid.UUID) (int, int, error) {
+	return s.repo.YearBounds(ctx, workspaceID)
+}
+
 func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
 	return s.repo.SoftDelete(ctx, workspaceID, id)
 }

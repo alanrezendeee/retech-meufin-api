@@ -482,6 +482,22 @@ type financialEntryConfirmJSON struct {
 	PaidAt          *string `json:"paid_at"`           // YYYY-MM-DD; default: agora
 }
 
+// YearBounds responde GET /finance/entries/year-bounds: menor e maior ano de
+// vencimento do workspace — alimenta o filtro de ano do admin.
+func (h *FinancialEntryHandler) YearBounds(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	minYear, maxYear, err := h.svc.YearBounds(c.Request.Context(), ws)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"min_year": minYear, "max_year": maxYear})
+}
+
 // Installments responde GET /finance/installments: projeção de compromissos
 // parcelados dentro de faturas (calculada, não são lançamentos).
 func (h *FinancialEntryHandler) Installments(c *gin.Context) {

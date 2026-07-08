@@ -102,6 +102,23 @@ func (f *fakeEntryRepo) ListStandaloneInstallments(_ context.Context, workspaceI
 	return out, nil
 }
 
+func (f *fakeEntryRepo) YearBounds(_ context.Context, workspaceID uuid.UUID) (int, int, error) {
+	minY, maxY := 0, 0
+	for _, e := range f.entries {
+		if e.WorkspaceID != workspaceID {
+			continue
+		}
+		y := e.DueDate.Year()
+		if minY == 0 || y < minY {
+			minY = y
+		}
+		if y > maxY {
+			maxY = y
+		}
+	}
+	return minY, maxY, nil
+}
+
 func (f *fakeEntryRepo) ListResiduals(_ context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var out []dom.FinancialEntry
 	for _, e := range f.entries {
