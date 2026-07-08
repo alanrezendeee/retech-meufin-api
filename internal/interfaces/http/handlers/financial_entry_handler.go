@@ -321,6 +321,7 @@ type financialEntryUpdateJSON struct {
 	Recurrence     string     `json:"recurrence"`
 	Notes          *string    `json:"notes"`
 	SupplierID     *uuid.UUID `json:"supplier_id"`
+	PurchaseDate   *string    `json:"purchase_date"` // YYYY-MM-DD; ausente preserva a atual
 }
 
 func (h *FinancialEntryHandler) Update(c *gin.Context) {
@@ -344,11 +345,20 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "due_date inválida (use YYYY-MM-DD)")
 		return
 	}
+	var purchaseDate *time.Time
+	if body.PurchaseDate != nil && *body.PurchaseDate != "" {
+		d, derr := time.Parse(entryDateLayout, *body.PurchaseDate)
+		if derr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "purchase_date inválida (use YYYY-MM-DD)")
+			return
+		}
+		purchaseDate = &d
+	}
 	e, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
 		WorkspaceID: ws, ID: id, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
-		SupplierID: body.SupplierID,
+		SupplierID: body.SupplierID, PurchaseDate: purchaseDate,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
