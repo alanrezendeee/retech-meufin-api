@@ -185,6 +185,14 @@ func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, 
 	if status == dom.StatusRealizada {
 		updates["paid_at"] = paidAt
 	}
+	if status == dom.StatusPrevista {
+		// Reabertura: pagamento desfeito, detalhes de liquidação não valem mais.
+		updates["paid_at"] = nil
+		updates["paid_amount_cents"] = nil
+		updates["payment_method"] = nil
+		updates["payment_account_id"] = nil
+		updates["payment_card_id"] = nil
+	}
 	res := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
 		Where("parent_id = ? AND workspace_id = ? AND status <> ?", parentID, workspaceID, "cancelada").
 		Updates(updates)

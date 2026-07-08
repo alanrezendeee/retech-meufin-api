@@ -345,6 +345,36 @@ func (s *FinancialEntryService) Cancel(ctx context.Context, workspaceID, id uuid
 	return s.setStatus(ctx, workspaceID, id, dom.StatusCancelada)
 }
 
+// Reopen desfaz a liquidação: lançamento realizado volta a previsto e os
+// detalhes de pagamento são limpos (paid_at, valor pago, forma, conta/cartão).
+func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {
+	e, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if e.Status != dom.StatusRealizada {
+		return nil, &dom.ValidationError{Msg: "apenas lançamentos realizados podem ser reabertos"}
+	}
+	e.Status = dom.StatusPrevista
+	e.PaidAt = nil
+	e.PaidAmountCents = nil
+	e.PaymentMethod = nil
+	e.PaymentAccountID = nil
+	e.PaymentCardID = nil
+	e.UpdatedAt = time.Now().UTC()
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	// Fatura pai/filho: reabrir o pai reabre os filhos (um pagamento real = uma ação).
+	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, dom.StatusPrevista, nil); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
 func (s *FinancialEntryService) setStatus(ctx context.Context, workspaceID, id uuid.UUID, status dom.Status) (*dom.FinancialEntry, error) {
 	e, err := s.repo.GetByID(ctx, workspaceID, id)
 	if err != nil {

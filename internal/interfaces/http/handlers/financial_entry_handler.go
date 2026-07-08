@@ -369,6 +369,26 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 	c.JSON(http.StatusOK, mapFinancialEntry(e))
 }
 
+// Reopen desfaz a liquidação: realizada volta a prevista, pagamento limpo.
+func (h *FinancialEntryHandler) Reopen(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	e, err := h.svc.Reopen(c.Request.Context(), ws, id)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapFinancialEntry(e))
+}
+
 type financialEntrySettleJSON struct {
 	PaidAt          *string    `json:"paid_at"`           // RFC3339 ou YYYY-MM-DD; default: agora
 	PaidAmountCents *int64     `json:"paid_amount_cents"` // default: amount_cents
