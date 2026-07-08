@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
@@ -74,6 +75,18 @@ func (f *fakeEntryRepo) ListInvoiceInstallments(_ context.Context, workspaceID u
 			out = append(out, *e)
 		}
 	}
+	return out, nil
+}
+
+func (f *fakeEntryRepo) ListFutureGroupSiblings(_ context.Context, workspaceID, groupID uuid.UUID, after time.Time, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
+	out := []dom.FinancialEntry{}
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.RecurrenceGroupID != nil && *e.RecurrenceGroupID == groupID &&
+			e.Status == dom.StatusPrevista && e.DueDate.After(after) && e.ID != excludeID {
+			out = append(out, *e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DueDate.Before(out[j].DueDate) })
 	return out, nil
 }
 

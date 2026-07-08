@@ -325,6 +325,10 @@ type financialEntryUpdateJSON struct {
 	// Parcela da compra em fatura: ausente preserva; 0 limpa.
 	InstallmentNumber *int `json:"installment_number"`
 	InstallmentTotal  *int `json:"installment_total"`
+	// ApplyTo: "one" (default) edita só este lançamento; "future" propaga
+	// dia do vencimento/valor/descrição/categoria às ocorrências previstas
+	// futuras da mesma série recorrente.
+	ApplyTo string `json:"apply_to"`
 }
 
 func (h *FinancialEntryHandler) Update(c *gin.Context) {
@@ -357,12 +361,22 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		}
 		purchaseDate = &d
 	}
+	applyToFuture := false
+	switch body.ApplyTo {
+	case "", "one":
+	case "future":
+		applyToFuture = true
+	default:
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "apply_to inválido (use 'one' ou 'future')")
+		return
+	}
 	e, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
 		WorkspaceID: ws, ID: id, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		SupplierID: body.SupplierID, PurchaseDate: purchaseDate,
 		InstallmentNumber: body.InstallmentNumber, InstallmentTotal: body.InstallmentTotal,
+		ApplyToFuture: applyToFuture,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
