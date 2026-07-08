@@ -15,13 +15,16 @@ type CreditCard struct {
 	ID          uuid.UUID
 	WorkspaceID uuid.UUID
 	Name        string
-	Brand       *string
-	ClosingDay  *int
-	DueDay      *int
-	Active      bool
-	Notes       *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// Brand é a bandeira (slug do catálogo global CardBrands: visa,
+	// mastercard, elo...). Bank é o banco/instituição emissora.
+	Brand      *string
+	Bank       *string
+	ClosingDay *int
+	DueDay     *int
+	Active     bool
+	Notes      *string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // Validate normaliza campos e valida invariantes.
@@ -38,6 +41,9 @@ func (c *CreditCard) Validate() error {
 	}
 	c.Name = name
 
+	if c.Brand != nil && *c.Brand != "" && !ValidCardBrand(*c.Brand) {
+		return &ValidationError{Msg: "bandeira fora do catálogo"}
+	}
 	if c.ClosingDay != nil && (*c.ClosingDay < 1 || *c.ClosingDay > 31) {
 		return &ValidationError{Msg: "closing_day deve estar entre 1 e 31"}
 	}

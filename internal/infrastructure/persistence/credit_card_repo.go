@@ -28,6 +28,7 @@ func (r *CreditCardRepository) Update(ctx context.Context, c *dom.CreditCard) er
 		Updates(map[string]any{
 			"name":        model.Name,
 			"brand":       model.Brand,
+			"bank":        model.Bank,
 			"closing_day": model.ClosingDay,
 			"due_day":     model.DueDay,
 			"active":      model.Active,
@@ -99,6 +100,7 @@ func creditCardToModel(c *dom.CreditCard) CreditCardModel {
 		WorkspaceID: c.WorkspaceID,
 		Name:        c.Name,
 		Brand:       c.Brand,
+		Bank:        c.Bank,
 		ClosingDay:  c.ClosingDay,
 		DueDay:      c.DueDay,
 		Active:      c.Active,
@@ -114,6 +116,7 @@ func modelToCreditCard(m *CreditCardModel) *dom.CreditCard {
 		WorkspaceID: m.WorkspaceID,
 		Name:        m.Name,
 		Brand:       m.Brand,
+		Bank:        m.Bank,
 		ClosingDay:  m.ClosingDay,
 		DueDay:      m.DueDay,
 		Active:      m.Active,

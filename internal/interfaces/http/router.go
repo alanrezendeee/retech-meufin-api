@@ -182,6 +182,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.PUT("/income-sources/:id", srcH.Update)
 		finance.DELETE("/income-sources/:id", srcH.Delete)
 
+		finance.GET("/card-brands", cardH.Brands)
 		finance.GET("/cards", cardH.List)
 		finance.POST("/cards", cardH.Create)
 		finance.GET("/cards/:id", cardH.Get)
