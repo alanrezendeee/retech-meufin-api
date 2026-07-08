@@ -159,7 +159,7 @@ func TestUpdateApplyToFutureRejectsNonSeries(t *testing.T) {
 	}
 }
 
-func TestUpdateApplyToFutureRejectsInstallments(t *testing.T) {
+func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 	repo := newFakeEntryRepo()
 	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 	ws := uuid.New()
@@ -175,14 +175,45 @@ func TestUpdateApplyToFutureRejectsInstallments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	if len(occs) != total {
+		t.Fatalf("esperava %d parcelas, veio %d", total, len(occs))
+	}
 
+	// Segunda parcela realizada — intocada.
+	repo.entries[occs[1].ID].Status = dom.StatusRealizada
+
+	// Edita a terceira parcela: dia 5 → 20, aplicar às próximas.
+	third := occs[2]
+	num, tot := 3, total
 	_, err = svc.Update(context.Background(), UpdateEntryInput{
-		WorkspaceID: ws, ID: occs[0].ID, Kind: "debit",
-		AmountCents: occs[0].AmountCents, DueDate: occs[0].DueDate, Description: occs[0].Description,
+		WorkspaceID: ws, ID: third.ID, Kind: "debit",
+		AmountCents: third.AmountCents,
+		DueDate:     time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
+		Description: third.Description,
+		InstallmentNumber: &num, InstallmentTotal: &tot,
 		ApplyToFuture: true,
 	})
-	var vErr *dom.ValidationError
-	if !errors.As(err, &vErr) {
-		t.Fatalf("esperava ValidationError para parcelamento, veio %v", err)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	for i, occ := range occs {
+		got := repo.entries[occ.ID]
+		switch {
+		case i < 2: // parcelas anteriores (e a realizada) intocadas
+			if got.DueDate.Day() != 5 {
+				t.Fatalf("parcela %d anterior foi alterada: %v", i+1, got.DueDate)
+			}
+		default: // editada e futuras: dia 20, mês preservado, numeração intacta
+			if got.DueDate.Day() != 20 {
+				t.Fatalf("parcela %d: dia esperado 20, veio %d", i+1, got.DueDate.Day())
+			}
+			if got.DueDate.Month() != occ.DueDate.Month() {
+				t.Fatalf("parcela %d: mês mudou de %v para %v", i+1, occ.DueDate.Month(), got.DueDate.Month())
+			}
+			if got.InstallmentNumber == nil || *got.InstallmentNumber != i+1 {
+				t.Fatalf("parcela %d: installment_number perdido/alterado: %v", i+1, got.InstallmentNumber)
+			}
+		}
 	}
 }
