@@ -92,6 +92,9 @@ type UpdateEntryInput struct {
 	Recurrence     string
 	Notes          *string
 	SupplierID     *uuid.UUID
+	// PurchaseDate: quando informada, atualiza a data da compra (itens de
+	// fatura). Nil preserva a atual (edições genéricas não a enviam).
+	PurchaseDate *time.Time
 }
 
 // Create monta o lançamento base, gera as ocorrências recorrentes e persiste em lote.
@@ -320,6 +323,9 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	}
 	e.Notes = in.Notes
 	e.SupplierID = in.SupplierID
+	if in.PurchaseDate != nil {
+		e.PurchaseDate = in.PurchaseDate
+	}
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
 		return nil, err
