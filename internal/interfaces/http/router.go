@@ -209,6 +209,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.PUT("/entries/:id", entH.Update)
 		finance.DELETE("/entries/:id", entH.Delete)
 		finance.POST("/entries/:id/confirm", entH.Confirm)
+		finance.POST("/entries/:id/reopen", entH.Reopen)
 		finance.POST("/entries/:id/cancel", entH.Cancel)
 		finance.POST("/entries/:id/settle", entH.Settle)
 
