@@ -37,11 +37,13 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	ws := uuid.New()
 	occs := createMonthlySeries(t, svc, ws, time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), 100000)
 
-	// Terceira ocorrência realizada — recebe o novo dia, mas não o valor.
+	// Terceira ocorrência realizada — é futura à editada: recebe o novo dia,
+	// mas não o valor (fato histórico/pago).
 	occs[2].Status = dom.StatusRealizada
 	repo.entries[occs[2].ID].Status = dom.StatusRealizada
 
-	// Edita a primeira: dia 10 → 15, valor 1000 → 1200, aplicar à série.
+	// Edita a primeira: dia 10 → 15, valor 1000 → 1200, aplicar em diante.
+	// Editando a 1ª ocorrência, "em diante" alcança a série toda.
 	first := occs[0]
 	_, stats, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: first.ID, Kind: "debit",
@@ -200,15 +202,21 @@ func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	// Dia: as 5 irmãs (inclusive passadas/realizada); sem outros campos.
-	if stats.DueDates != 5 || stats.Fields != 0 || stats.Total != 5 {
-		t.Fatalf("stats esperado {5 0 5}, veio %+v", stats)
+	// Dia: só as 3 parcelas seguintes (4, 5 e 6); anteriores preservadas.
+	if stats.DueDates != 3 || stats.Fields != 0 || stats.Total != 3 {
+		t.Fatalf("stats esperado {3 0 3}, veio %+v", stats)
 	}
 
 	for i, occ := range occs {
 		got := repo.entries[occ.ID]
-		// Dia 20 em TODAS as parcelas (inclusive anteriores/realizada),
-		// mês preservado, numeração intacta.
+		if i < 2 {
+			// Anteriores à editada (inclusive a realizada): vencimento histórico preservado.
+			if got.DueDate.Day() != 5 {
+				t.Fatalf("parcela %d anterior foi alterada: %v", i+1, got.DueDate)
+			}
+			continue
+		}
+		// Editada e seguintes: dia 20, mês preservado, numeração intacta.
 		if got.DueDate.Day() != 20 {
 			t.Fatalf("parcela %d: dia esperado 20, veio %d", i+1, got.DueDate.Day())
 		}
