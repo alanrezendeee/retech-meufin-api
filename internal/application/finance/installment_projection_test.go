@@ -75,3 +75,55 @@ func TestInstallmentsProjection(t *testing.T) {
 		t.Fatalf("último mês: quer 2027-01 com 42890, veio %+v", last)
 	}
 }
+
+func TestInstallmentsProjectionIncludesStandaloneExpenses(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+	ws := uuid.New()
+
+	// Financiamento 6x de R$ 1.898,77 criado pelo fluxo "Parcelado":
+	// parcelas reais, 2 primeiras realizadas.
+	total := 6
+	occs, err := svc.Create(context.Background(), CreateEntryInput{
+		WorkspaceID:       ws,
+		Kind:              "debit",
+		AmountCents:       189877,
+		DueDate:           time.Date(2026, 5, 15, 0, 0, 0, 0, time.UTC),
+		Description:       "Refinanciamento Equinox",
+		InstallmentsTotal: &total,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	repo.entries[occs[0].ID].Status = dom.StatusRealizada
+	repo.entries[occs[1].ID].Status = dom.StatusRealizada
+
+	proj, err := svc.InstallmentsProjection(context.Background(), ws)
+	if err != nil {
+		t.Fatalf("InstallmentsProjection: %v", err)
+	}
+	if len(proj.Groups) != 1 {
+		t.Fatalf("esperava 1 grupo, veio %d", len(proj.Groups))
+	}
+	g := proj.Groups[0]
+	if g.Source != SourceExpense {
+		t.Fatalf("source esperado expense, veio %s", g.Source)
+	}
+	if g.RemainingCount != 4 || g.LastKnownNumber != 2 || g.InstallmentTotal != 6 {
+		t.Fatalf("estado do grupo errado: %+v", g)
+	}
+	if g.RemainingCents != 4*189877 {
+		t.Fatalf("restante: quer %d, veio %d", 4*189877, g.RemainingCents)
+	}
+	// Termina na última parcela real: 15/10/2026 (maio + 5 meses).
+	if g.EndsAt.Format("2006-01") != "2026-10" {
+		t.Fatalf("ends_at: quer 2026-10, veio %v", g.EndsAt)
+	}
+	// Mensal usa os vencimentos reais das previstas (julho..outubro).
+	if len(proj.Monthly) != 4 || proj.Monthly[0].Month != "2026-07" || proj.Monthly[3].Month != "2026-10" {
+		t.Fatalf("mensal errado: %+v", proj.Monthly)
+	}
+	if proj.Monthly[0].TotalCents != 189877 || proj.Monthly[0].Count != 1 {
+		t.Fatalf("julho errado: %+v", proj.Monthly[0])
+	}
+}
