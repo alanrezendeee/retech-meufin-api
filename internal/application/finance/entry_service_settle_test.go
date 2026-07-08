@@ -67,6 +67,16 @@ func (f *fakeEntryRepo) ListRecurrenceFrontiers(_ context.Context) ([]dom.Financ
 	return nil, nil
 }
 
+func (f *fakeEntryRepo) ListInvoiceInstallments(_ context.Context, workspaceID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var out []dom.FinancialEntry
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.ParentID != nil && e.InstallmentNumber != nil && e.InstallmentTotal != nil {
+			out = append(out, *e)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeEntryRepo) ListResiduals(_ context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var out []dom.FinancialEntry
 	for _, e := range f.entries {

@@ -198,4 +198,7 @@ type FinancialEntryRepository interface {
 	// ListResiduals retorna os lançamentos residuais gerados a partir do
 	// lançamento de origem (pagamento parcial).
 	ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]FinancialEntry, error)
+	// ListInvoiceInstallments retorna compras parceladas dentro de faturas
+	// (filhos com installment_number/total) — insumo da projeção.
+	ListInvoiceInstallments(ctx context.Context, workspaceID uuid.UUID) ([]FinancialEntry, error)
 }

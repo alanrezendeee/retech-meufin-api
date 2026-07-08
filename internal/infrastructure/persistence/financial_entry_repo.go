@@ -206,6 +206,25 @@ func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, 
 	return mapFinanceErr(res.Error)
 }
 
+// ListInvoiceInstallments retorna compras parceladas dentro de faturas
+// (filhos com parcela preenchida) — insumo da projeção de compromissos.
+func (r *FinancialEntryRepository) ListInvoiceInstallments(ctx context.Context, workspaceID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND kind = ? AND parent_id IS NOT NULL AND installment_number IS NOT NULL AND installment_total IS NOT NULL",
+			workspaceID, "debit").
+		Order("due_date ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 // ListResiduals retorna os lançamentos residuais gerados a partir da origem.
 func (r *FinancialEntryRepository) ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel
