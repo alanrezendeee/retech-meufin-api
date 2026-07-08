@@ -47,6 +47,8 @@ type financialEntryResponse struct {
 	PaymentMethod     *string    `json:"payment_method"`
 	PaymentAccountID  *uuid.UUID `json:"payment_account_id"`
 	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
+	DiscountCents     *int64     `json:"discount_cents"`
+	DiscountReason    *string    `json:"discount_reason"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
@@ -86,6 +88,8 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		PaymentMethod:     paymentMethod,
 		PaymentAccountID:  e.PaymentAccountID,
 		PaymentCardID:     e.PaymentCardID,
+		DiscountCents:     e.DiscountCents,
+		DiscountReason:    e.DiscountReason,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -361,12 +365,37 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
 		return
 	}
-	e, err := h.svc.Confirm(c.Request.Context(), ws, id)
+	// Body opcional: desconto obtido na liquidação.
+	var body financialEntryConfirmJSON
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+			return
+		}
+	}
+	e, err := h.svc.Confirm(c.Request.Context(), app.ConfirmEntryInput{
+		WorkspaceID: ws, ID: id,
+		DiscountCents: body.DiscountCents, DiscountReason: body.DiscountReason,
+	})
 	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, mapFinancialEntry(e))
+}
+
+type financialEntryConfirmJSON struct {
+	DiscountCents  *int64  `json:"discount_cents"`
+	DiscountReason *string `json:"discount_reason"`
+}
+
+// DiscountReasons lista o catálogo global de motivos de desconto.
+func (h *FinancialEntryHandler) DiscountReasons(c *gin.Context) {
+	items := make([]gin.H, len(dom.DiscountReasons))
+	for i, r := range dom.DiscountReasons {
+		items[i] = gin.H{"slug": r.Slug, "name": r.Name, "description": r.Description}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
 
 // Reopen desfaz a liquidação: realizada volta a prevista, pagamento limpo.
@@ -396,6 +425,8 @@ type financialEntrySettleJSON struct {
 	AccountID       *uuid.UUID `json:"account_id"`
 	CardID          *uuid.UUID `json:"card_id"`
 	Notes           *string    `json:"notes"`
+	DiscountCents   *int64     `json:"discount_cents"`  // desconto obtido; abate do valor pago
+	DiscountReason  *string    `json:"discount_reason"` // slug do catálogo /finance/discount-reasons
 }
 
 // Settle liquida o lançamento com forma de pagamento, valor e data.
@@ -430,6 +461,7 @@ func (h *FinancialEntryHandler) Settle(c *gin.Context) {
 	e, err := h.svc.Settle(c.Request.Context(), app.SettleEntryInput{
 		WorkspaceID: ws, ID: id, PaidAt: paidAt, PaidAmountCents: body.PaidAmountCents,
 		PaymentMethod: body.PaymentMethod, AccountID: body.AccountID, CardID: body.CardID, Notes: body.Notes,
+		DiscountCents: body.DiscountCents, DiscountReason: body.DiscountReason,
 	})
 	if err != nil {
 		errrespond.Write(c, err)

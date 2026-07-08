@@ -335,9 +335,46 @@ func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid
 	return s.repo.SoftDelete(ctx, workspaceID, id)
 }
 
-// Confirm marca o lançamento como realizado (liquidação rápida, sem detalhes de pagamento).
-func (s *FinancialEntryService) Confirm(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {
-	return s.setStatus(ctx, workspaceID, id, dom.StatusRealizada)
+// ConfirmEntryInput parametriza a confirmação rápida; desconto é opcional.
+type ConfirmEntryInput struct {
+	WorkspaceID    uuid.UUID
+	ID             uuid.UUID
+	DiscountCents  *int64
+	DiscountReason *string
+}
+
+// Confirm marca o lançamento como realizado (liquidação rápida, sem detalhes
+// de pagamento). Com desconto informado, o valor pago é amount - desconto e o
+// motivo fica registrado como indicador.
+func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInput) (*dom.FinancialEntry, error) {
+	if in.DiscountCents == nil {
+		return s.setStatus(ctx, in.WorkspaceID, in.ID, dom.StatusRealizada)
+	}
+	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
+	if err != nil {
+		return nil, err
+	}
+	if e.Status == dom.StatusCancelada {
+		return nil, &dom.ValidationError{Msg: "lançamento cancelado não pode ser liquidado"}
+	}
+	now := time.Now().UTC()
+	paid := e.AmountCents - *in.DiscountCents
+	e.Status = dom.StatusRealizada
+	e.DiscountCents = in.DiscountCents
+	e.DiscountReason = in.DiscountReason
+	e.PaidAt = &now
+	e.PaidAmountCents = &paid
+	e.UpdatedAt = now
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	if err := s.repo.CascadeStatusToChildren(ctx, in.WorkspaceID, e.ID, dom.StatusRealizada, e.PaidAt); err != nil {
+		return nil, err
+	}
+	return e, nil
 }
 
 // Cancel marca o lançamento como cancelado.
@@ -361,6 +398,8 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 	e.PaymentMethod = nil
 	e.PaymentAccountID = nil
 	e.PaymentCardID = nil
+	e.DiscountCents = nil
+	e.DiscountReason = nil
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
 		return nil, err
@@ -444,6 +483,8 @@ type SettleEntryInput struct {
 	AccountID       *uuid.UUID
 	CardID          *uuid.UUID
 	Notes           *string
+	DiscountCents   *int64  // desconto obtido; abate do valor pago quando PaidAmountCents não vem
+	DiscountReason  *string // slug do catálogo dom.DiscountReasons
 }
 
 // Settle liquida o lançamento com forma de pagamento e valores. Liquidar uma
@@ -471,6 +512,9 @@ func (s *FinancialEntryService) Settle(ctx context.Context, in SettleEntryInput)
 		paidAt = in.PaidAt.UTC()
 	}
 	paid := e.AmountCents
+	if in.DiscountCents != nil {
+		paid = e.AmountCents - *in.DiscountCents
+	}
 	if in.PaidAmountCents != nil {
 		if *in.PaidAmountCents == 0 {
 			return nil, &dom.ValidationError{Msg: "paid_amount_cents não pode ser zero"}
@@ -479,6 +523,8 @@ func (s *FinancialEntryService) Settle(ctx context.Context, in SettleEntryInput)
 	}
 
 	e.Status = dom.StatusRealizada
+	e.DiscountCents = in.DiscountCents
+	e.DiscountReason = in.DiscountReason
 	e.PaidAt = &paidAt
 	e.PaidAmountCents = &paid
 	e.PaymentMethod = &method

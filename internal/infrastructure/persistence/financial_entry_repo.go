@@ -63,6 +63,8 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"payment_method":     model.PaymentMethod,
 			"payment_account_id": model.PaymentAccountID,
 			"payment_card_id":    model.PaymentCardID,
+			"discount_cents":     model.DiscountCents,
+			"discount_reason":    model.DiscountReason,
 			"supplier_id":        model.SupplierID,
 			"updated_at":         model.UpdatedAt,
 		})
@@ -192,6 +194,8 @@ func (r *FinancialEntryRepository) CascadeStatusToChildren(ctx context.Context, 
 		updates["payment_method"] = nil
 		updates["payment_account_id"] = nil
 		updates["payment_card_id"] = nil
+		updates["discount_cents"] = nil
+		updates["discount_reason"] = nil
 	}
 	res := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
 		Where("parent_id = ? AND workspace_id = ? AND status <> ?", parentID, workspaceID, "cancelada").
@@ -245,6 +249,8 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		PaymentMethod:     paymentMethodToString(e.PaymentMethod),
 		PaymentAccountID:  e.PaymentAccountID,
 		PaymentCardID:     e.PaymentCardID,
+		DiscountCents:     e.DiscountCents,
+		DiscountReason:    e.DiscountReason,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
@@ -291,6 +297,8 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		PaymentMethod:     stringToPaymentMethod(m.PaymentMethod),
 		PaymentAccountID:  m.PaymentAccountID,
 		PaymentCardID:     m.PaymentCardID,
+		DiscountCents:     m.DiscountCents,
+		DiscountReason:    m.DiscountReason,
 		SupplierID:        m.SupplierID,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
