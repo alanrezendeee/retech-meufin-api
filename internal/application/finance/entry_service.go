@@ -341,13 +341,21 @@ type ConfirmEntryInput struct {
 	ID             uuid.UUID
 	DiscountCents  *int64
 	DiscountReason *string
+	// PaidAmountCents: valor efetivamente pago. Quando menor que
+	// amount - desconto, a diferença vira lançamento residual (baixa
+	// parcial com desdobramento).
+	PaidAmountCents *int64
+	// ResidualDueDate: vencimento do residual; default é o vencimento
+	// original (residual nasce vencido). Data futura = renegociado.
+	ResidualDueDate *time.Time
 }
 
 // Confirm marca o lançamento como realizado (liquidação rápida, sem detalhes
-// de pagamento). Com desconto informado, o valor pago é amount - desconto e o
-// motivo fica registrado como indicador.
+// de pagamento). Com desconto informado, o valor pago abate o desconto e o
+// motivo fica registrado como indicador. Com valor pago menor que o devido,
+// o saldo não pago vira um novo lançamento previsto ligado à origem.
 func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInput) (*dom.FinancialEntry, error) {
-	if in.DiscountCents == nil {
+	if in.DiscountCents == nil && in.PaidAmountCents == nil {
 		return s.setStatus(ctx, in.WorkspaceID, in.ID, dom.StatusRealizada)
 	}
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
@@ -357,8 +365,28 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 	if e.Status == dom.StatusCancelada {
 		return nil, &dom.ValidationError{Msg: "lançamento cancelado não pode ser liquidado"}
 	}
+
+	discount := int64(0)
+	if in.DiscountCents != nil {
+		discount = *in.DiscountCents
+	}
+	expected := e.AmountCents - discount
+	paid := expected
+	if in.PaidAmountCents != nil {
+		paid = *in.PaidAmountCents
+	}
+	if paid <= 0 {
+		return nil, &dom.ValidationError{Msg: "valor pago deve ser maior que zero"}
+	}
+	residual := expected - paid
+	if residual < 0 {
+		return nil, &dom.ValidationError{Msg: "valor pago maior que o devido não é suportado (juros/multa: em breve)"}
+	}
+	if residual > 0 && e.Type != nil && *e.Type == dom.CartaoCategorySlug {
+		return nil, &dom.ValidationError{Msg: "pagamento parcial de fatura de cartão ainda não é suportado"}
+	}
+
 	now := time.Now().UTC()
-	paid := e.AmountCents - *in.DiscountCents
 	e.Status = dom.StatusRealizada
 	e.DiscountCents = in.DiscountCents
 	e.DiscountReason = in.DiscountReason
@@ -373,6 +401,36 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 	}
 	if err := s.repo.CascadeStatusToChildren(ctx, in.WorkspaceID, e.ID, dom.StatusRealizada, e.PaidAt); err != nil {
 		return nil, err
+	}
+
+	if residual > 0 {
+		residualDue := e.DueDate
+		if in.ResidualDueDate != nil {
+			residualDue = *in.ResidualDueDate
+		}
+		res := &dom.FinancialEntry{
+			ID:             uuid.New(),
+			WorkspaceID:    e.WorkspaceID,
+			Kind:           e.Kind,
+			Status:         dom.StatusPrevista,
+			AmountCents:    residual,
+			DueDate:        residualDue,
+			FamilyMemberID: e.FamilyMemberID,
+			SourceID:       e.SourceID,
+			Type:           e.Type,
+			Description:    "Residual de " + e.Description,
+			Recurrence:     dom.RecurrenceNone,
+			SupplierID:     e.SupplierID,
+			ResidualOfID:   &e.ID,
+			CreatedAt:      now,
+			UpdatedAt:      now,
+		}
+		if err := res.Validate(); err != nil {
+			return nil, err
+		}
+		if err := s.repo.Create(ctx, res); err != nil {
+			return nil, err
+		}
 	}
 	return e, nil
 }
@@ -391,6 +449,26 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 	}
 	if e.Status != dom.StatusRealizada {
 		return nil, &dom.ValidationError{Msg: "apenas lançamentos realizados podem ser reabertos"}
+	}
+	// Pagamento parcial: o residual gerado na liquidação é desfeito junto.
+	// Residual já pago bloqueia a reabertura (reabra/exclua o residual antes).
+	residuals, err := s.repo.ListResiduals(ctx, workspaceID, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range residuals {
+		r := residuals[i]
+		if r.Status == dom.StatusRealizada {
+			return nil, &dom.ValidationError{Msg: "existe residual já pago vinculado; desfaça o pagamento do residual antes de reabrir"}
+		}
+	}
+	for i := range residuals {
+		r := residuals[i]
+		if r.Status == dom.StatusPrevista {
+			if err := s.repo.SoftDelete(ctx, workspaceID, r.ID); err != nil {
+				return nil, err
+			}
+		}
 	}
 	e.Status = dom.StatusPrevista
 	e.PaidAt = nil

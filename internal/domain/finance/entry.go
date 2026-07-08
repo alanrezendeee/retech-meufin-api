@@ -86,6 +86,9 @@ type FinancialEntry struct {
 	// DiscountReasons) vira indicador para insights.
 	DiscountCents  *int64
 	DiscountReason *string
+	// ResidualOfID aponta para o lançamento de origem quando este lançamento
+	// nasceu de um pagamento parcial (desdobramento do saldo não pago).
+	ResidualOfID *uuid.UUID
 	SupplierID       *uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -186,4 +189,7 @@ type FinancialEntryRepository interface {
 	// workspaces), a ocorrência mais recente — o ponto de onde o extensor
 	// completa o horizonte rolling.
 	ListRecurrenceFrontiers(ctx context.Context) ([]FinancialEntry, error)
+	// ListResiduals retorna os lançamentos residuais gerados a partir do
+	// lançamento de origem (pagamento parcial).
+	ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]FinancialEntry, error)
 }
