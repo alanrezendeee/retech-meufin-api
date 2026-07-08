@@ -78,11 +78,11 @@ func (f *fakeEntryRepo) ListInvoiceInstallments(_ context.Context, workspaceID u
 	return out, nil
 }
 
-func (f *fakeEntryRepo) ListFutureGroupSiblings(_ context.Context, workspaceID, groupID uuid.UUID, after time.Time, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
+func (f *fakeEntryRepo) ListGroupSiblings(_ context.Context, workspaceID, groupID uuid.UUID, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
 	out := []dom.FinancialEntry{}
 	for _, e := range f.entries {
 		if e.WorkspaceID == workspaceID && e.RecurrenceGroupID != nil && *e.RecurrenceGroupID == groupID &&
-			e.Status == dom.StatusPrevista && e.DueDate.After(after) && e.ID != excludeID {
+			e.Status != dom.StatusCancelada && e.ID != excludeID {
 			out = append(out, *e)
 		}
 	}

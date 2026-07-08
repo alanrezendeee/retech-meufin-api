@@ -204,8 +204,7 @@ type FinancialEntryRepository interface {
 	// ListStandaloneInstallments retorna despesas parceladas diretas (sem
 	// fatura-pai; parcelas existem como lançamentos reais) — insumo da projeção.
 	ListStandaloneInstallments(ctx context.Context, workspaceID uuid.UUID) ([]FinancialEntry, error)
-	// ListFutureGroupSiblings retorna as ocorrências 'prevista' do grupo de
-	// recorrência com due_date posterior a `after`, excluindo excludeID —
-	// alvo da edição em série ("aplicar às próximas").
-	ListFutureGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, after time.Time, excludeID uuid.UUID) ([]FinancialEntry, error)
+	// ListGroupSiblings retorna os lançamentos não cancelados do grupo de
+	// recorrência/parcelamento, excluindo excludeID — alvo da edição em série.
+	ListGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, excludeID uuid.UUID) ([]FinancialEntry, error)
 }
