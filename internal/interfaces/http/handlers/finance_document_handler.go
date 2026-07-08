@@ -75,6 +75,16 @@ func (h *FinanceDocumentHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	kind := dom.DocumentKind(c.PostForm("kind"))
+	switch kind {
+	case "", dom.DocumentImport:
+		kind = dom.DocumentImport
+	case dom.DocumentFiscal:
+	default:
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "kind inválido (use 'import' ou 'fiscal')")
+		return
+	}
+
 	f, err := fileHeader.Open()
 	if err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "não foi possível ler o arquivo")
@@ -88,6 +98,7 @@ func (h *FinanceDocumentHandler) Upload(c *gin.Context) {
 		WorkspaceID:      ws,
 		UploadedByUserID: userID,
 		CardID:           cardID,
+		Kind:             kind,
 		OriginalFileName: fileHeader.Filename,
 		MimeType:         mimeType,
 		Size:             fileHeader.Size,
@@ -126,7 +137,7 @@ func (h *FinanceDocumentHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, limit, offset)
+	res, err := h.svc.List(c.Request.Context(), ws, dom.DocumentKind(c.Query("kind")), limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return

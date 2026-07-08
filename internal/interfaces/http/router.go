@@ -41,6 +41,7 @@ type RouterDeps struct {
 	FinanceAccountService    *appf.AccountService
 	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
+	FinanceFiscalService     *appf.FiscalService
 	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
 	PermsEnforcement         middleware.EnforcementMode
@@ -168,6 +169,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	finDocH := handlers.NewFinanceDocumentHandler(d.FinanceDocumentService)
 	finExtTrigH := handlers.NewFinanceExtractTriggerHandler(d.FinanceDocumentService, d.FinanceExtractionService)
 	finExtH := handlers.NewFinanceExtractionHandler(d.FinanceExtractionService, d.FinanceDocumentService, d.FinancialEntryService)
+	finFiscalH := handlers.NewFinanceFiscalHandler(d.FinanceFiscalService)
 	finance := v1.Group("/finance", middleware.RequireModule("finance", d.PermsEnforcement))
 	{
 		finance.GET("/suppliers", supplierH.List)
@@ -235,6 +237,8 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/documents/:id/extract", finExtTrigH.Extract)
 		finance.GET("/documents/:id/extraction-status", finExtH.Status)
 		finance.POST("/documents/:id/confirm", finExtH.Confirm)
+		finance.POST("/documents/:id/fiscal-confirm", finFiscalH.Confirm)
+		finance.GET("/entries/:id/fiscal-items", finFiscalH.ListByEntry)
 	}
 
 	return r

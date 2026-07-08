@@ -57,6 +57,25 @@ type financeExtractionStatusResponse struct {
 	CreatedAt    string                       `json:"created_at"`
 	UpdatedAt    string                       `json:"updated_at"`
 	Purchases    []purchaseSuggestionResponse `json:"purchases,omitempty"`
+	Fiscal       *fiscalSuggestionResponse    `json:"fiscal,omitempty"`
+}
+
+type fiscalItemSuggestionResponse struct {
+	Description   string `json:"description"`
+	QuantityMilli int64  `json:"quantity_milli"`
+	UnitCents     int64  `json:"unit_cents"`
+	AmountCents   int64  `json:"amount_cents"`
+	Category      string `json:"category,omitempty"`
+	RawText       string `json:"raw_text,omitempty"`
+}
+
+type fiscalSuggestionResponse struct {
+	Merchant   string                         `json:"merchant,omitempty"`
+	CNPJ       string                         `json:"cnpj,omitempty"`
+	Date       string                         `json:"date,omitempty"`
+	TotalCents int64                          `json:"total_cents"`
+	Items      []fiscalItemSuggestionResponse `json:"items"`
+	Warnings   []string                       `json:"warnings,omitempty"`
 }
 
 // Status responde GET /documents/:id/extraction-status. Quando o documento já
@@ -99,15 +118,45 @@ func (h *FinanceExtractionHandler) Status(c *gin.Context) {
 		out.FinishedAt = &f
 	}
 
-	// Compras sugeridas quando o documento já foi extraído.
+	// Sugestões quando o documento já foi extraído: compras (fatura) ou
+	// itens (cupom/nota fiscal), conforme o tipo do documento.
 	doc, derr := h.docs.Get(c.Request.Context(), ws, documentID)
 	if derr == nil && doc.ExtractionStatus == dom.ExtractionExtracted {
-		if purchases, perr := h.ext.ParsePurchases(doc); perr == nil {
+		if doc.Kind == dom.DocumentFiscal {
+			if fiscal, ferr := h.ext.ParseFiscal(doc); ferr == nil {
+				out.Fiscal = mapFiscalSuggestion(fiscal)
+			}
+		} else if purchases, perr := h.ext.ParsePurchases(doc); perr == nil {
 			out.Purchases = mapPurchaseSuggestions(purchases)
 		}
 	}
 
 	c.JSON(http.StatusOK, out)
+}
+
+func mapFiscalSuggestion(f *app.FiscalSuggestion) *fiscalSuggestionResponse {
+	if f == nil {
+		return nil
+	}
+	items := make([]fiscalItemSuggestionResponse, len(f.Items))
+	for i, it := range f.Items {
+		items[i] = fiscalItemSuggestionResponse{
+			Description:   it.Description,
+			QuantityMilli: it.QuantityMilli,
+			UnitCents:     it.UnitCents,
+			AmountCents:   it.AmountCents,
+			Category:      it.Category,
+			RawText:       it.RawText,
+		}
+	}
+	return &fiscalSuggestionResponse{
+		Merchant:   f.Merchant,
+		CNPJ:       f.CNPJ,
+		Date:       f.Date,
+		TotalCents: f.TotalCents,
+		Items:      items,
+		Warnings:   f.Warnings,
+	}
 }
 
 func mapPurchaseSuggestions(ps []app.PurchaseSuggestion) []purchaseSuggestionResponse {

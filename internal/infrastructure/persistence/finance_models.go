@@ -86,6 +86,7 @@ type FinancialEntryModel struct {
 	DiscountReason    *string    `gorm:"column:discount_reason;size:40"`
 	ResidualOfID      *uuid.UUID `gorm:"column:residual_of_id;type:uuid"`
 	PurchaseDate      *time.Time `gorm:"column:purchase_date;type:date"`
+	FiscalDocumentID  *uuid.UUID `gorm:"column:fiscal_document_id;type:uuid"`
 	SupplierID        *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
 	CreatedAt         time.Time  `gorm:"not null"`
 	UpdatedAt         time.Time  `gorm:"not null"`

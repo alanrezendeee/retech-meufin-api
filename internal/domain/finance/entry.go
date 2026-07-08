@@ -92,6 +92,9 @@ type FinancialEntry struct {
 	// PurchaseDate é a data em que a compra foi realizada (itens de fatura).
 	// Informacional: o vencimento do item é sempre o vencimento da fatura.
 	PurchaseDate *time.Time
+	// FiscalDocumentID aponta para o cupom/nota fiscal (finance_documents)
+	// cujo detalhamento item a item está vinculado a este lançamento.
+	FiscalDocumentID *uuid.UUID
 	SupplierID       *uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
