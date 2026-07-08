@@ -3,6 +3,7 @@ package finance
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"regexp"
@@ -137,6 +138,7 @@ func (s *FinanceExtractionService) runExtraction(
 	}
 
 	if extErr != nil {
+		extErr = friendlyExtractionErr(extErr)
 		msg := extErr.Error()
 		job.Status = dom.JobFailed
 		job.ErrorMessage = &msg
@@ -344,6 +346,16 @@ func (s *FinanceExtractionService) ParseFiscal(doc *dom.FinanceDocument) (*Fisca
 		})
 	}
 	return out, nil
+}
+
+// friendlyExtractionErr traduz erros crípticos do provedor LLM em mensagens
+// acionáveis para o usuário (armazenadas em job.error_message).
+func friendlyExtractionErr(err error) error {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "password protected") || strings.Contains(msg, "password-protected") {
+		return errors.New("Este PDF é protegido por senha — informe a senha do arquivo e tente novamente.")
+	}
+	return err
 }
 
 var ddmmRe = regexp.MustCompile(`^(\d{1,2})[/.\-](\d{1,2})$`)
