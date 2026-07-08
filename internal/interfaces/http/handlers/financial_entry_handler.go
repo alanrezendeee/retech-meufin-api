@@ -50,6 +50,7 @@ type financialEntryResponse struct {
 	DiscountCents     *int64     `json:"discount_cents"`
 	DiscountReason    *string    `json:"discount_reason"`
 	ResidualOfID      *uuid.UUID `json:"residual_of_id"`
+	PurchaseDate      *string    `json:"purchase_date"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
 	CreatedAt         string     `json:"created_at"`
 	UpdatedAt         string     `json:"updated_at"`
@@ -65,6 +66,11 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 	if e.PaymentMethod != nil {
 		v := string(*e.PaymentMethod)
 		paymentMethod = &v
+	}
+	var purchaseDate *string
+	if e.PurchaseDate != nil {
+		v := e.PurchaseDate.Format(entryDateLayout)
+		purchaseDate = &v
 	}
 	return financialEntryResponse{
 		ID:                e.ID,
@@ -92,6 +98,7 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
 		ResidualOfID:      e.ResidualOfID,
+		PurchaseDate:      purchaseDate,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
@@ -113,6 +120,7 @@ type financialEntryCreateJSON struct {
 	ParentID          *uuid.UUID `json:"parent_id"`
 	InstallmentsTotal *int       `json:"installments_total"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
+	PurchaseDate      *string    `json:"purchase_date"` // YYYY-MM-DD; data da compra (itens de fatura)
 	// Lançamento retroativo: ocorrências vencidas nascem realizadas.
 	ConfirmPastOccurrences bool `json:"confirm_past_occurrences"`
 }
@@ -133,12 +141,21 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "due_date inválida (use YYYY-MM-DD)")
 		return
 	}
+	var purchaseDate *time.Time
+	if body.PurchaseDate != nil && *body.PurchaseDate != "" {
+		d, derr := time.Parse(entryDateLayout, *body.PurchaseDate)
+		if derr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "purchase_date inválida (use YYYY-MM-DD)")
+			return
+		}
+		purchaseDate = &d
+	}
 	entries, err := h.svc.Create(c.Request.Context(), app.CreateEntryInput{
 		WorkspaceID: ws, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
-		SupplierID: body.SupplierID, ConfirmPastOccurrences: body.ConfirmPastOccurrences,
+		SupplierID: body.SupplierID, PurchaseDate: purchaseDate, ConfirmPastOccurrences: body.ConfirmPastOccurrences,
 	})
 	if err != nil {
 		errrespond.Write(c, err)

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"log/slog"
 	"math"
+	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -245,7 +248,7 @@ func (s *FinanceExtractionService) ParsePurchases(doc *dom.FinanceDocument) ([]P
 		out = append(out, PurchaseSuggestion{
 			Description:        p.Description,
 			AmountCents:        reaisToCents(p.Amount),
-			Date:               p.Date,
+			Date:               normalizePurchaseDate(p.Date, inv.DueDate),
 			Category:           p.CategorySuggestion,
 			InstallmentCurrent: p.InstallmentCurrent,
 			InstallmentTotal:   p.InstallmentTotal,
@@ -262,4 +265,49 @@ func reaisToCents(v *float64) int64 {
 		return 0
 	}
 	return int64(math.Round(*v * 100))
+}
+
+var ddmmRe = regexp.MustCompile(`^(\d{1,2})[/.\-](\d{1,2})$`)
+
+// normalizePurchaseDate converte a data da compra para YYYY-MM-DD (formato que
+// a UI e o confirm falam). O prompt v2 já pede ISO, mas faturas imprimem
+// datas sem ano ("07/06") e o LLM pode transcrever literalmente — aceita
+// também DD/MM/YYYY, DD/MM/YY e DD/MM (ano inferido do vencimento da fatura:
+// mês da compra posterior ao do vencimento pertence ao ano anterior).
+// Retorna "" quando não consegue interpretar — melhor sem data do que errada.
+func normalizePurchaseDate(raw, dueDateISO string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02", raw); err == nil {
+		return t.Format("2006-01-02")
+	}
+	for _, layout := range []string{"02/01/2006", "02-01-2006", "02.01.2006", "02/01/06"} {
+		if t, err := time.Parse(layout, raw); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	m := ddmmRe.FindStringSubmatch(raw)
+	if m == nil {
+		return ""
+	}
+	due, err := time.Parse("2006-01-02", dueDateISO)
+	if err != nil {
+		return ""
+	}
+	day, _ := strconv.Atoi(m[1])
+	month, _ := strconv.Atoi(m[2])
+	if month < 1 || month > 12 || day < 1 || day > 31 {
+		return ""
+	}
+	year := due.Year()
+	if month > int(due.Month()) {
+		year--
+	}
+	t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+	if t.Day() != day {
+		return "" // dia inexistente no mês (ex.: 31/02)
+	}
+	return t.Format("2006-01-02")
 }

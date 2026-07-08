@@ -66,6 +66,7 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"discount_cents":     model.DiscountCents,
 			"discount_reason":    model.DiscountReason,
 			"residual_of_id":     model.ResidualOfID,
+			"purchase_date":      model.PurchaseDate,
 			"supplier_id":        model.SupplierID,
 			"updated_at":         model.UpdatedAt,
 		})
@@ -269,6 +270,7 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
 		ResidualOfID:      e.ResidualOfID,
+		PurchaseDate:      e.PurchaseDate,
 		SupplierID:        e.SupplierID,
 		CreatedAt:         e.CreatedAt,
 		UpdatedAt:         e.UpdatedAt,
@@ -318,6 +320,7 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		DiscountCents:     m.DiscountCents,
 		DiscountReason:    m.DiscountReason,
 		ResidualOfID:      m.ResidualOfID,
+		PurchaseDate:      m.PurchaseDate,
 		SupplierID:        m.SupplierID,
 		CreatedAt:         m.CreatedAt,
 		UpdatedAt:         m.UpdatedAt,
