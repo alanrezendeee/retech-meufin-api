@@ -312,13 +312,15 @@ func (s *FinancialEntryService) List(ctx context.Context, workspaceID uuid.UUID,
 	return &ListEntriesResult{Items: items, Total: total}, nil
 }
 
-func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput) (*dom.FinancialEntry, error) {
+// Update altera o lançamento; com ApplyToFuture, retorna também quantas
+// ocorrências/parcelas futuras receberam as mudanças.
+func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput) (*dom.FinancialEntry, int, error) {
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if in.ApplyToFuture && e.RecurrenceGroupID == nil {
-		return nil, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
+		return nil, 0, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
 	}
 	orig := *e
 	e.Kind = dom.Kind(in.Kind)
@@ -354,24 +356,27 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 		}
 	}
 	if e.InstallmentNumber != nil && e.InstallmentTotal != nil && *e.InstallmentNumber > *e.InstallmentTotal {
-		return nil, &dom.ValidationError{Msg: "número da parcela não pode ser maior que o total de parcelas"}
+		return nil, 0, &dom.ValidationError{Msg: "número da parcela não pode ser maior que o total de parcelas"}
 	}
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if err := s.validateExpenseCategory(ctx, in.WorkspaceID, e.Kind, e.Type); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if err := s.repo.Update(ctx, e); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
+	seriesUpdated := 0
 	if in.ApplyToFuture {
-		if err := s.propagateToFutureOccurrences(ctx, &orig, e); err != nil {
-			return nil, err
+		n, err := s.propagateToFutureOccurrences(ctx, &orig, e)
+		if err != nil {
+			return nil, 0, err
 		}
+		seriesUpdated = n
 	}
-	return e, nil
+	return e, seriesUpdated, nil
 }
 
 // propagateToFutureOccurrences replica nas ocorrências/parcelas 'prevista'
@@ -382,18 +387,18 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 // semanal não propaga dia (dia do mês não se aplica). O extensor de
 // recorrências usa a última ocorrência como template, então as futuras
 // geradas já herdam a mudança.
-func (s *FinancialEntryService) propagateToFutureOccurrences(ctx context.Context, orig, updated *dom.FinancialEntry) error {
+func (s *FinancialEntryService) propagateToFutureOccurrences(ctx context.Context, orig, updated *dom.FinancialEntry) (int, error) {
 	dayChanged := updated.DueDate.Day() != orig.DueDate.Day() && updated.Recurrence != dom.RecurrenceWeekly
 	amountChanged := updated.AmountCents != orig.AmountCents
 	descChanged := updated.Description != orig.Description
 	typeChanged := !strPtrEqual(updated.Type, orig.Type)
 	if !dayChanged && !amountChanged && !descChanged && !typeChanged {
-		return nil
+		return 0, nil
 	}
 
 	siblings, err := s.repo.ListFutureGroupSiblings(ctx, updated.WorkspaceID, *updated.RecurrenceGroupID, orig.DueDate, updated.ID)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	now := time.Now().UTC()
 	for i := range siblings {
@@ -412,10 +417,10 @@ func (s *FinancialEntryService) propagateToFutureOccurrences(ctx context.Context
 		}
 		sib.UpdatedAt = now
 		if err := s.repo.Update(ctx, &sib); err != nil {
-			return err
+			return 0, err
 		}
 	}
-	return nil
+	return len(siblings), nil
 }
 
 func strPtrEqual(a, b *string) bool {

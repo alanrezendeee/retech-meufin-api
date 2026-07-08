@@ -370,7 +370,7 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "apply_to inválido (use 'one' ou 'future')")
 		return
 	}
-	e, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
+	e, seriesUpdated, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
 		WorkspaceID: ws, ID: id, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
@@ -382,7 +382,21 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
+	if applyToFuture {
+		c.JSON(http.StatusOK, financialEntrySeriesResponse{
+			financialEntryResponse: mapFinancialEntry(e),
+			SeriesUpdated:          &seriesUpdated,
+		})
+		return
+	}
 	c.JSON(http.StatusOK, mapFinancialEntry(e))
+}
+
+// financialEntrySeriesResponse acrescenta ao entry o total de ocorrências/
+// parcelas futuras alteradas pela edição em série (apply_to=future).
+type financialEntrySeriesResponse struct {
+	financialEntryResponse
+	SeriesUpdated *int `json:"series_updated,omitempty"`
 }
 
 func (h *FinancialEntryHandler) Delete(c *gin.Context) {
