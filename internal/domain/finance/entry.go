@@ -204,6 +204,9 @@ type FinancialEntryRepository interface {
 	// ListStandaloneInstallments retorna despesas parceladas diretas (sem
 	// fatura-pai; parcelas existem como lançamentos reais) — insumo da projeção.
 	ListStandaloneInstallments(ctx context.Context, workspaceID uuid.UUID) ([]FinancialEntry, error)
+	// YearBounds retorna o menor e o maior ano de vencimento do workspace
+	// (0, 0 quando não há lançamentos) — alimenta o filtro de ano do admin.
+	YearBounds(ctx context.Context, workspaceID uuid.UUID) (minYear, maxYear int, err error)
 	// ListGroupSiblings retorna os lançamentos não cancelados do grupo de
 	// recorrência/parcelamento, excluindo excludeID — alvo da edição em série.
 	ListGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, excludeID uuid.UUID) ([]FinancialEntry, error)

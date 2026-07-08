@@ -210,6 +210,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.GET("/installments", entH.Installments)
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)
+		finance.GET("/entries/year-bounds", entH.YearBounds)
 		finance.GET("/entries/:id", entH.Get)
 		finance.PUT("/entries/:id", entH.Update)
 		finance.DELETE("/entries/:id", entH.Delete)
