@@ -370,7 +370,7 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "apply_to inválido (use 'one' ou 'future')")
 		return
 	}
-	e, seriesUpdated, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
+	e, seriesStats, err := h.svc.Update(c.Request.Context(), app.UpdateEntryInput{
 		WorkspaceID: ws, ID: id, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
@@ -385,18 +385,24 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 	if applyToFuture {
 		c.JSON(http.StatusOK, financialEntrySeriesResponse{
 			financialEntryResponse: mapFinancialEntry(e),
-			SeriesUpdated:          &seriesUpdated,
+			SeriesUpdated:          &seriesStats.Total,
+			SeriesDueDatesUpdated:  &seriesStats.DueDates,
+			SeriesFieldsUpdated:    &seriesStats.Fields,
 		})
 		return
 	}
 	c.JSON(http.StatusOK, mapFinancialEntry(e))
 }
 
-// financialEntrySeriesResponse acrescenta ao entry o total de ocorrências/
-// parcelas futuras alteradas pela edição em série (apply_to=future).
+// financialEntrySeriesResponse acrescenta ao entry o alcance da edição em
+// série (apply_to=future): total de lançamentos alterados, quantos tiveram o
+// dia do vencimento ajustado (série inteira) e quantas previstas futuras
+// receberam os demais campos.
 type financialEntrySeriesResponse struct {
 	financialEntryResponse
-	SeriesUpdated *int `json:"series_updated,omitempty"`
+	SeriesUpdated         *int `json:"series_updated,omitempty"`
+	SeriesDueDatesUpdated *int `json:"series_due_dates_updated,omitempty"`
+	SeriesFieldsUpdated   *int `json:"series_fields_updated,omitempty"`
 }
 
 func (h *FinancialEntryHandler) Delete(c *gin.Context) {

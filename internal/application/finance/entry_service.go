@@ -314,13 +314,13 @@ func (s *FinancialEntryService) List(ctx context.Context, workspaceID uuid.UUID,
 
 // Update altera o lançamento; com ApplyToFuture, retorna também quantas
 // ocorrências/parcelas futuras receberam as mudanças.
-func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput) (*dom.FinancialEntry, int, error) {
+func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput) (*dom.FinancialEntry, SeriesUpdateStats, error) {
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
 	if err != nil {
-		return nil, 0, err
+		return nil, SeriesUpdateStats{}, err
 	}
 	if in.ApplyToFuture && e.RecurrenceGroupID == nil {
-		return nil, 0, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
+		return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
 	}
 	orig := *e
 	e.Kind = dom.Kind(in.Kind)
@@ -356,71 +356,100 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 		}
 	}
 	if e.InstallmentNumber != nil && e.InstallmentTotal != nil && *e.InstallmentNumber > *e.InstallmentTotal {
-		return nil, 0, &dom.ValidationError{Msg: "número da parcela não pode ser maior que o total de parcelas"}
+		return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "número da parcela não pode ser maior que o total de parcelas"}
 	}
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
-		return nil, 0, err
+		return nil, SeriesUpdateStats{}, err
 	}
 	if err := s.validateExpenseCategory(ctx, in.WorkspaceID, e.Kind, e.Type); err != nil {
-		return nil, 0, err
+		return nil, SeriesUpdateStats{}, err
 	}
 	if err := s.repo.Update(ctx, e); err != nil {
-		return nil, 0, err
+		return nil, SeriesUpdateStats{}, err
 	}
-	seriesUpdated := 0
+	var stats SeriesUpdateStats
 	if in.ApplyToFuture {
-		n, err := s.propagateToFutureOccurrences(ctx, &orig, e)
+		st, err := s.propagateToSeries(ctx, &orig, e)
 		if err != nil {
-			return nil, 0, err
+			return nil, SeriesUpdateStats{}, err
 		}
-		seriesUpdated = n
+		stats = st
 	}
-	return e, seriesUpdated, nil
+	return e, stats, nil
 }
 
-// propagateToFutureOccurrences replica nas ocorrências/parcelas 'prevista'
-// futuras do grupo apenas o que mudou nesta edição: dia do vencimento (cada
-// ocorrência mantém seu mês, com clamp de fim de mês), valor, descrição e
-// categoria. Ocorrências realizadas/canceladas nunca são tocadas; os campos de
-// parcela (installment_number/total) de cada irmã são preservados. Recorrência
-// semanal não propaga dia (dia do mês não se aplica). O extensor de
-// recorrências usa a última ocorrência como template, então as futuras
-// geradas já herdam a mudança.
-func (s *FinancialEntryService) propagateToFutureOccurrences(ctx context.Context, orig, updated *dom.FinancialEntry) (int, error) {
+// SeriesUpdateStats resume o alcance da edição em série.
+type SeriesUpdateStats struct {
+	// DueDates: lançamentos (qualquer status, passados e futuros) que tiveram
+	// o dia do vencimento ajustado.
+	DueDates int
+	// Fields: previstas futuras que receberam valor/descrição/categoria.
+	Fields int
+	// Total: lançamentos distintos alterados.
+	Total int
+}
+
+// propagateToSeries replica no grupo apenas o que mudou nesta edição, com
+// alcance por campo:
+//
+//   - Dia do vencimento: TODOS os lançamentos não cancelados da série
+//     (passados e futuros, inclusive realizados) — corrigir o dia errado de
+//     um financiamento deve valer para a série inteira. Cada lançamento
+//     mantém seu mês, com clamp de fim de mês. Semanal não propaga dia.
+//   - Valor, descrição e categoria: apenas previstas futuras — valor de
+//     realizada é fato histórico; reajuste vale daqui pra frente.
+//
+// Os campos de parcela (installment_number/total) de cada irmã são
+// preservados. O extensor de recorrências usa a última ocorrência como
+// template, então as futuras geradas já herdam a mudança.
+func (s *FinancialEntryService) propagateToSeries(ctx context.Context, orig, updated *dom.FinancialEntry) (SeriesUpdateStats, error) {
 	dayChanged := updated.DueDate.Day() != orig.DueDate.Day() && updated.Recurrence != dom.RecurrenceWeekly
 	amountChanged := updated.AmountCents != orig.AmountCents
 	descChanged := updated.Description != orig.Description
 	typeChanged := !strPtrEqual(updated.Type, orig.Type)
-	if !dayChanged && !amountChanged && !descChanged && !typeChanged {
-		return 0, nil
+	fieldsChanged := amountChanged || descChanged || typeChanged
+	if !dayChanged && !fieldsChanged {
+		return SeriesUpdateStats{}, nil
 	}
 
-	siblings, err := s.repo.ListFutureGroupSiblings(ctx, updated.WorkspaceID, *updated.RecurrenceGroupID, orig.DueDate, updated.ID)
+	siblings, err := s.repo.ListGroupSiblings(ctx, updated.WorkspaceID, *updated.RecurrenceGroupID, updated.ID)
 	if err != nil {
-		return 0, err
+		return SeriesUpdateStats{}, err
 	}
+	var stats SeriesUpdateStats
 	now := time.Now().UTC()
 	for i := range siblings {
 		sib := siblings[i]
+		touched := false
 		if dayChanged {
 			sib.DueDate = dom.WithDayClamped(sib.DueDate, updated.DueDate.Day())
+			stats.DueDates++
+			touched = true
 		}
-		if amountChanged {
-			sib.AmountCents = updated.AmountCents
+		if fieldsChanged && sib.Status == dom.StatusPrevista && sib.DueDate.After(orig.DueDate) {
+			if amountChanged {
+				sib.AmountCents = updated.AmountCents
+			}
+			if descChanged {
+				sib.Description = updated.Description
+			}
+			if typeChanged {
+				sib.Type = updated.Type
+			}
+			stats.Fields++
+			touched = true
 		}
-		if descChanged {
-			sib.Description = updated.Description
+		if !touched {
+			continue
 		}
-		if typeChanged {
-			sib.Type = updated.Type
-		}
+		stats.Total++
 		sib.UpdatedAt = now
 		if err := s.repo.Update(ctx, &sib); err != nil {
-			return 0, err
+			return SeriesUpdateStats{}, err
 		}
 	}
-	return len(siblings), nil
+	return stats, nil
 }
 
 func strPtrEqual(a, b *string) bool {

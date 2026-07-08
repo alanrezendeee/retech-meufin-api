@@ -225,13 +225,13 @@ func (r *FinancialEntryRepository) ListInvoiceInstallments(ctx context.Context, 
 	return out, nil
 }
 
-// ListFutureGroupSiblings retorna as ocorrências 'prevista' futuras do grupo
-// de recorrência — alvo da edição em série ("aplicar às próximas").
-func (r *FinancialEntryRepository) ListFutureGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, after time.Time, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
+// ListGroupSiblings retorna os lançamentos não cancelados do grupo de
+// recorrência/parcelamento — alvo da edição em série.
+func (r *FinancialEntryRepository) ListGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND recurrence_group_id = ? AND status = ? AND due_date > ? AND id <> ?",
-			workspaceID, groupID, string(dom.StatusPrevista), after, excludeID).
+		Where("workspace_id = ? AND recurrence_group_id = ? AND status <> ? AND id <> ?",
+			workspaceID, groupID, string(dom.StatusCancelada), excludeID).
 		Order("due_date ASC").
 		Find(&rows).Error
 	if err != nil {

@@ -37,13 +37,13 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	ws := uuid.New()
 	occs := createMonthlySeries(t, svc, ws, time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), 100000)
 
-	// Terceira ocorrência realizada — não pode ser tocada.
+	// Terceira ocorrência realizada — recebe o novo dia, mas não o valor.
 	occs[2].Status = dom.StatusRealizada
 	repo.entries[occs[2].ID].Status = dom.StatusRealizada
 
-	// Edita a primeira: dia 10 → 15, valor 1000 → 1200, aplicar às próximas.
+	// Edita a primeira: dia 10 → 15, valor 1000 → 1200, aplicar à série.
 	first := occs[0]
-	_, seriesUpdated, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, stats, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: first.ID, Kind: "debit",
 		AmountCents:   120000,
 		DueDate:       time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
@@ -53,9 +53,9 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	// 12 ocorrências - a editada - a realizada = 10 futuras alteradas.
-	if seriesUpdated != 10 {
-		t.Fatalf("seriesUpdated esperado 10, veio %d", seriesUpdated)
+	// Dia: todas as 11 irmãs. Valor: 10 previstas futuras (realizada fica fora).
+	if stats.DueDates != 11 || stats.Fields != 10 || stats.Total != 11 {
+		t.Fatalf("stats esperado {11 10 11}, veio %+v", stats)
 	}
 
 	for i, occ := range occs {
@@ -65,9 +65,9 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 			if got.DueDate.Day() != 15 || got.AmountCents != 120000 {
 				t.Fatalf("ocorrência editada não atualizada: %v %d", got.DueDate, got.AmountCents)
 			}
-		case i == 2: // realizada: intocada
-			if got.DueDate.Day() != 10 || got.AmountCents != 100000 {
-				t.Fatalf("ocorrência realizada foi alterada: %v %d", got.DueDate, got.AmountCents)
+		case i == 2: // realizada: dia ajustado, valor histórico preservado
+			if got.DueDate.Day() != 15 || got.AmountCents != 100000 {
+				t.Fatalf("realizada: quer dia 15 e valor 100000, veio %v %d", got.DueDate, got.AmountCents)
 			}
 		default: // previstas futuras: dia e valor propagados, mês preservado
 			if got.DueDate.Day() != 15 {
@@ -189,7 +189,7 @@ func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 	// Edita a terceira parcela: dia 5 → 20, aplicar às próximas.
 	third := occs[2]
 	num, tot := 3, total
-	_, seriesUpdated, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, stats, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: third.ID, Kind: "debit",
 		AmountCents:       third.AmountCents,
 		DueDate:           time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
@@ -200,28 +200,23 @@ func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	// Parcelas 4, 5 e 6 são as futuras alteradas.
-	if seriesUpdated != 3 {
-		t.Fatalf("seriesUpdated esperado 3, veio %d", seriesUpdated)
+	// Dia: as 5 irmãs (inclusive passadas/realizada); sem outros campos.
+	if stats.DueDates != 5 || stats.Fields != 0 || stats.Total != 5 {
+		t.Fatalf("stats esperado {5 0 5}, veio %+v", stats)
 	}
 
 	for i, occ := range occs {
 		got := repo.entries[occ.ID]
-		switch {
-		case i < 2: // parcelas anteriores (e a realizada) intocadas
-			if got.DueDate.Day() != 5 {
-				t.Fatalf("parcela %d anterior foi alterada: %v", i+1, got.DueDate)
-			}
-		default: // editada e futuras: dia 20, mês preservado, numeração intacta
-			if got.DueDate.Day() != 20 {
-				t.Fatalf("parcela %d: dia esperado 20, veio %d", i+1, got.DueDate.Day())
-			}
-			if got.DueDate.Month() != occ.DueDate.Month() {
-				t.Fatalf("parcela %d: mês mudou de %v para %v", i+1, occ.DueDate.Month(), got.DueDate.Month())
-			}
-			if got.InstallmentNumber == nil || *got.InstallmentNumber != i+1 {
-				t.Fatalf("parcela %d: installment_number perdido/alterado: %v", i+1, got.InstallmentNumber)
-			}
+		// Dia 20 em TODAS as parcelas (inclusive anteriores/realizada),
+		// mês preservado, numeração intacta.
+		if got.DueDate.Day() != 20 {
+			t.Fatalf("parcela %d: dia esperado 20, veio %d", i+1, got.DueDate.Day())
+		}
+		if got.DueDate.Month() != occ.DueDate.Month() {
+			t.Fatalf("parcela %d: mês mudou de %v para %v", i+1, occ.DueDate.Month(), got.DueDate.Month())
+		}
+		if got.InstallmentNumber == nil || *got.InstallmentNumber != i+1 {
+			t.Fatalf("parcela %d: installment_number perdido/alterado: %v", i+1, got.InstallmentNumber)
 		}
 	}
 }
