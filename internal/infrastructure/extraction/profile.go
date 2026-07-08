@@ -28,7 +28,8 @@ func LabExamProfile() ExtractProfile {
 // v2: datas normalizadas para YYYY-MM-DD com inferência de ano.
 // v3: pagamentos/créditos em credits[], total_amount = total a pagar,
 // previous_balance; tarifas/juros/IOF são despesas.
-const InvoicePromptVersion = "invoice-extract-v3"
+// v4: parcelamento com formatos explícitos (PARC 03/10, 3/10, 3 DE 10...).
+const InvoicePromptVersion = "invoice-extract-v4"
 
 const invoiceToolName = "registrar_fatura"
 
@@ -44,7 +45,7 @@ REGRAS OBRIGATÓRIAS:
   da fatura (statement_month/due_date). Compra de mês posterior ao vencimento
   pertence ao ano anterior (ex.: compra de dezembro em fatura que vence em
   janeiro). Se a data estiver ilegível ou ausente, use "" (string vazia).
-- Se a compra for parcelada (ex.: "PARC 03/10", "3/10"), preencha installment_current e installment_total.
+- COMPRA PARCELADA: os formatos variam — "PARC 03/10", "03/10", "3/10", "3 DE 10", "PARCELA 03/10", "PARC AUTOMATICO PARC 10/10". O primeiro número é a parcela ATUAL (installment_current) e o segundo é o TOTAL de parcelas (installment_total). Se apenas o total for legível, preencha só installment_total; se nada indicar parcelamento, deixe ambos null. NÃO confunda com datas (DD/MM) nem com quantidades.
 - Sugira uma categoria em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, equipamentos, outros.
 - QUANDO o demonstrativo tiver linhas de pagamento, crédito ou estorno (ex.: "PAGAMENTO DE FATURA", valores negativos), NÃO as inclua em purchases: liste cada uma em "credits" com descrição, data (mesmas regras de data) e "amount" com o valor ABSOLUTO (positivo).
 - Anuidade, IOF, juros, encargos, tarifas e multas SÃO despesas do ciclo: inclua em purchases (sugira "contas_fixas" ou "impostos").
@@ -63,8 +64,8 @@ func invoiceInputSchema() map[string]any {
 			"amount":              map[string]any{"type": []string{"number", "null"}},
 			"date":                map[string]any{"type": "string", "description": "Data da compra em YYYY-MM-DD (ano inferido do período da fatura); \"\" se ilegível"},
 			"category_suggestion": map[string]any{"type": "string"},
-			"installment_current": map[string]any{"type": []string{"integer", "null"}},
-			"installment_total":   map[string]any{"type": []string{"integer", "null"}},
+			"installment_current": map[string]any{"type": []string{"integer", "null"}, "description": "Parcela atual: em 'PARC 03/10' é 3; null se não parcelado ou ilegível"},
+			"installment_total":   map[string]any{"type": []string{"integer", "null"}, "description": "Total de parcelas: em 'PARC 03/10' é 10; null se não parcelado"},
 			"raw_text":            map[string]any{"type": "string"},
 		},
 		"required": []string{"description"},

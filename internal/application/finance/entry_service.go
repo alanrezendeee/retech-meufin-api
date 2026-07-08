@@ -95,6 +95,10 @@ type UpdateEntryInput struct {
 	// PurchaseDate: quando informada, atualiza a data da compra (itens de
 	// fatura). Nil preserva a atual (edições genéricas não a enviam).
 	PurchaseDate *time.Time
+	// InstallmentNumber/InstallmentTotal: parcela da compra dentro da fatura.
+	// Nil preserva o atual; 0 limpa (compra deixa de ser parcelada).
+	InstallmentNumber *int
+	InstallmentTotal  *int
 }
 
 // Create monta o lançamento base, gera as ocorrências recorrentes e persiste em lote.
@@ -325,6 +329,23 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	e.SupplierID = in.SupplierID
 	if in.PurchaseDate != nil {
 		e.PurchaseDate = in.PurchaseDate
+	}
+	if in.InstallmentNumber != nil {
+		if *in.InstallmentNumber <= 0 {
+			e.InstallmentNumber = nil
+		} else {
+			e.InstallmentNumber = in.InstallmentNumber
+		}
+	}
+	if in.InstallmentTotal != nil {
+		if *in.InstallmentTotal <= 0 {
+			e.InstallmentTotal = nil
+		} else {
+			e.InstallmentTotal = in.InstallmentTotal
+		}
+	}
+	if e.InstallmentNumber != nil && e.InstallmentTotal != nil && *e.InstallmentNumber > *e.InstallmentTotal {
+		return nil, &dom.ValidationError{Msg: "número da parcela não pode ser maior que o total de parcelas"}
 	}
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {

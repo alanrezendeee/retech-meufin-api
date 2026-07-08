@@ -497,6 +497,62 @@ func TestConfirmWithPaidAt(t *testing.T) {
 	}
 }
 
+func TestUpdateInstallmentsPreserveAndClear(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	three, ten := 3, 10
+	e.InstallmentNumber = &three
+	e.InstallmentTotal = &ten
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	base := UpdateEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, Kind: string(dom.KindDebit),
+		AmountCents: e.AmountCents, DueDate: e.DueDate, Description: e.Description,
+	}
+
+	// ausente preserva (edição genérica não envia)
+	got, err := svc.Update(context.Background(), base)
+	if err != nil {
+		t.Fatalf("Update sem parcela: %v", err)
+	}
+	if got.InstallmentNumber == nil || *got.InstallmentNumber != 3 || got.InstallmentTotal == nil || *got.InstallmentTotal != 10 {
+		t.Fatalf("parcela deve ser preservada, veio %v/%v", got.InstallmentNumber, got.InstallmentTotal)
+	}
+
+	// alterar número
+	five := 5
+	in := base
+	in.InstallmentNumber = &five
+	got, err = svc.Update(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Update parcela 5: %v", err)
+	}
+	if *got.InstallmentNumber != 5 || *got.InstallmentTotal != 10 {
+		t.Fatalf("quer 5/10, veio %v/%v", got.InstallmentNumber, got.InstallmentTotal)
+	}
+
+	// número > total rejeitado
+	twenty := 20
+	in = base
+	in.InstallmentNumber = &twenty
+	if _, err := svc.Update(context.Background(), in); err == nil {
+		t.Fatal("parcela 20/10 deveria falhar")
+	}
+
+	// zero limpa
+	zero := 0
+	in = base
+	in.InstallmentNumber = &zero
+	in.InstallmentTotal = &zero
+	got, err = svc.Update(context.Background(), in)
+	if err != nil {
+		t.Fatalf("Update limpando parcela: %v", err)
+	}
+	if got.InstallmentNumber != nil || got.InstallmentTotal != nil {
+		t.Fatalf("zero deve limpar a parcela, veio %v/%v", got.InstallmentNumber, got.InstallmentTotal)
+	}
+}
+
 func TestConfirmAndCancelCascade(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)

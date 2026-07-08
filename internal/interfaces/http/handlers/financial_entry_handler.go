@@ -322,6 +322,9 @@ type financialEntryUpdateJSON struct {
 	Notes          *string    `json:"notes"`
 	SupplierID     *uuid.UUID `json:"supplier_id"`
 	PurchaseDate   *string    `json:"purchase_date"` // YYYY-MM-DD; ausente preserva a atual
+	// Parcela da compra em fatura: ausente preserva; 0 limpa.
+	InstallmentNumber *int `json:"installment_number"`
+	InstallmentTotal  *int `json:"installment_total"`
 }
 
 func (h *FinancialEntryHandler) Update(c *gin.Context) {
@@ -359,6 +362,7 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		SupplierID: body.SupplierID, PurchaseDate: purchaseDate,
+		InstallmentNumber: body.InstallmentNumber, InstallmentTotal: body.InstallmentTotal,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
