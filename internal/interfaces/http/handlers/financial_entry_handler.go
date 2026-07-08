@@ -413,10 +413,20 @@ func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
 		}
 		residualDue = &t
 	}
+	var paidAt *time.Time
+	if body.PaidAt != nil && *body.PaidAt != "" {
+		t, err := time.Parse(entryDateLayout, *body.PaidAt)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "paid_at inválida (use YYYY-MM-DD)")
+			return
+		}
+		paidAt = &t
+	}
 	e, err := h.svc.Confirm(c.Request.Context(), app.ConfirmEntryInput{
 		WorkspaceID: ws, ID: id,
 		DiscountCents: body.DiscountCents, DiscountReason: body.DiscountReason,
 		PaidAmountCents: body.PaidAmountCents, ResidualDueDate: residualDue,
+		PaidAt: paidAt,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -431,6 +441,7 @@ type financialEntryConfirmJSON struct {
 	// Pagamento parcial: valor efetivamente pago; a diferença vira residual.
 	PaidAmountCents *int64  `json:"paid_amount_cents"`
 	ResidualDueDate *string `json:"residual_due_date"` // YYYY-MM-DD; default: vencimento original
+	PaidAt          *string `json:"paid_at"`           // YYYY-MM-DD; default: agora
 }
 
 // DiscountReasons lista o catálogo global de motivos de desconto.

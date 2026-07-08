@@ -356,6 +356,8 @@ type ConfirmEntryInput struct {
 	// ResidualDueDate: vencimento do residual; default é o vencimento
 	// original (residual nasce vencido). Data futura = renegociado.
 	ResidualDueDate *time.Time
+	// PaidAt: data em que o pagamento foi feito; default é agora.
+	PaidAt *time.Time
 }
 
 // Confirm marca o lançamento como realizado (liquidação rápida, sem detalhes
@@ -363,7 +365,7 @@ type ConfirmEntryInput struct {
 // motivo fica registrado como indicador. Com valor pago menor que o devido,
 // o saldo não pago vira um novo lançamento previsto ligado à origem.
 func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInput) (*dom.FinancialEntry, error) {
-	if in.DiscountCents == nil && in.PaidAmountCents == nil {
+	if in.DiscountCents == nil && in.PaidAmountCents == nil && in.PaidAt == nil {
 		return s.setStatus(ctx, in.WorkspaceID, in.ID, dom.StatusRealizada)
 	}
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
@@ -395,10 +397,14 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 	}
 
 	now := time.Now().UTC()
+	paidAt := now
+	if in.PaidAt != nil {
+		paidAt = in.PaidAt.UTC()
+	}
 	e.Status = dom.StatusRealizada
 	e.DiscountCents = in.DiscountCents
 	e.DiscountReason = in.DiscountReason
-	e.PaidAt = &now
+	e.PaidAt = &paidAt
 	e.PaidAmountCents = &paid
 	e.UpdatedAt = now
 	if err := e.Validate(); err != nil {
