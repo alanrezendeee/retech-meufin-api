@@ -225,6 +225,25 @@ func (r *FinancialEntryRepository) ListInvoiceInstallments(ctx context.Context, 
 	return out, nil
 }
 
+// ListFutureGroupSiblings retorna as ocorrências 'prevista' futuras do grupo
+// de recorrência — alvo da edição em série ("aplicar às próximas").
+func (r *FinancialEntryRepository) ListFutureGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, after time.Time, excludeID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND recurrence_group_id = ? AND status = ? AND due_date > ? AND id <> ?",
+			workspaceID, groupID, string(dom.StatusPrevista), after, excludeID).
+		Order("due_date ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 // ListResiduals retorna os lançamentos residuais gerados a partir da origem.
 func (r *FinancialEntryRepository) ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel

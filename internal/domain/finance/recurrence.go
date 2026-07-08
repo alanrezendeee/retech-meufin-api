@@ -22,6 +22,16 @@ func dateSameDayClamped(year int, month time.Month, day int, loc *time.Location)
 	return time.Date(year, month, day, 0, 0, 0, 0, loc)
 }
 
+// WithDayClamped retorna a data no mesmo ano/mês de d com o dia informado,
+// limitado ao último dia do mês (ex.: dia 31 em fevereiro vira 28/29).
+func WithDayClamped(d time.Time, day int) time.Time {
+	loc := d.Location()
+	if loc == nil {
+		loc = time.UTC
+	}
+	return dateSameDayClamped(d.Year(), d.Month(), day, loc)
+}
+
 // RollingMonths é o horizonte de previstos das recorrências: sempre existe
 // ~1 ano à frente (rolling), independente da virada do ano-calendário. O
 // extensor de recorrências (application) completa o horizonte diariamente.

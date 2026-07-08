@@ -99,6 +99,10 @@ type UpdateEntryInput struct {
 	// Nil preserva o atual; 0 limpa (compra deixa de ser parcelada).
 	InstallmentNumber *int
 	InstallmentTotal  *int
+	// ApplyToFuture propaga as mudanças (dia do vencimento, valor, descrição
+	// e categoria) para as ocorrências 'prevista' futuras do mesmo grupo de
+	// recorrência. Exige que o lançamento pertença a uma série recorrente.
+	ApplyToFuture bool
 }
 
 // Create monta o lançamento base, gera as ocorrências recorrentes e persiste em lote.
@@ -312,6 +316,15 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	if err != nil {
 		return nil, err
 	}
+	if in.ApplyToFuture {
+		if e.RecurrenceGroupID == nil {
+			return nil, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série recorrente"}
+		}
+		if e.InstallmentNumber != nil {
+			return nil, &dom.ValidationError{Msg: "edição em série não está disponível para parcelamentos"}
+		}
+	}
+	orig := *e
 	e.Kind = dom.Kind(in.Kind)
 	if in.Status != "" {
 		e.Status = dom.Status(in.Status)
@@ -357,7 +370,61 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	if err := s.repo.Update(ctx, e); err != nil {
 		return nil, err
 	}
+	if in.ApplyToFuture {
+		if err := s.propagateToFutureOccurrences(ctx, &orig, e); err != nil {
+			return nil, err
+		}
+	}
 	return e, nil
+}
+
+// propagateToFutureOccurrences replica nas ocorrências 'prevista' futuras do
+// grupo apenas o que mudou nesta edição: dia do vencimento (cada ocorrência
+// mantém seu mês, com clamp de fim de mês), valor, descrição e categoria.
+// Ocorrências realizadas/canceladas nunca são tocadas. Recorrência semanal não
+// propaga dia (dia do mês não se aplica). O extensor de recorrências usa a
+// última ocorrência como template, então as futuras geradas já herdam a mudança.
+func (s *FinancialEntryService) propagateToFutureOccurrences(ctx context.Context, orig, updated *dom.FinancialEntry) error {
+	dayChanged := updated.DueDate.Day() != orig.DueDate.Day() && updated.Recurrence != dom.RecurrenceWeekly
+	amountChanged := updated.AmountCents != orig.AmountCents
+	descChanged := updated.Description != orig.Description
+	typeChanged := !strPtrEqual(updated.Type, orig.Type)
+	if !dayChanged && !amountChanged && !descChanged && !typeChanged {
+		return nil
+	}
+
+	siblings, err := s.repo.ListFutureGroupSiblings(ctx, updated.WorkspaceID, *updated.RecurrenceGroupID, orig.DueDate, updated.ID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for i := range siblings {
+		sib := siblings[i]
+		if dayChanged {
+			sib.DueDate = dom.WithDayClamped(sib.DueDate, updated.DueDate.Day())
+		}
+		if amountChanged {
+			sib.AmountCents = updated.AmountCents
+		}
+		if descChanged {
+			sib.Description = updated.Description
+		}
+		if typeChanged {
+			sib.Type = updated.Type
+		}
+		sib.UpdatedAt = now
+		if err := s.repo.Update(ctx, &sib); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func strPtrEqual(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
