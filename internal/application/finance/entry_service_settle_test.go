@@ -203,12 +203,118 @@ func TestSettleCartaoCreditoExigeCartao(t *testing.T) {
 	}
 }
 
+func TestConfirmWithDiscount(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	discount := int64(1_500)
+	reason := "pagamento_antecipado"
+	got, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID,
+		DiscountCents: &discount, DiscountReason: &reason,
+	})
+	if err != nil {
+		t.Fatalf("Confirm com desconto: %v", err)
+	}
+	if got.PaidAmountCents == nil || *got.PaidAmountCents != e.AmountCents-discount {
+		t.Fatalf("paid_amount deve ser amount - desconto (%d), veio %v", e.AmountCents-discount, got.PaidAmountCents)
+	}
+	if got.DiscountCents == nil || *got.DiscountCents != discount {
+		t.Fatalf("discount_cents não persistido: %v", got.DiscountCents)
+	}
+	if got.DiscountReason == nil || *got.DiscountReason != reason {
+		t.Fatalf("discount_reason não persistido: %v", got.DiscountReason)
+	}
+	if got.PaidAt == nil {
+		t.Fatal("confirm com desconto deve registrar paid_at")
+	}
+}
+
+func TestConfirmDiscountValidation(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	cases := []struct {
+		name     string
+		discount int64
+		reason   string
+	}{
+		{"desconto sem motivo", 1_000, ""},
+		{"motivo fora do catálogo", 1_000, "achei_bonito"},
+		{"desconto >= valor", 10_000, "pagamento_antecipado"},
+		{"desconto negativo", -100, "pagamento_antecipado"},
+	}
+	for _, tc := range cases {
+		e := seedEntry(repo, dom.StatusPrevista)
+		var reason *string
+		if tc.reason != "" {
+			reason = &tc.reason
+		}
+		_, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+			WorkspaceID: e.WorkspaceID, ID: e.ID,
+			DiscountCents: &tc.discount, DiscountReason: reason,
+		})
+		var vErr *dom.ValidationError
+		if !errors.As(err, &vErr) {
+			t.Fatalf("%s: quer ValidationError, veio %v", tc.name, err)
+		}
+	}
+}
+
+func TestSettleWithDiscountDefaultsPaidAmount(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	discount := int64(2_000)
+	reason := "negociacao"
+	got, err := svc.Settle(context.Background(), SettleEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID, PaymentMethod: "pix",
+		DiscountCents: &discount, DiscountReason: &reason,
+	})
+	if err != nil {
+		t.Fatalf("Settle com desconto: %v", err)
+	}
+	if got.PaidAmountCents == nil || *got.PaidAmountCents != e.AmountCents-discount {
+		t.Fatalf("paid_amount deve ser amount - desconto (%d), veio %v", e.AmountCents-discount, got.PaidAmountCents)
+	}
+	if got.DiscountReason == nil || *got.DiscountReason != reason {
+		t.Fatalf("discount_reason não persistido: %v", got.DiscountReason)
+	}
+}
+
+func TestReopenClearsDiscount(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	discount := int64(1_500)
+	reason := "cupom"
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID,
+		DiscountCents: &discount, DiscountReason: &reason,
+	}); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	got, err := svc.Reopen(context.Background(), e.WorkspaceID, e.ID)
+	if err != nil {
+		t.Fatalf("Reopen: %v", err)
+	}
+	if got.DiscountCents != nil || got.DiscountReason != nil {
+		t.Fatalf("reopen deve limpar desconto, veio %v/%v", got.DiscountCents, got.DiscountReason)
+	}
+	if got.PaidAt != nil || got.PaidAmountCents != nil {
+		t.Fatalf("reopen deve limpar liquidação, veio %v/%v", got.PaidAt, got.PaidAmountCents)
+	}
+}
+
 func TestConfirmAndCancelCascade(t *testing.T) {
 	repo := newFakeEntryRepo()
 	e := seedEntry(repo, dom.StatusPrevista)
 	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 
-	if _, err := svc.Confirm(context.Background(), e.WorkspaceID, e.ID); err != nil {
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{WorkspaceID: e.WorkspaceID, ID: e.ID}); err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}
 	if _, err := svc.Cancel(context.Background(), e.WorkspaceID, e.ID); err != nil {

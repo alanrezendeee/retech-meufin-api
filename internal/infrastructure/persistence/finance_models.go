@@ -81,6 +81,8 @@ type FinancialEntryModel struct {
 	PaymentMethod     *string    `gorm:"column:payment_method;size:20"`
 	PaymentAccountID  *uuid.UUID `gorm:"column:payment_account_id;type:uuid"`
 	PaymentCardID     *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
+	DiscountCents     *int64     `gorm:"column:discount_cents"`
+	DiscountReason    *string    `gorm:"column:discount_reason;size:40"`
 	SupplierID        *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
 	CreatedAt         time.Time  `gorm:"not null"`
 	UpdatedAt         time.Time  `gorm:"not null"`

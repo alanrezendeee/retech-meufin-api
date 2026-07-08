@@ -82,6 +82,10 @@ type FinancialEntry struct {
 	PaymentMethod    *PaymentMethod
 	PaymentAccountID *uuid.UUID
 	PaymentCardID    *uuid.UUID
+	// Desconto obtido na liquidação; o motivo (slug do catálogo global
+	// DiscountReasons) vira indicador para insights.
+	DiscountCents  *int64
+	DiscountReason *string
 	SupplierID       *uuid.UUID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
@@ -122,6 +126,25 @@ func (e *FinancialEntry) Validate() error {
 			return &ValidationError{Msg: "type de receita fora do catálogo"}
 		}
 		return &ValidationError{Msg: "categoria de despesa fora do catálogo"}
+	}
+	if e.DiscountCents != nil {
+		if *e.DiscountCents <= 0 {
+			return &ValidationError{Msg: "discount_cents deve ser maior que zero"}
+		}
+		if *e.DiscountCents >= e.AmountCents {
+			return &ValidationError{Msg: "desconto não pode ser maior ou igual ao valor do lançamento"}
+		}
+		if e.DiscountReason == nil || *e.DiscountReason == "" {
+			return &ValidationError{Msg: "informe o motivo do desconto"}
+		}
+	}
+	if e.DiscountReason != nil && *e.DiscountReason != "" {
+		if !ValidDiscountReason(*e.DiscountReason) {
+			return &ValidationError{Msg: "motivo de desconto fora do catálogo"}
+		}
+		if e.DiscountCents == nil {
+			return &ValidationError{Msg: "motivo de desconto exige discount_cents"}
+		}
 	}
 	e.Description = strings.TrimSpace(e.Description)
 	return nil
