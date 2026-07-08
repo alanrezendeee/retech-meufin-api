@@ -43,7 +43,7 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 
 	// Edita a primeira: dia 10 → 15, valor 1000 → 1200, aplicar às próximas.
 	first := occs[0]
-	_, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, seriesUpdated, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: first.ID, Kind: "debit",
 		AmountCents:   120000,
 		DueDate:       time.Date(2026, 1, 15, 0, 0, 0, 0, time.UTC),
@@ -52,6 +52,10 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
+	}
+	// 12 ocorrências - a editada - a realizada = 10 futuras alteradas.
+	if seriesUpdated != 10 {
+		t.Fatalf("seriesUpdated esperado 10, veio %d", seriesUpdated)
 	}
 
 	for i, occ := range occs {
@@ -86,7 +90,7 @@ func TestUpdateApplyToFutureClampsEndOfMonth(t *testing.T) {
 	occs := createMonthlySeries(t, svc, ws, time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC), 50000)
 
 	first := occs[0]
-	_, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, _, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: first.ID, Kind: "debit",
 		AmountCents:   first.AmountCents,
 		DueDate:       time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
@@ -120,7 +124,7 @@ func TestUpdateApplyToFutureOnlyChangedFields(t *testing.T) {
 	repo.entries[occs[4].ID].Notes = &note
 
 	first := occs[0]
-	_, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, _, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: ws, ID: first.ID, Kind: "debit",
 		AmountCents:   first.AmountCents, // sem mudança
 		DueDate:       first.DueDate,     // sem mudança
@@ -148,7 +152,7 @@ func TestUpdateApplyToFutureRejectsNonSeries(t *testing.T) {
 	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 	e := seedEntry(repo, dom.StatusPrevista)
 
-	_, err := svc.Update(context.Background(), UpdateEntryInput{
+	_, _, err := svc.Update(context.Background(), UpdateEntryInput{
 		WorkspaceID: e.WorkspaceID, ID: e.ID, Kind: "debit",
 		AmountCents: e.AmountCents, DueDate: e.DueDate, Description: e.Description,
 		ApplyToFuture: true,
@@ -159,7 +163,7 @@ func TestUpdateApplyToFutureRejectsNonSeries(t *testing.T) {
 	}
 }
 
-func TestUpdateApplyToFutureRejectsInstallments(t *testing.T) {
+func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 	repo := newFakeEntryRepo()
 	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
 	ws := uuid.New()
@@ -175,14 +179,49 @@ func TestUpdateApplyToFutureRejectsInstallments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	if len(occs) != total {
+		t.Fatalf("esperava %d parcelas, veio %d", total, len(occs))
+	}
 
-	_, err = svc.Update(context.Background(), UpdateEntryInput{
-		WorkspaceID: ws, ID: occs[0].ID, Kind: "debit",
-		AmountCents: occs[0].AmountCents, DueDate: occs[0].DueDate, Description: occs[0].Description,
+	// Segunda parcela realizada — intocada.
+	repo.entries[occs[1].ID].Status = dom.StatusRealizada
+
+	// Edita a terceira parcela: dia 5 → 20, aplicar às próximas.
+	third := occs[2]
+	num, tot := 3, total
+	_, seriesUpdated, err := svc.Update(context.Background(), UpdateEntryInput{
+		WorkspaceID: ws, ID: third.ID, Kind: "debit",
+		AmountCents:       third.AmountCents,
+		DueDate:           time.Date(2026, 4, 20, 0, 0, 0, 0, time.UTC),
+		Description:       third.Description,
+		InstallmentNumber: &num, InstallmentTotal: &tot,
 		ApplyToFuture: true,
 	})
-	var vErr *dom.ValidationError
-	if !errors.As(err, &vErr) {
-		t.Fatalf("esperava ValidationError para parcelamento, veio %v", err)
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	// Parcelas 4, 5 e 6 são as futuras alteradas.
+	if seriesUpdated != 3 {
+		t.Fatalf("seriesUpdated esperado 3, veio %d", seriesUpdated)
+	}
+
+	for i, occ := range occs {
+		got := repo.entries[occ.ID]
+		switch {
+		case i < 2: // parcelas anteriores (e a realizada) intocadas
+			if got.DueDate.Day() != 5 {
+				t.Fatalf("parcela %d anterior foi alterada: %v", i+1, got.DueDate)
+			}
+		default: // editada e futuras: dia 20, mês preservado, numeração intacta
+			if got.DueDate.Day() != 20 {
+				t.Fatalf("parcela %d: dia esperado 20, veio %d", i+1, got.DueDate.Day())
+			}
+			if got.DueDate.Month() != occ.DueDate.Month() {
+				t.Fatalf("parcela %d: mês mudou de %v para %v", i+1, occ.DueDate.Month(), got.DueDate.Month())
+			}
+			if got.InstallmentNumber == nil || *got.InstallmentNumber != i+1 {
+				t.Fatalf("parcela %d: installment_number perdido/alterado: %v", i+1, got.InstallmentNumber)
+			}
+		}
 	}
 }

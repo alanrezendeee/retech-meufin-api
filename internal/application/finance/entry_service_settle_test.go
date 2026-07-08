@@ -534,7 +534,7 @@ func TestUpdateInstallmentsPreserveAndClear(t *testing.T) {
 	}
 
 	// ausente preserva (edição genérica não envia)
-	got, err := svc.Update(context.Background(), base)
+	got, _, err := svc.Update(context.Background(), base)
 	if err != nil {
 		t.Fatalf("Update sem parcela: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestUpdateInstallmentsPreserveAndClear(t *testing.T) {
 	five := 5
 	in := base
 	in.InstallmentNumber = &five
-	got, err = svc.Update(context.Background(), in)
+	got, _, err = svc.Update(context.Background(), in)
 	if err != nil {
 		t.Fatalf("Update parcela 5: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestUpdateInstallmentsPreserveAndClear(t *testing.T) {
 	twenty := 20
 	in = base
 	in.InstallmentNumber = &twenty
-	if _, err := svc.Update(context.Background(), in); err == nil {
+	if _, _, err := svc.Update(context.Background(), in); err == nil {
 		t.Fatal("parcela 20/10 deveria falhar")
 	}
 
@@ -567,7 +567,7 @@ func TestUpdateInstallmentsPreserveAndClear(t *testing.T) {
 	in = base
 	in.InstallmentNumber = &zero
 	in.InstallmentTotal = &zero
-	got, err = svc.Update(context.Background(), in)
+	got, _, err = svc.Update(context.Background(), in)
 	if err != nil {
 		t.Fatalf("Update limpando parcela: %v", err)
 	}
