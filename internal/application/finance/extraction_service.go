@@ -220,12 +220,69 @@ type PurchaseSuggestion struct {
 // InvoiceExtraction é o schema estruturado da fatura conforme
 // CreditCardInvoiceProfile (extraction.invoiceInputSchema).
 type InvoiceExtraction struct {
-	CardIssuer     string            `json:"card_issuer"`
-	StatementMonth string            `json:"statement_month"`
-	DueDate        string            `json:"due_date"`
-	TotalAmount    *float64          `json:"total_amount"`
-	Purchases      []invoicePurchase `json:"purchases"`
-	Warnings       []string          `json:"warnings"`
+	CardIssuer      string            `json:"card_issuer"`
+	StatementMonth  string            `json:"statement_month"`
+	DueDate         string            `json:"due_date"`
+	TotalAmount     *float64          `json:"total_amount"`
+	PreviousBalance *float64          `json:"previous_balance"`
+	Purchases       []invoicePurchase `json:"purchases"`
+	Credits         []invoiceCredit   `json:"credits"`
+	Warnings        []string          `json:"warnings"`
+}
+
+type invoiceCredit struct {
+	Description string   `json:"description"`
+	Date        string   `json:"date"`
+	Amount      *float64 `json:"amount"`
+}
+
+// CreditSuggestion é um pagamento/estorno/crédito do ciclo (não é compra).
+type CreditSuggestion struct {
+	Description string
+	Date        string // YYYY-MM-DD ("" quando ilegível)
+	AmountCents int64  // valor absoluto
+}
+
+// InvoiceMeta são os agregados extraídos da fatura para reconciliação:
+// total a pagar, fatura anterior e créditos do ciclo.
+type InvoiceMeta struct {
+	TotalCents           *int64
+	PreviousBalanceCents *int64
+	Credits              []CreditSuggestion
+}
+
+// ParseInvoiceMeta extrai os agregados da fatura do extracted_json. Retorna
+// meta vazia (não erro) quando não há JSON — compatível com extrações v1/v2,
+// que não traziam esses campos.
+func (s *FinanceExtractionService) ParseInvoiceMeta(doc *dom.FinanceDocument) (*InvoiceMeta, error) {
+	meta := &InvoiceMeta{Credits: []CreditSuggestion{}}
+	if doc == nil || len(doc.ExtractedJSON) == 0 {
+		return meta, nil
+	}
+	var inv InvoiceExtraction
+	if err := json.Unmarshal(doc.ExtractedJSON, &inv); err != nil {
+		return nil, &dom.ValidationError{Msg: "extracted_json inválido: " + err.Error()}
+	}
+	if inv.TotalAmount != nil {
+		v := reaisToCents(inv.TotalAmount)
+		meta.TotalCents = &v
+	}
+	if inv.PreviousBalance != nil {
+		v := reaisToCents(inv.PreviousBalance)
+		meta.PreviousBalanceCents = &v
+	}
+	for _, c := range inv.Credits {
+		cents := reaisToCents(c.Amount)
+		if cents < 0 {
+			cents = -cents // defensivo: LLM pode mandar negativo
+		}
+		meta.Credits = append(meta.Credits, CreditSuggestion{
+			Description: c.Description,
+			Date:        normalizePurchaseDate(c.Date, inv.DueDate),
+			AmountCents: cents,
+		})
+	}
+	return meta, nil
 }
 
 type invoicePurchase struct {
