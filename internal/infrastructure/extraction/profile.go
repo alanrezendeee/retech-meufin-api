@@ -26,7 +26,9 @@ func LabExamProfile() ExtractProfile {
 
 // InvoicePromptVersion versiona o prompt/schema de extração de faturas.
 // v2: datas normalizadas para YYYY-MM-DD com inferência de ano.
-const InvoicePromptVersion = "invoice-extract-v2"
+// v3: pagamentos/créditos em credits[], total_amount = total a pagar,
+// previous_balance; tarifas/juros/IOF são despesas.
+const InvoicePromptVersion = "invoice-extract-v3"
 
 const invoiceToolName = "registrar_fatura"
 
@@ -44,7 +46,10 @@ REGRAS OBRIGATÓRIAS:
   janeiro). Se a data estiver ilegível ou ausente, use "" (string vazia).
 - Se a compra for parcelada (ex.: "PARC 03/10", "3/10"), preencha installment_current e installment_total.
 - Sugira uma categoria em "category_suggestion" APENAS entre: moradia, alimentacao, mercado, saude, transporte, educacao, lazer, contas_fixas, servicos, impostos, equipamentos, outros.
-- Não inclua pagamentos/estornos da fatura anterior como compras; registre-os em warnings se relevante.
+- QUANDO o demonstrativo tiver linhas de pagamento, crédito ou estorno (ex.: "PAGAMENTO DE FATURA", valores negativos), NÃO as inclua em purchases: liste cada uma em "credits" com descrição, data (mesmas regras de data) e "amount" com o valor ABSOLUTO (positivo).
+- Anuidade, IOF, juros, encargos, tarifas e multas SÃO despesas do ciclo: inclua em purchases (sugira "contas_fixas" ou "impostos").
+- "total_amount" é o TOTAL A PAGAR da fatura (o valor do boleto), NÃO a soma das compras — em faturas com créditos os dois diferem.
+- "previous_balance": valor impresso como "Fatura Anterior"/"Saldo Anterior", quando existir.
 - Registre em warnings qualquer ambiguidade, ilegibilidade ou dado faltante.
 
 Use SEMPRE a ferramenta ` + invoiceToolName + ` para retornar o resultado estruturado.`
@@ -64,15 +69,26 @@ func invoiceInputSchema() map[string]any {
 		},
 		"required": []string{"description"},
 	}
+	credit := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"description": map[string]any{"type": "string"},
+			"date":        map[string]any{"type": "string", "description": "YYYY-MM-DD; \"\" se ilegível"},
+			"amount":      map[string]any{"type": []string{"number", "null"}, "description": "Valor ABSOLUTO (positivo) do crédito em reais"},
+		},
+		"required": []string{"description"},
+	}
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"card_issuer":     map[string]any{"type": "string"},
-			"statement_month": map[string]any{"type": "string"},
-			"due_date":        map[string]any{"type": "string"},
-			"total_amount":    map[string]any{"type": []string{"number", "null"}},
-			"purchases":       map[string]any{"type": "array", "items": purchase},
-			"warnings":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"card_issuer":      map[string]any{"type": "string"},
+			"statement_month":  map[string]any{"type": "string"},
+			"due_date":         map[string]any{"type": "string"},
+			"total_amount":     map[string]any{"type": []string{"number", "null"}, "description": "TOTAL A PAGAR (valor do boleto), não a soma das compras"},
+			"previous_balance": map[string]any{"type": []string{"number", "null"}, "description": "Valor da Fatura Anterior/Saldo Anterior, se impresso"},
+			"purchases":        map[string]any{"type": "array", "items": purchase},
+			"credits":          map[string]any{"type": "array", "items": credit, "description": "Pagamentos, estornos e créditos do ciclo (não são compras)"},
+			"warnings":         map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
 		"required": []string{"purchases"},
 	}

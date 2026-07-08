@@ -57,7 +57,22 @@ type financeExtractionStatusResponse struct {
 	CreatedAt    string                       `json:"created_at"`
 	UpdatedAt    string                       `json:"updated_at"`
 	Purchases    []purchaseSuggestionResponse `json:"purchases,omitempty"`
+	Invoice      *invoiceMetaResponse         `json:"invoice,omitempty"`
 	Fiscal       *fiscalSuggestionResponse    `json:"fiscal,omitempty"`
+}
+
+type invoiceCreditResponse struct {
+	Description string `json:"description"`
+	Date        string `json:"date,omitempty"`
+	AmountCents int64  `json:"amount_cents"`
+}
+
+// invoiceMetaResponse agrega total a pagar, fatura anterior e créditos —
+// insumo do painel de reconciliação na revisão do import.
+type invoiceMetaResponse struct {
+	TotalCents           *int64                  `json:"total_cents"`
+	PreviousBalanceCents *int64                  `json:"previous_balance_cents"`
+	Credits              []invoiceCreditResponse `json:"credits"`
 }
 
 type fiscalItemSuggestionResponse struct {
@@ -126,8 +141,13 @@ func (h *FinanceExtractionHandler) Status(c *gin.Context) {
 			if fiscal, ferr := h.ext.ParseFiscal(doc); ferr == nil {
 				out.Fiscal = mapFiscalSuggestion(fiscal)
 			}
-		} else if purchases, perr := h.ext.ParsePurchases(doc); perr == nil {
-			out.Purchases = mapPurchaseSuggestions(purchases)
+		} else {
+			if purchases, perr := h.ext.ParsePurchases(doc); perr == nil {
+				out.Purchases = mapPurchaseSuggestions(purchases)
+			}
+			if meta, merr := h.ext.ParseInvoiceMeta(doc); merr == nil {
+				out.Invoice = mapInvoiceMeta(meta)
+			}
 		}
 	}
 
@@ -156,6 +176,25 @@ func mapFiscalSuggestion(f *app.FiscalSuggestion) *fiscalSuggestionResponse {
 		TotalCents: f.TotalCents,
 		Items:      items,
 		Warnings:   f.Warnings,
+	}
+}
+
+func mapInvoiceMeta(m *app.InvoiceMeta) *invoiceMetaResponse {
+	if m == nil {
+		return nil
+	}
+	credits := make([]invoiceCreditResponse, len(m.Credits))
+	for i, c := range m.Credits {
+		credits[i] = invoiceCreditResponse{
+			Description: c.Description,
+			Date:        c.Date,
+			AmountCents: c.AmountCents,
+		}
+	}
+	return &invoiceMetaResponse{
+		TotalCents:           m.TotalCents,
+		PreviousBalanceCents: m.PreviousBalanceCents,
+		Credits:              credits,
 	}
 }
 
@@ -202,6 +241,9 @@ type confirmInvoiceRequest struct {
 	DueDate     string                      `json:"due_date"` // YYYY-MM-DD
 	Description string                      `json:"description"`
 	Status      string                      `json:"status"`
+	// AmountCents: TOTAL A PAGAR da fatura. Em faturas com créditos difere da
+	// soma das compras. Ausente/zero = soma dos itens (comportamento antigo).
+	AmountCents *int64                      `json:"amount_cents"`
 	Items       []confirmInvoiceItemRequest `json:"items"`
 }
 
@@ -267,12 +309,17 @@ func (h *FinanceExtractionHandler) Confirm(c *gin.Context) {
 		})
 	}
 
+	var amountCents *int64
+	if body.AmountCents != nil && *body.AmountCents > 0 {
+		amountCents = body.AmountCents
+	}
 	invoice, children, err := h.entries.CreateInvoiceWithItems(c.Request.Context(), app.CreateInvoiceInput{
 		WorkspaceID: ws,
 		CardID:      cardID,
 		DueDate:     dueDate,
 		Description: body.Description,
 		Status:      body.Status,
+		AmountCents: amountCents,
 		Items:       items,
 	})
 	if err != nil {
