@@ -12,6 +12,13 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
+func init() {
+	// Uso headless/servidor: sem isso o pdfcpu tenta criar ~/.config/pdfcpu
+	// no primeiro NewDefaultConfiguration e dá PANIC em container sem HOME
+	// gravável (Railway) — era a causa do 500 ao informar a senha.
+	api.DisableConfigDir()
+}
+
 // ErrPasswordRequired: o PDF é protegido e nenhuma senha foi informada.
 var ErrPasswordRequired = errors.New("pdf protegido por senha")
 
@@ -23,7 +30,19 @@ var ErrWrongPassword = errors.New("senha do pdf incorreta")
 //   - PDF protegido + senha correta → conteúdo descriptografado;
 //   - PDF protegido sem senha → ErrPasswordRequired;
 //   - senha errada ou arquivo corrompido → ErrWrongPassword.
-func EnsureDecrypted(content []byte, password string) ([]byte, error) {
+//
+// pdfcpu usa panic para alguns erros internos; recuperamos e devolvemos
+// erro normal para nunca derrubar a requisição com 500.
+func EnsureDecrypted(content []byte, password string) (out []byte, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			out, err = nil, ErrWrongPassword
+		}
+	}()
+	return ensureDecrypted(content, password)
+}
+
+func ensureDecrypted(content []byte, password string) ([]byte, error) {
 	conf := model.NewDefaultConfiguration()
 	conf.UserPW = password
 	conf.OwnerPW = password
