@@ -482,6 +482,39 @@ type financialEntryConfirmJSON struct {
 	PaidAt          *string `json:"paid_at"`           // YYYY-MM-DD; default: agora
 }
 
+// ResizeInstallments responde POST /finance/entries/:id/resize-installments:
+// corrige o total de parcelas de um parcelamento (ex.: 15x → 12x).
+func (h *FinancialEntryHandler) ResizeInstallments(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	var body struct {
+		NewTotal int `json:"new_total" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido (new_total obrigatório)")
+		return
+	}
+	res, err := h.svc.ResizeInstallments(c.Request.Context(), ws, id, body.NewTotal)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"new_total": res.NewTotal,
+		"removed":   res.Removed,
+		"created":   res.Created,
+		"updated":   res.Updated,
+	})
+}
+
 // YearBounds responde GET /finance/entries/year-bounds: menor e maior ano de
 // vencimento do workspace — alimenta o filtro de ano do admin.
 func (h *FinancialEntryHandler) YearBounds(c *gin.Context) {

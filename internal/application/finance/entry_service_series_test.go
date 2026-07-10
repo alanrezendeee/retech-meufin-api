@@ -228,3 +228,115 @@ func TestUpdateApplyToFuturePropagatesInstallments(t *testing.T) {
 		}
 	}
 }
+
+func createInstallmentSeries(t *testing.T, svc *FinancialEntryService, ws uuid.UUID, total int) []dom.FinancialEntry {
+	t.Helper()
+	occs, err := svc.Create(context.Background(), CreateEntryInput{
+		WorkspaceID:       ws,
+		Kind:              "debit",
+		AmountCents:       150000,
+		DueDate:           time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC),
+		Description:       "Financiamento",
+		InstallmentsTotal: &total,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	return occs
+}
+
+func TestResizeInstallmentsShrink(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+	ws := uuid.New()
+	occs := createInstallmentSeries(t, svc, ws, 15)
+	// 2 primeiras realizadas — dentro do novo total, sem problema.
+	repo.entries[occs[0].ID].Status = dom.StatusRealizada
+	repo.entries[occs[1].ID].Status = dom.StatusRealizada
+
+	res, err := svc.ResizeInstallments(context.Background(), ws, occs[0].ID, 12)
+	if err != nil {
+		t.Fatalf("ResizeInstallments: %v", err)
+	}
+	if res.Removed != 3 || res.Created != 0 || res.Updated != 12 || res.NewTotal != 12 {
+		t.Fatalf("resultado errado: %+v", res)
+	}
+	// Parcelas 13-15 excluídas.
+	for i := 12; i < 15; i++ {
+		if _, ok := repo.entries[occs[i].ID]; ok {
+			t.Fatalf("parcela %d deveria ter sido excluída", i+1)
+		}
+	}
+	// Restantes com total corrigido e numeração preservada.
+	for i := 0; i < 12; i++ {
+		got := repo.entries[occs[i].ID]
+		if got.InstallmentTotal == nil || *got.InstallmentTotal != 12 {
+			t.Fatalf("parcela %d: total esperado 12, veio %v", i+1, got.InstallmentTotal)
+		}
+		if got.InstallmentNumber == nil || *got.InstallmentNumber != i+1 {
+			t.Fatalf("parcela %d: número alterado: %v", i+1, got.InstallmentNumber)
+		}
+	}
+}
+
+func TestResizeInstallmentsShrinkRejectsRealizadaBeyond(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+	ws := uuid.New()
+	occs := createInstallmentSeries(t, svc, ws, 15)
+	repo.entries[occs[13].ID].Status = dom.StatusRealizada // parcela 14 paga
+
+	_, err := svc.ResizeInstallments(context.Background(), ws, occs[0].ID, 12)
+	var vErr *dom.ValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("esperava ValidationError (realizada acima do novo total), veio %v", err)
+	}
+}
+
+func TestResizeInstallmentsGrow(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+	ws := uuid.New()
+	occs := createInstallmentSeries(t, svc, ws, 12)
+
+	res, err := svc.ResizeInstallments(context.Background(), ws, occs[0].ID, 15)
+	if err != nil {
+		t.Fatalf("ResizeInstallments: %v", err)
+	}
+	if res.Removed != 0 || res.Created != 3 || res.Updated != 12 {
+		t.Fatalf("resultado errado: %+v", res)
+	}
+	// Série criada em 31/jan: parcela 12 vence 31/dez/2026; novas: 31/jan,
+	// 28/fev (clamp!), 31/mar de 2027, previstas, numeradas 13..15 de 15.
+	all, _ := repo.ListStandaloneInstallments(context.Background(), ws)
+	if len(all) != 15 {
+		t.Fatalf("esperava 15 parcelas, veio %d", len(all))
+	}
+	byNum := map[int]dom.FinancialEntry{}
+	for _, e := range all {
+		byNum[*e.InstallmentNumber] = e
+		if *e.InstallmentTotal != 15 {
+			t.Fatalf("parcela %d: total esperado 15, veio %d", *e.InstallmentNumber, *e.InstallmentTotal)
+		}
+	}
+	p14 := byNum[14]
+	if p14.DueDate.Format("2006-01-02") != "2027-02-28" {
+		t.Fatalf("parcela 14: esperava 2027-02-28 (clamp), veio %s", p14.DueDate.Format("2006-01-02"))
+	}
+	p15 := byNum[15]
+	if p15.DueDate.Format("2006-01-02") != "2027-03-31" || p15.Status != dom.StatusPrevista {
+		t.Fatalf("parcela 15 errada: %s %s", p15.DueDate.Format("2006-01-02"), p15.Status)
+	}
+}
+
+func TestResizeInstallmentsRejectsNonInstallment(t *testing.T) {
+	repo := newFakeEntryRepo()
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+	e := seedEntry(repo, dom.StatusPrevista)
+
+	_, err := svc.ResizeInstallments(context.Background(), e.WorkspaceID, e.ID, 12)
+	var vErr *dom.ValidationError
+	if !errors.As(err, &vErr) {
+		t.Fatalf("esperava ValidationError para não-parcelamento, veio %v", err)
+	}
+}
