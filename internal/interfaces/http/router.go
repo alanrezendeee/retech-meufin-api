@@ -218,6 +218,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/entries/:id/reopen", entH.Reopen)
 		finance.POST("/entries/:id/cancel", entH.Cancel)
 		finance.POST("/entries/:id/settle", entH.Settle)
+		finance.POST("/entries/:id/resize-installments", entH.ResizeInstallments)
 
 		// Comprovantes de pagamento anexados a lançamentos.
 		receiptH := handlers.NewFinanceReceiptHandler(d.FinanceDocumentService, d.FinancialEntryService)

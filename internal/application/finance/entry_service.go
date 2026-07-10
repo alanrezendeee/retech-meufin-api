@@ -466,6 +466,122 @@ func (s *FinancialEntryService) YearBounds(ctx context.Context, workspaceID uuid
 	return s.repo.YearBounds(ctx, workspaceID)
 }
 
+// ResizeInstallmentsResult resume o redimensionamento de um parcelamento.
+type ResizeInstallmentsResult struct {
+	NewTotal int
+	// Removed: parcelas previstas excluídas (redução).
+	Removed int
+	// Created: parcelas previstas criadas (aumento).
+	Created int
+	// Updated: parcelas existentes com installment_total corrigido.
+	Updated int
+}
+
+// ResizeInstallments corrige o total de um parcelamento (ex.: 15x → 12x).
+// Redução exclui as parcelas previstas acima do novo total (recusa se alguma
+// delas já estiver realizada — isso é renegociação, não correção de dado);
+// aumento cria previstas novas seguindo dia e valor da última parcela. Em
+// ambos os casos o installment_total das parcelas restantes é corrigido.
+func (s *FinancialEntryService) ResizeInstallments(ctx context.Context, workspaceID, id uuid.UUID, newTotal int) (*ResizeInstallmentsResult, error) {
+	if newTotal < 1 {
+		return nil, &dom.ValidationError{Msg: "novo total deve ser ao menos 1"}
+	}
+	anchor, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if anchor.RecurrenceGroupID == nil || anchor.InstallmentNumber == nil || anchor.InstallmentTotal == nil {
+		return nil, &dom.ValidationError{Msg: "o lançamento não é uma parcela de parcelamento"}
+	}
+	if *anchor.InstallmentNumber > newTotal {
+		return nil, &dom.ValidationError{Msg: "esta parcela ficaria fora do novo total — abra uma parcela dentro do novo total para redimensionar"}
+	}
+	if *anchor.InstallmentTotal == newTotal {
+		return nil, &dom.ValidationError{Msg: "o parcelamento já tem esse total de parcelas"}
+	}
+
+	siblings, err := s.repo.ListGroupSiblings(ctx, workspaceID, *anchor.RecurrenceGroupID, anchor.ID)
+	if err != nil {
+		return nil, err
+	}
+	series := append([]dom.FinancialEntry{*anchor}, siblings...)
+
+	// Validação da redução: nada realizado acima do novo total.
+	for i := range series {
+		e := &series[i]
+		if e.InstallmentNumber != nil && *e.InstallmentNumber > newTotal && e.Status != dom.StatusPrevista {
+			return nil, &dom.ValidationError{Msg: "há parcela realizada acima do novo total — ajuste como renegociação, não como correção do total"}
+		}
+	}
+
+	res := &ResizeInstallmentsResult{NewTotal: newTotal}
+	now := time.Now().UTC()
+
+	// Última parcela remanescente: molde para as novas (aumento).
+	var last *dom.FinancialEntry
+	for i := range series {
+		e := &series[i]
+		if e.InstallmentNumber == nil {
+			continue
+		}
+		if *e.InstallmentNumber > newTotal {
+			if err := s.repo.SoftDelete(ctx, workspaceID, e.ID); err != nil {
+				return nil, err
+			}
+			res.Removed++
+			continue
+		}
+		tot := newTotal
+		e.InstallmentTotal = &tot
+		e.UpdatedAt = now
+		if err := s.repo.Update(ctx, e); err != nil {
+			return nil, err
+		}
+		res.Updated++
+		if last == nil || *e.InstallmentNumber > *last.InstallmentNumber {
+			last = e
+		}
+	}
+	if last == nil {
+		return nil, &dom.ValidationError{Msg: "parcelamento sem parcelas dentro do novo total"}
+	}
+
+	// Aumento: cria previstas continuando a série a partir da última.
+	if maxNum := *last.InstallmentNumber; newTotal > maxNum {
+		day := last.DueDate.Day()
+		batch := make([]*dom.FinancialEntry, 0, newTotal-maxNum)
+		for n := maxNum + 1; n <= newTotal; n++ {
+			occ := *last
+			occ.ID = uuid.New()
+			occ.Status = dom.StatusPrevista
+			occ.PaidAt = nil
+			occ.PaidAmountCents = nil
+			occ.PaymentMethod = nil
+			occ.PaymentAccountID = nil
+			occ.PaymentCardID = nil
+			// Avança meses a partir do dia 1 (nunca estoura) e clampa o dia
+			// no mês de destino (31/jan → 28/fev, não 03/mar).
+			months := n - *last.InstallmentNumber
+			base := time.Date(last.DueDate.Year(), last.DueDate.Month(), 1, 0, 0, 0, 0, time.UTC).
+				AddDate(0, months, 0)
+			occ.DueDate = dom.WithDayClamped(base, day)
+			num := n
+			tot := newTotal
+			occ.InstallmentNumber = &num
+			occ.InstallmentTotal = &tot
+			occ.CreatedAt = now
+			occ.UpdatedAt = now
+			occCopy := occ
+			batch = append(batch, &occCopy)
+		}
+		if err := s.repo.CreateBatch(ctx, batch); err != nil {
+			return nil, err
+		}
+		res.Created = len(batch)
+	}
+	return res, nil
+}
+
 func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
 	return s.repo.SoftDelete(ctx, workspaceID, id)
 }
