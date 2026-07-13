@@ -35,6 +35,11 @@ const (
 	SupplierCategoryViagem           SupplierCategory = "viagem"
 	SupplierCategoryEntretenimento   SupplierCategory = "entretenimento"
 	SupplierCategoryOutros           SupplierCategory = "outros"
+	// Categorias automotivas
+	SupplierCategoryAutoCenter       SupplierCategory = "auto_center"
+	SupplierCategoryMecanica         SupplierCategory = "mecanica"
+	SupplierCategoryPostoCombustivel SupplierCategory = "posto_combustivel"
+	SupplierCategoryLojaPecas        SupplierCategory = "loja_pecas"
 )
 
 // SupplierBillingType é o tipo de cobrança padrão do fornecedor.
@@ -91,7 +96,9 @@ func (s *Supplier) Validate() error {
 		SupplierCategoryMoradia, SupplierCategoryTecnologia, SupplierCategoryPet, SupplierCategoryJuridico,
 		SupplierCategoryContabil, SupplierCategoryCondominio, SupplierCategoryVestuario,
 		SupplierCategoryBeleza, SupplierCategoryViagem, SupplierCategoryEntretenimento,
-		SupplierCategoryOutros:
+		SupplierCategoryOutros,
+		SupplierCategoryAutoCenter, SupplierCategoryMecanica,
+		SupplierCategoryPostoCombustivel, SupplierCategoryLojaPecas:
 	case "":
 		s.Category = SupplierCategoryOutros
 	default:

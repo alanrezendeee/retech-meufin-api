@@ -163,6 +163,147 @@ type MaintenanceAlert struct {
 	LastDate      *time.Time
 }
 
+// ─── Service Orders ───────────────────────────────────────────────────────────
+
+type OSStatus string
+
+const (
+	OSStatusDraft     OSStatus = "draft"
+	OSStatusCompleted OSStatus = "completed"
+	OSStatusCancelled OSStatus = "cancelled"
+)
+
+type OSItemType string
+
+const (
+	OSItemProduct OSItemType = "product"
+	OSItemService OSItemType = "service"
+)
+
+type OSItemCategory string
+
+const (
+	OSItemCategoryMotor          OSItemCategory = "motor"
+	OSItemCategoryFreios         OSItemCategory = "freios"
+	OSItemCategorySuspensao      OSItemCategory = "suspensao"
+	OSItemCategoryTransmissao    OSItemCategory = "transmissao"
+	OSItemCategoryArrefecimento  OSItemCategory = "arrefecimento"
+	OSItemCategoryEletrico       OSItemCategory = "eletrico"
+	OSItemCategoryPneus          OSItemCategory = "pneus"
+	OSItemCategoryArCondicionado OSItemCategory = "ar_condicionado"
+	OSItemCategoryCarroceria     OSItemCategory = "carroceria"
+	OSItemCategoryServico        OSItemCategory = "servico"
+	OSItemCategoryOutros         OSItemCategory = "outros"
+)
+
+type ScheduleStatus string
+
+const (
+	ScheduleStatusPending   ScheduleStatus = "pending"
+	ScheduleStatusDueSoon   ScheduleStatus = "due_soon"
+	ScheduleStatusOverdue   ScheduleStatus = "overdue"
+	ScheduleStatusDone      ScheduleStatus = "done"
+	ScheduleStatusCancelled ScheduleStatus = "cancelled"
+)
+
+type ServiceOrder struct {
+	ID                 uuid.UUID
+	VehicleID          uuid.UUID
+	WorkspaceID        uuid.UUID
+	SupplierID         *uuid.UUID
+	OSNumber           *string
+	ServiceDate        time.Time
+	KMAtService        int
+	TotalProductsCents int64
+	TotalServicesCents int64
+	TotalCents         int64
+	PaymentMethod      *string
+	Technician         *string
+	Notes              *string
+	Status             OSStatus
+	Items              []ServiceOrderItem
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type ServiceOrderItem struct {
+	ID                        uuid.UUID
+	ServiceOrderID            uuid.UUID
+	VehicleID                 uuid.UUID
+	WorkspaceID               uuid.UUID
+	ItemType                  OSItemType
+	Category                  OSItemCategory
+	Description               string
+	Quantity                  float64
+	UnitPriceCents            int64
+	TotalPriceCents           int64
+	KMAtInstallation          *int
+	ReplacementIntervalKM     *int
+	ReplacementIntervalMonths *int
+	NextDueKM                 *int
+	NextDueDate               *time.Time
+	WarrantyExpiresDate       *time.Time
+	WarrantyExpiresKM         *int
+	Notes                     *string
+	CreatedAt                 time.Time
+}
+
+type MaintenanceCatalogItem struct {
+	ID                    uuid.UUID
+	Category              OSItemCategory
+	ItemType              OSItemType
+	Name                  string
+	Description           *string
+	DefaultIntervalKM     *int
+	DefaultIntervalMonths *int
+	DefaultWarrantyMonths *int
+	Active                bool
+}
+
+type MaintenanceSchedule struct {
+	ID                 uuid.UUID
+	VehicleID          uuid.UUID
+	WorkspaceID        uuid.UUID
+	ServiceOrderItemID *uuid.UUID
+	Description        string
+	Category           OSItemCategory
+	ScheduledKM        *int
+	ScheduledDate      *time.Time
+	AlertStatus        ScheduleStatus
+	CompletedAt        *time.Time
+	Notes              *string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type CategorySpending struct {
+	Category   string
+	TotalCents int64
+}
+
+type SupplierSpending struct {
+	SupplierID   string
+	SupplierName string
+	TotalCents   int64
+}
+
+type MonthlySpending struct {
+	Month      string
+	TotalCents int64
+}
+
+type VehicleAnalytics struct {
+	TotalSpentCents    int64
+	TotalProductsCents int64
+	TotalServicesCents int64
+	CostPerKM          *float64
+	TotalOSCount       int
+	AvgCostPerOSCents  int64
+	SpendingByCategory []CategorySpending
+	SpendingBySupplier []SupplierSpending
+	MonthlySpending    []MonthlySpending
+}
+
 // ValidationError é retornado quando a entidade viola regras de domínio.
 type ValidationError struct {
 	Msg string
@@ -230,4 +371,33 @@ type VehicleRepository interface {
 	AddFipeHistory(ctx context.Context, h *VehicleFipeHistory) error
 	ListFipeHistory(ctx context.Context, vehicleID uuid.UUID) ([]VehicleFipeHistory, error)
 	ListActiveVehiclesForFipeUpdate(ctx context.Context) ([]Vehicle, error)
+
+	// Service Orders
+	CreateServiceOrder(ctx context.Context, o *ServiceOrder) error
+	GetServiceOrderByID(ctx context.Context, workspaceID, id uuid.UUID) (*ServiceOrder, error)
+	ListServiceOrders(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]ServiceOrder, error)
+	UpdateServiceOrder(ctx context.Context, o *ServiceOrder) error
+	DeleteServiceOrder(ctx context.Context, workspaceID, id uuid.UUID) error
+
+	// Service Order Items
+	CreateServiceOrderItem(ctx context.Context, item *ServiceOrderItem) error
+	GetServiceOrderItemByID(ctx context.Context, workspaceID, id uuid.UUID) (*ServiceOrderItem, error)
+	ListServiceOrderItems(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) ([]ServiceOrderItem, error)
+	UpdateServiceOrderItem(ctx context.Context, item *ServiceOrderItem) error
+	DeleteServiceOrderItem(ctx context.Context, workspaceID, id uuid.UUID) error
+	RecalcServiceOrderTotals(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) error
+
+	// Catalog
+	SearchCatalog(ctx context.Context, query, category string, limit int) ([]MaintenanceCatalogItem, error)
+
+	// Schedules
+	CreateSchedule(ctx context.Context, s *MaintenanceSchedule) error
+	GetScheduleByID(ctx context.Context, workspaceID, id uuid.UUID) (*MaintenanceSchedule, error)
+	ListSchedules(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]MaintenanceSchedule, error)
+	UpdateSchedule(ctx context.Context, s *MaintenanceSchedule) error
+	DeleteSchedule(ctx context.Context, workspaceID, id uuid.UUID) error
+	RefreshScheduleStatuses(ctx context.Context, vehicleID uuid.UUID, currentKM int) error
+
+	// Analytics
+	GetAnalytics(ctx context.Context, workspaceID, vehicleID uuid.UUID, months int) (*VehicleAnalytics, error)
 }
