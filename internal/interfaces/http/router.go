@@ -9,6 +9,7 @@ import (
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 	"gorm.io/gorm"
@@ -44,6 +45,7 @@ type RouterDeps struct {
 	FinanceFiscalService     *appf.FiscalService
 	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
+	VehicleService           *appv.Service
 	PermsEnforcement         middleware.EnforcementMode
 }
 
@@ -242,6 +244,41 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/documents/:id/confirm", finExtH.Confirm)
 		finance.POST("/documents/:id/fiscal-confirm", finFiscalH.Confirm)
 		finance.GET("/entries/:id/fiscal-items", finFiscalH.ListByEntry)
+	}
+
+	// Frota Familiar
+	vehicleH := handlers.NewVehicleHandler(d.VehicleService)
+	vehicles := v1.Group("/vehicles", middleware.RequireModule("vehicles", d.PermsEnforcement))
+	{
+		// FIPE search (estático antes de /:id para não conflitar)
+		vehicles.GET("/fipe/brands", vehicleH.FipeBrands)
+		vehicles.GET("/fipe/models", vehicleH.FipeModels)
+		vehicles.GET("/fipe/years", vehicleH.FipeYears)
+		vehicles.GET("/fipe/price", vehicleH.FipePrice)
+
+		// Veículos
+		vehicles.GET("", vehicleH.List)
+		vehicles.POST("", vehicleH.Create)
+		vehicles.GET("/:id", vehicleH.Get)
+		vehicles.PUT("/:id", vehicleH.Update)
+		vehicles.DELETE("/:id", vehicleH.Delete)
+		vehicles.PATCH("/:id/odometer", vehicleH.UpdateOdometer)
+
+		// Manutenções
+		vehicles.GET("/:id/maintenance", vehicleH.ListMaintenance)
+		vehicles.POST("/:id/maintenance", vehicleH.CreateMaintenance)
+		vehicles.PUT("/:id/maintenance/:mainId", vehicleH.UpdateMaintenance)
+		vehicles.DELETE("/:id/maintenance/:mainId", vehicleH.DeleteMaintenance)
+
+		// Planos de manutenção por veículo
+		vehicles.GET("/:id/plans", vehicleH.ListPlans)
+		vehicles.PUT("/:id/plans/:templateId", vehicleH.UpdatePlan)
+
+		// Alertas e depreciação
+		vehicles.GET("/:id/alerts", vehicleH.GetAlerts)
+		vehicles.GET("/:id/depreciation", vehicleH.GetDepreciation)
+		vehicles.GET("/:id/fipe-history", vehicleH.GetFipeHistory)
+		vehicles.GET("/:id/fipe-all-years", vehicleH.GetFipeAllYears)
 	}
 
 	return r

@@ -10,6 +10,7 @@ import (
 	domf "github.com/retechfin/retechfin-api/internal/domain/finance"
 	domh "github.com/retechfin/retechfin-api/internal/domain/health"
 	doml "github.com/retechfin/retechfin-api/internal/domain/ledger"
+	domv "github.com/retechfin/retechfin-api/internal/domain/vehicle"
 )
 
 type Body struct {
@@ -55,6 +56,11 @@ func Write(c *gin.Context, err error) {
 	var fv *domf.ValidationError
 	if errors.As(err, &fv) {
 		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: fv.Msg, RequestID: ridStr}})
+		return
+	}
+	var vv *domv.ValidationError
+	if errors.As(err, &vv) {
+		c.JSON(http.StatusBadRequest, Body{Error: Detail{Code: CodeValidation, Message: vv.Msg, RequestID: ridStr}})
 		return
 	}
 

@@ -19,8 +19,11 @@ import (
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/fipe"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
@@ -178,6 +181,29 @@ func main() {
 		log.Warn("⚠️ Extração LLM desabilitada — import de fatura/exames por PDF indisponível (EXTRACTION_PROVIDER, EXTRACTION_API_KEY)")
 	}
 
+	// Redis (opcional — sem Redis o cache FIPE simplesmente não existe)
+	var redisCache *cache.Cache
+	if cfg.RedisURL != "" {
+		var rErr error
+		redisCache, rErr = cache.New(cfg.RedisURL)
+		if rErr != nil {
+			log.Warn("⚠️ Redis não disponível — cache FIPE desabilitado", slog.String("error", rErr.Error()))
+		} else {
+			log.Info("✅ Redis conectado!")
+		}
+	} else {
+		log.Warn("⚠️ REDIS_URL não configurado — cache FIPE desabilitado")
+	}
+
+	// FIPE
+	fipeClient := fipe.New(cfg.FipeBaseURL, redisCache)
+	log.Info(fmt.Sprintf("✅ Cliente FIPE configurado! base_url=%s", func() string {
+		if cfg.FipeBaseURL != "" {
+			return cfg.FipeBaseURL
+		}
+		return fipe.DefaultBaseURL
+	}()))
+
 	supplierRepo := persistence.NewSupplierRepository(db)
 	incomeSourceRepo := persistence.NewIncomeSourceRepository(db)
 	financialEntryRepo := persistence.NewFinancialEntryRepository(db)
@@ -214,6 +240,9 @@ func main() {
 	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc)
 	memberDocSvc := apph.NewMemberDocumentService(memberDocRepo, familyRepo, objStorage, storageCfg.MaxUploadMB)
 
+	vehicleRepo := persistence.NewVehicleRepository(db)
+	vehicleSvc := appv.NewService(vehicleRepo, fipeClient, log)
+
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
 		DB:                       db,
@@ -244,6 +273,7 @@ func main() {
 		FinanceFiscalService:     finFiscalSvc,
 		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
+		VehicleService:           vehicleSvc,
 		PermsEnforcement:         permsMode,
 	})
 
@@ -263,6 +293,26 @@ func main() {
 		defer ticker.Stop()
 		for range ticker.C {
 			run()
+		}
+	}()
+
+	// FIPE history: atualiza o valor FIPE de todos os veículos ativos uma vez ao mês.
+	go func() {
+		refresh := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			month := time.Now().Format("01/2006")
+			if n, err := vehicleSvc.RefreshFipeHistory(ctx, month); err != nil {
+				log.Warn("⚠️ Atualização FIPE mensal falhou", slog.String("error", err.Error()))
+			} else {
+				log.Info(fmt.Sprintf("📈 FIPE atualizado: %d veículos | %s", n, month))
+			}
+		}
+		refresh()
+		ticker := time.NewTicker(30 * 24 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			refresh()
 		}
 	}()
 
