@@ -39,10 +39,13 @@ func New(redisURL string) (*Cache, error) {
 }
 
 // Get busca uma chave. Retorna ("", nil) se ausente ou se cache for nil.
+// Timeout curto evita que Redis pendurado bloqueie a request inteira.
 func (c *Cache) Get(ctx context.Context, key string) (string, error) {
 	if c == nil {
 		return "", nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
 	val, err := c.client.Get(ctx, key).Result()
 	if err == redis.Nil {
 		return "", nil
@@ -51,10 +54,13 @@ func (c *Cache) Get(ctx context.Context, key string) (string, error) {
 }
 
 // Set armazena key=value com TTL. No-op se cache for nil.
+// Timeout curto evita que Redis pendurado bloqueie a request inteira.
 func (c *Cache) Set(ctx context.Context, key, value string, ttl time.Duration) error {
 	if c == nil {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
 	return c.client.Set(ctx, key, value, ttl).Err()
 }
 
