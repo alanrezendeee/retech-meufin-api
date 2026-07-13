@@ -9,19 +9,22 @@ import (
 
 // Config agrega todas as variáveis obrigatórias. Qualquer ausência impede o startup.
 type Config struct {
-	DBHost          string
-	DBPort          string
-	DBUser          string
-	DBPassword      string
-	DBName          string
-	DBSSLMode       string
-	AppPort         string
-	AppEnv          string
-	LogLevel        string
-	MigrationsPath  string
-	AuthJWKSURL     string
-	CORSOrigins     []string
+	DBHost           string
+	DBPort           string
+	DBUser           string
+	DBPassword       string
+	DBName           string
+	DBSSLMode        string
+	AppPort          string
+	AppEnv           string
+	LogLevel         string
+	MigrationsPath   string
+	AuthJWKSURL      string
+	CORSOrigins      []string
 	AppApplicationID string
+	// Integrações opcionais
+	FipeBaseURL string // padrão: https://parallelum.com.br/fipe/api/v1
+	RedisURL    string // ex: redis://localhost:6379 (opcional; sem Redis = sem cache FIPE)
 }
 
 func Load() (*Config, error) {
@@ -43,20 +46,21 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DBHost:         os.Getenv("DB_HOST"),
-		DBPort:         os.Getenv("DB_PORT"),
-		DBUser:         os.Getenv("DB_USER"),
-		DBPassword:     os.Getenv("DB_PASSWORD"),
-		DBName:         os.Getenv("DB_NAME"),
-		DBSSLMode:      os.Getenv("DB_SSLMODE"),
-		AppPort:        os.Getenv("APP_PORT"),
-		AppEnv:         os.Getenv("APP_ENV"),
-		LogLevel:       os.Getenv("LOG_LEVEL"),
-		MigrationsPath: os.Getenv("MIGRATIONS_PATH"),
-		AuthJWKSURL:    os.Getenv("AUTH_JWKS_URL"),
-		CORSOrigins:    splitAndTrim(os.Getenv("CORS_ALLOWED_ORIGINS")),
-		// Opcional: se setado, valida que o token pertence a esta aplicação.
+		DBHost:           os.Getenv("DB_HOST"),
+		DBPort:           os.Getenv("DB_PORT"),
+		DBUser:           os.Getenv("DB_USER"),
+		DBPassword:       os.Getenv("DB_PASSWORD"),
+		DBName:           os.Getenv("DB_NAME"),
+		DBSSLMode:        os.Getenv("DB_SSLMODE"),
+		AppPort:          os.Getenv("APP_PORT"),
+		AppEnv:           os.Getenv("APP_ENV"),
+		LogLevel:         os.Getenv("LOG_LEVEL"),
+		MigrationsPath:   os.Getenv("MIGRATIONS_PATH"),
+		AuthJWKSURL:      os.Getenv("AUTH_JWKS_URL"),
+		CORSOrigins:      splitAndTrim(os.Getenv("CORS_ALLOWED_ORIGINS")),
 		AppApplicationID: strings.TrimSpace(os.Getenv("APP_APPLICATION_ID")),
+		FipeBaseURL:      strings.TrimSpace(os.Getenv("FIPE_BASE_URL")),
+		RedisURL:         strings.TrimSpace(os.Getenv("REDIS_URL")),
 	}
 
 	if cfg.AppEnv != "development" && cfg.AppEnv != "production" && cfg.AppEnv != "test" {
