@@ -279,6 +279,30 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		vehicles.GET("/:id/depreciation", vehicleH.GetDepreciation)
 		vehicles.GET("/:id/fipe-history", vehicleH.GetFipeHistory)
 		vehicles.GET("/:id/fipe-all-years", vehicleH.GetFipeAllYears)
+
+		// Ordens de Serviço
+		vehicles.GET("/:id/service-orders", vehicleH.ListServiceOrders)
+		vehicles.POST("/:id/service-orders", vehicleH.CreateServiceOrder)
+		vehicles.GET("/:id/service-orders/:osId", vehicleH.GetServiceOrder)
+		vehicles.PUT("/:id/service-orders/:osId", vehicleH.UpdateServiceOrder)
+		vehicles.DELETE("/:id/service-orders/:osId", vehicleH.DeleteServiceOrder)
+
+		// Itens de OS
+		vehicles.POST("/:id/service-orders/:osId/items", vehicleH.AddOSItem)
+		vehicles.PUT("/:id/service-orders/:osId/items/:itemId", vehicleH.UpdateOSItem)
+		vehicles.DELETE("/:id/service-orders/:osId/items/:itemId", vehicleH.DeleteOSItem)
+
+		// Agendamentos de manutenção
+		vehicles.GET("/:id/schedules", vehicleH.ListSchedules)
+		vehicles.POST("/:id/schedules", vehicleH.CreateSchedule)
+		vehicles.PUT("/:id/schedules/:schedId", vehicleH.UpdateSchedule)
+		vehicles.DELETE("/:id/schedules/:schedId", vehicleH.DeleteSchedule)
+
+		// Analytics
+		vehicles.GET("/:id/analytics", vehicleH.GetAnalytics)
+
+		// Catálogo global de manutenção (sem /:id)
+		vehicles.GET("/maintenance/catalog", vehicleH.SearchCatalog)
 	}
 
 	return r
