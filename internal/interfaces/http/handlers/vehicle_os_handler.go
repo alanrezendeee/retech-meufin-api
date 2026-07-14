@@ -96,6 +96,7 @@ func mapCatalogItem(c dom.MaintenanceCatalogItem) catalogItemResponse {
 type scheduleResponse struct {
 	ID                string  `json:"id"`
 	VehicleID         string  `json:"vehicle_id"`
+	MaintenanceID     *string `json:"maintenance_id"`
 	MaintenanceItemID *string `json:"maintenance_item_id"`
 	Description       string  `json:"description"`
 	Category          string  `json:"category"`
@@ -119,6 +120,10 @@ func mapSchedule(s *dom.MaintenanceSchedule) scheduleResponse {
 		Notes:       s.Notes,
 		CreatedAt:   s.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   s.UpdatedAt.UTC().Format(time.RFC3339),
+	}
+	if s.MaintenanceID != nil {
+		v := s.MaintenanceID.String()
+		r.MaintenanceID = &v
 	}
 	if s.MaintenanceItemID != nil {
 		v := s.MaintenanceItemID.String()
@@ -203,6 +208,7 @@ type maintenanceItemJSON struct {
 }
 
 type scheduleCreateJSON struct {
+	MaintenanceID     *string `json:"maintenance_id"`
 	MaintenanceItemID *string `json:"maintenance_item_id"`
 	Description       string  `json:"description" binding:"required"`
 	Category          string  `json:"category"`
@@ -212,6 +218,7 @@ type scheduleCreateJSON struct {
 }
 
 type scheduleUpdateJSON struct {
+	MaintenanceID *string `json:"maintenance_id"`
 	Description   string  `json:"description" binding:"required"`
 	Category      string  `json:"category"`
 	ScheduledKM   *int    `json:"scheduled_km"`
@@ -395,6 +402,15 @@ func (h *VehicleHandler) CreateSchedule(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "scheduled_date inválido")
 		return
 	}
+	var maintID *uuid.UUID
+	if body.MaintenanceID != nil {
+		id, err := uuid.Parse(*body.MaintenanceID)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "maintenance_id inválido")
+			return
+		}
+		maintID = &id
+	}
 	var maintItemID *uuid.UUID
 	if body.MaintenanceItemID != nil {
 		id, err := uuid.Parse(*body.MaintenanceItemID)
@@ -407,6 +423,7 @@ func (h *VehicleHandler) CreateSchedule(c *gin.Context) {
 	sched, err := h.svc.CreateSchedule(c.Request.Context(), appv.CreateScheduleInput{
 		WorkspaceID:       ws,
 		VehicleID:         vid,
+		MaintenanceID:     maintID,
 		MaintenanceItemID: maintItemID,
 		Description:       body.Description,
 		Category:          body.Category,
@@ -447,9 +464,19 @@ func (h *VehicleHandler) UpdateSchedule(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "completed_at inválido")
 		return
 	}
+	var updMaintID *uuid.UUID
+	if body.MaintenanceID != nil {
+		id, err := uuid.Parse(*body.MaintenanceID)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "maintenance_id inválido")
+			return
+		}
+		updMaintID = &id
+	}
 	sched, err := h.svc.UpdateSchedule(c.Request.Context(), appv.UpdateScheduleInput{
 		WorkspaceID:   ws,
 		ID:            schedID,
+		MaintenanceID: updMaintID,
 		Description:   body.Description,
 		Category:      body.Category,
 		ScheduledKM:   body.ScheduledKM,
