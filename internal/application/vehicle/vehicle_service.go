@@ -212,67 +212,19 @@ func (s *Service) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
 
 // ─── Maintenance ──────────────────────────────────────────────────────────────
 
-type CreateMaintenanceInput struct {
-	WorkspaceID         uuid.UUID
-	VehicleID           uuid.UUID
-	TemplateID          *uuid.UUID
-	Type                string
-	Title               string
-	Description         *string
-	OdometerAtService   *int
-	ServiceDate         time.Time
-	Cost                *float64
-	SupplierID          *uuid.UUID
-	NextServiceOdometer *int
-	NextServiceDate     *time.Time
-	Notes               *string
-}
-
 type UpdateMaintenanceInput struct {
 	WorkspaceID         uuid.UUID
 	ID                  uuid.UUID
 	Title               string
 	Description         *string
 	OdometerAtService   *int
-	ServiceDate         time.Time
+	ServiceDate         *time.Time // nullable
 	Cost                *float64
 	SupplierID          *uuid.UUID
 	NextServiceOdometer *int
 	NextServiceDate     *time.Time
 	Notes               *string
-}
-
-func (s *Service) LogMaintenance(ctx context.Context, in CreateMaintenanceInput) (*dom.VehicleMaintenance, error) {
-	if _, err := s.repo.GetByID(ctx, in.WorkspaceID, in.VehicleID); err != nil {
-		return nil, err
-	}
-	m := &dom.VehicleMaintenance{
-		ID:                  uuid.New(),
-		VehicleID:           in.VehicleID,
-		WorkspaceID:         in.WorkspaceID,
-		TemplateID:          in.TemplateID,
-		Type:                in.Type,
-		Title:               in.Title,
-		Description:         in.Description,
-		OdometerAtService:   in.OdometerAtService,
-		ServiceDate:         in.ServiceDate,
-		Cost:                in.Cost,
-		SupplierID:          in.SupplierID,
-		NextServiceOdometer: in.NextServiceOdometer,
-		NextServiceDate:     in.NextServiceDate,
-		Notes:               in.Notes,
-		CreatedAt:           time.Now().UTC(),
-	}
-	if m.Type == "" {
-		m.Type = "other"
-	}
-	if m.Title == "" {
-		m.Title = m.Type
-	}
-	if err := s.repo.CreateMaintenance(ctx, m); err != nil {
-		return nil, err
-	}
-	return m, nil
+	Status              string
 }
 
 func (s *Service) GetMaintenance(ctx context.Context, workspaceID, id uuid.UUID) (*dom.VehicleMaintenance, error) {
@@ -300,6 +252,10 @@ func (s *Service) UpdateMaintenance(ctx context.Context, in UpdateMaintenanceInp
 	m.NextServiceOdometer = in.NextServiceOdometer
 	m.NextServiceDate = in.NextServiceDate
 	m.Notes = in.Notes
+	if in.Status != "" {
+		m.Status = dom.MaintenanceStatus(in.Status)
+	}
+	m.UpdatedAt = time.Now().UTC()
 	if err := s.repo.UpdateMaintenance(ctx, m); err != nil {
 		return nil, err
 	}
@@ -410,7 +366,7 @@ func (s *Service) CalculateAlerts(ctx context.Context, workspaceID, vehicleID uu
 			continue
 		}
 
-		alert.LastDate = &last.ServiceDate
+		alert.LastDate = last.ServiceDate
 		alert.LastOdometer = last.OdometerAtService
 
 		overdue := false
@@ -428,7 +384,7 @@ func (s *Service) CalculateAlerts(ctx context.Context, workspaceID, vehicleID uu
 			}
 		}
 
-		if effectiveDays != nil {
+		if effectiveDays != nil && last.ServiceDate != nil {
 			dueDate := last.ServiceDate.AddDate(0, 0, *effectiveDays)
 			remaining := int(dueDate.Sub(now).Hours() / 24)
 			alert.DueAtDate = &dueDate

@@ -124,7 +124,7 @@ func (r *VehicleRepository) SetMembers(ctx context.Context, vehicleID uuid.UUID,
 
 func (r *VehicleRepository) CreateMaintenance(ctx context.Context, m *dom.VehicleMaintenance) error {
 	model := maintenanceToModel(m)
-	if err := r.db.WithContext(ctx).Create(&model).Error; err != nil {
+	if err := r.db.WithContext(ctx).Omit("Items").Create(&model).Error; err != nil {
 		return fmt.Errorf("maintenance: create: %w", err)
 	}
 	return nil
@@ -133,6 +133,7 @@ func (r *VehicleRepository) CreateMaintenance(ctx context.Context, m *dom.Vehicl
 func (r *VehicleRepository) GetMaintenanceByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.VehicleMaintenance, error) {
 	var m VehicleMaintenanceModel
 	err := r.db.WithContext(ctx).
+		Preload("Items").
 		Where("id = ? AND workspace_id = ?", id.String(), workspaceID.String()).
 		First(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -148,8 +149,9 @@ func (r *VehicleRepository) GetMaintenanceByID(ctx context.Context, workspaceID,
 func (r *VehicleRepository) ListMaintenance(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]dom.VehicleMaintenance, error) {
 	var models []VehicleMaintenanceModel
 	if err := r.db.WithContext(ctx).
+		Preload("Items").
 		Where("workspace_id = ? AND vehicle_id = ?", workspaceID.String(), vehicleID.String()).
-		Order("service_date DESC").
+		Order("COALESCE(service_date, created_at) DESC").
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
@@ -162,7 +164,7 @@ func (r *VehicleRepository) ListMaintenance(ctx context.Context, workspaceID, ve
 
 func (r *VehicleRepository) UpdateMaintenance(ctx context.Context, m *dom.VehicleMaintenance) error {
 	model := maintenanceToModel(m)
-	return r.db.WithContext(ctx).Omit("CreatedAt").Save(&model).Error
+	return r.db.WithContext(ctx).Omit("Items", "CreatedAt").Save(&model).Error
 }
 
 func (r *VehicleRepository) DeleteMaintenance(ctx context.Context, workspaceID, id uuid.UUID) error {
@@ -192,8 +194,8 @@ func (r *VehicleRepository) LastMaintenanceByType(ctx context.Context, vehicleID
 	for _, t := range types {
 		var m VehicleMaintenanceModel
 		if err := r.db.WithContext(ctx).
-			Where("vehicle_id = ? AND type = ?", vehicleID.String(), t).
-			Order("service_date DESC").
+			Where("vehicle_id = ? AND type = ? AND service_date IS NOT NULL", vehicleID.String(), t).
+			Order("service_date DESC NULLS LAST").
 			First(&m).Error; err == nil {
 			v := modelToMaintenance(m)
 			out[t] = &v

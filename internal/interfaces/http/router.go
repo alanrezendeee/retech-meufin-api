@@ -264,11 +264,17 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		vehicles.DELETE("/:id", vehicleH.Delete)
 		vehicles.PATCH("/:id/odometer", vehicleH.UpdateOdometer)
 
-		// Manutenções
-		vehicles.GET("/:id/maintenance", vehicleH.ListMaintenance)
-		vehicles.POST("/:id/maintenance", vehicleH.CreateMaintenance)
-		vehicles.PUT("/:id/maintenance/:mainId", vehicleH.UpdateMaintenance)
-		vehicles.DELETE("/:id/maintenance/:mainId", vehicleH.DeleteMaintenance)
+		// Manutenções (unificadas: inclui itens, status de OS, etc.)
+		vehicles.GET("/:id/maintenances", vehicleH.ListMaintenance)
+		vehicles.POST("/:id/maintenances", vehicleH.CreateMaintenance)
+		vehicles.GET("/:id/maintenances/:mId", vehicleH.GetMaintenance)
+		vehicles.PUT("/:id/maintenances/:mId", vehicleH.UpdateMaintenance)
+		vehicles.DELETE("/:id/maintenances/:mId", vehicleH.DeleteMaintenance)
+
+		// Itens de manutenção
+		vehicles.POST("/:id/maintenances/:mId/items", vehicleH.AddMaintenanceItem)
+		vehicles.PUT("/:id/maintenances/:mId/items/:itemId", vehicleH.UpdateMaintenanceItem)
+		vehicles.DELETE("/:id/maintenances/:mId/items/:itemId", vehicleH.DeleteMaintenanceItem)
 
 		// Planos de manutenção por veículo
 		vehicles.GET("/:id/plans", vehicleH.ListPlans)
@@ -279,18 +285,6 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		vehicles.GET("/:id/depreciation", vehicleH.GetDepreciation)
 		vehicles.GET("/:id/fipe-history", vehicleH.GetFipeHistory)
 		vehicles.GET("/:id/fipe-all-years", vehicleH.GetFipeAllYears)
-
-		// Ordens de Serviço
-		vehicles.GET("/:id/service-orders", vehicleH.ListServiceOrders)
-		vehicles.POST("/:id/service-orders", vehicleH.CreateServiceOrder)
-		vehicles.GET("/:id/service-orders/:osId", vehicleH.GetServiceOrder)
-		vehicles.PUT("/:id/service-orders/:osId", vehicleH.UpdateServiceOrder)
-		vehicles.DELETE("/:id/service-orders/:osId", vehicleH.DeleteServiceOrder)
-
-		// Itens de OS
-		vehicles.POST("/:id/service-orders/:osId/items", vehicleH.AddOSItem)
-		vehicles.PUT("/:id/service-orders/:osId/items/:itemId", vehicleH.UpdateOSItem)
-		vehicles.DELETE("/:id/service-orders/:osId/items/:itemId", vehicleH.DeleteOSItem)
 
 		// Agendamentos de manutenção
 		vehicles.GET("/:id/schedules", vehicleH.ListSchedules)

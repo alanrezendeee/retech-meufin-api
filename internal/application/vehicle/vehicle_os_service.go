@@ -8,23 +8,9 @@ import (
 	dom "github.com/retechfin/retechfin-api/internal/domain/vehicle"
 )
 
-// ─── Service Orders ───────────────────────────────────────────────────────────
+// ─── Maintenance (unified) ────────────────────────────────────────────────────
 
-type CreateServiceOrderInput struct {
-	WorkspaceID   uuid.UUID
-	VehicleID     uuid.UUID
-	SupplierID    *uuid.UUID
-	OSNumber      *string
-	ServiceDate   time.Time
-	KMAtService   int
-	PaymentMethod *string
-	Technician    *string
-	Notes         *string
-	Status        string
-	Items         []ServiceOrderItemInput
-}
-
-type ServiceOrderItemInput struct {
+type MaintenanceItemInput struct {
 	CatalogItemID             *uuid.UUID
 	ItemType                  string
 	Category                  string
@@ -39,132 +25,123 @@ type ServiceOrderItemInput struct {
 	Notes                     *string
 }
 
-type UpdateServiceOrderInput struct {
-	WorkspaceID   uuid.UUID
-	ID            uuid.UUID
-	SupplierID    *uuid.UUID
-	OSNumber      *string
-	ServiceDate   time.Time
-	KMAtService   int
-	PaymentMethod *string
-	Technician    *string
-	Notes         *string
-	Status        string
+type CreateMaintenanceInput struct {
+	WorkspaceID         uuid.UUID
+	VehicleID           uuid.UUID
+	TemplateID          *uuid.UUID
+	Type                string
+	Title               string
+	Description         *string
+	OdometerAtService   *int
+	ServiceDate         *time.Time // nullable — orçamento ainda não tem data
+	Cost                *float64
+	SupplierID          *uuid.UUID
+	NextServiceOdometer *int
+	NextServiceDate     *time.Time
+	Notes               *string
+	Status              string
+	OSNumber            *string
+	Technician          *string
+	PaymentMethod       *string
+	Items               []MaintenanceItemInput
 }
 
-func (s *Service) CreateServiceOrder(ctx context.Context, in CreateServiceOrderInput) (*dom.ServiceOrder, error) {
+type AddMaintenanceItemInput struct {
+	WorkspaceID               uuid.UUID
+	MaintenanceID             uuid.UUID
+	CatalogItemID             *uuid.UUID
+	ItemType                  string
+	Category                  string
+	Description               string
+	Quantity                  float64
+	UnitPriceCents            int64
+	KMAtInstallation          *int
+	ReplacementIntervalKM     *int
+	ReplacementIntervalMonths *int
+	WarrantyExpiresDate       *time.Time
+	WarrantyExpiresKM         *int
+	Notes                     *string
+}
+
+func (s *Service) CreateMaintenance(ctx context.Context, in CreateMaintenanceInput) (*dom.VehicleMaintenance, error) {
 	if _, err := s.repo.GetByID(ctx, in.WorkspaceID, in.VehicleID); err != nil {
 		return nil, err
 	}
 
-	status := dom.OSStatus(in.Status)
+	status := dom.MaintenanceStatus(in.Status)
 	if status == "" {
-		status = dom.OSStatusCompleted
+		status = dom.MaintenanceStatusRealizado
 	}
 
-	o := &dom.ServiceOrder{
-		ID:          uuid.New(),
-		VehicleID:   in.VehicleID,
-		WorkspaceID: in.WorkspaceID,
-		SupplierID:  in.SupplierID,
-		OSNumber:    in.OSNumber,
-		ServiceDate: in.ServiceDate,
-		KMAtService: in.KMAtService,
-		PaymentMethod: in.PaymentMethod,
-		Technician:  in.Technician,
-		Notes:       in.Notes,
-		Status:      status,
-		CreatedAt:   time.Now().UTC(),
-		UpdatedAt:   time.Now().UTC(),
+	now := time.Now().UTC()
+	m := &dom.VehicleMaintenance{
+		ID:                  uuid.New(),
+		VehicleID:           in.VehicleID,
+		WorkspaceID:         in.WorkspaceID,
+		TemplateID:          in.TemplateID,
+		Type:                in.Type,
+		Title:               in.Title,
+		Description:         in.Description,
+		OdometerAtService:   in.OdometerAtService,
+		ServiceDate:         in.ServiceDate,
+		Cost:                in.Cost,
+		SupplierID:          in.SupplierID,
+		NextServiceOdometer: in.NextServiceOdometer,
+		NextServiceDate:     in.NextServiceDate,
+		Notes:               in.Notes,
+		Status:              status,
+		OSNumber:            in.OSNumber,
+		Technician:          in.Technician,
+		PaymentMethod:       in.PaymentMethod,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	if m.Type == "" {
+		m.Type = "other"
+	}
+	if m.Title == "" {
+		m.Title = m.Type
 	}
 
-	if err := s.repo.CreateServiceOrder(ctx, o); err != nil {
+	if err := s.repo.CreateMaintenance(ctx, m); err != nil {
 		return nil, err
 	}
 
+	kmAtService := 0
+	if in.OdometerAtService != nil {
+		kmAtService = *in.OdometerAtService
+	}
 	for _, inp := range in.Items {
-		item := buildItem(o.ID, in.VehicleID, in.WorkspaceID, in.ServiceDate, in.KMAtService, inp)
-		if err := s.repo.CreateServiceOrderItem(ctx, &item); err != nil {
+		item := buildMaintenanceItem(m.ID, in.VehicleID, in.WorkspaceID, in.ServiceDate, kmAtService, inp)
+		if err := s.repo.CreateMaintenanceItem(ctx, &item); err != nil {
 			return nil, err
 		}
 		if item.ReplacementIntervalKM != nil || item.ReplacementIntervalMonths != nil {
-			if err := s.createScheduleFromItem(ctx, o, &item); err != nil {
-				s.log.Warn("service_order: create schedule from item failed", "item_id", item.ID, "error", err)
+			if err := s.createScheduleFromMaintenanceItem(ctx, m, &item); err != nil {
+				s.log.Warn("maintenance: create schedule from item failed", "item_id", item.ID, "error", err)
 			}
 		}
 	}
 
-	if err := s.repo.RecalcServiceOrderTotals(ctx, in.WorkspaceID, o.ID); err != nil {
-		return nil, err
+	if len(in.Items) > 0 {
+		if err := s.repo.RecalcMaintenanceTotals(ctx, in.WorkspaceID, m.ID); err != nil {
+			return nil, err
+		}
 	}
 
-	return s.repo.GetServiceOrderByID(ctx, in.WorkspaceID, o.ID)
+	return s.repo.GetMaintenanceByID(ctx, in.WorkspaceID, m.ID)
 }
 
-func (s *Service) GetServiceOrder(ctx context.Context, workspaceID, id uuid.UUID) (*dom.ServiceOrder, error) {
-	return s.repo.GetServiceOrderByID(ctx, workspaceID, id)
-}
-
-func (s *Service) ListServiceOrders(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]dom.ServiceOrder, error) {
-	if _, err := s.repo.GetByID(ctx, workspaceID, vehicleID); err != nil {
-		return nil, err
-	}
-	return s.repo.ListServiceOrders(ctx, workspaceID, vehicleID)
-}
-
-func (s *Service) UpdateServiceOrder(ctx context.Context, in UpdateServiceOrderInput) (*dom.ServiceOrder, error) {
-	o, err := s.repo.GetServiceOrderByID(ctx, in.WorkspaceID, in.ID)
+func (s *Service) AddMaintenanceItem(ctx context.Context, in AddMaintenanceItemInput) (*dom.VehicleMaintenanceItem, error) {
+	m, err := s.repo.GetMaintenanceByID(ctx, in.WorkspaceID, in.MaintenanceID)
 	if err != nil {
 		return nil, err
 	}
-
-	o.SupplierID = in.SupplierID
-	o.OSNumber = in.OSNumber
-	o.ServiceDate = in.ServiceDate
-	o.KMAtService = in.KMAtService
-	o.PaymentMethod = in.PaymentMethod
-	o.Technician = in.Technician
-	o.Notes = in.Notes
-	if in.Status != "" {
-		o.Status = dom.OSStatus(in.Status)
+	kmAtService := 0
+	if m.OdometerAtService != nil {
+		kmAtService = *m.OdometerAtService
 	}
-	o.UpdatedAt = time.Now().UTC()
-
-	if err := s.repo.UpdateServiceOrder(ctx, o); err != nil {
-		return nil, err
-	}
-	return s.repo.GetServiceOrderByID(ctx, in.WorkspaceID, in.ID)
-}
-
-func (s *Service) DeleteServiceOrder(ctx context.Context, workspaceID, id uuid.UUID) error {
-	return s.repo.DeleteServiceOrder(ctx, workspaceID, id)
-}
-
-// ─── Service Order Items ──────────────────────────────────────────────────────
-
-type AddServiceOrderItemInput struct {
-	WorkspaceID               uuid.UUID
-	ServiceOrderID            uuid.UUID
-	CatalogItemID             *uuid.UUID
-	ItemType                  string
-	Category                  string
-	Description               string
-	Quantity                  float64
-	UnitPriceCents            int64
-	KMAtInstallation          *int
-	ReplacementIntervalKM     *int
-	ReplacementIntervalMonths *int
-	WarrantyExpiresDate       *time.Time
-	WarrantyExpiresKM         *int
-	Notes                     *string
-}
-
-func (s *Service) AddServiceOrderItem(ctx context.Context, in AddServiceOrderItemInput) (*dom.ServiceOrderItem, error) {
-	o, err := s.repo.GetServiceOrderByID(ctx, in.WorkspaceID, in.ServiceOrderID)
-	if err != nil {
-		return nil, err
-	}
-	inp := ServiceOrderItemInput{
+	inp := MaintenanceItemInput{
 		CatalogItemID:             in.CatalogItemID,
 		ItemType:                  in.ItemType,
 		Category:                  in.Category,
@@ -178,23 +155,23 @@ func (s *Service) AddServiceOrderItem(ctx context.Context, in AddServiceOrderIte
 		WarrantyExpiresKM:         in.WarrantyExpiresKM,
 		Notes:                     in.Notes,
 	}
-	item := buildItem(o.ID, o.VehicleID, o.WorkspaceID, o.ServiceDate, o.KMAtService, inp)
-	if err := s.repo.CreateServiceOrderItem(ctx, &item); err != nil {
+	item := buildMaintenanceItem(m.ID, m.VehicleID, m.WorkspaceID, m.ServiceDate, kmAtService, inp)
+	if err := s.repo.CreateMaintenanceItem(ctx, &item); err != nil {
 		return nil, err
 	}
-	if err := s.repo.RecalcServiceOrderTotals(ctx, in.WorkspaceID, o.ID); err != nil {
+	if err := s.repo.RecalcMaintenanceTotals(ctx, in.WorkspaceID, m.ID); err != nil {
 		return nil, err
 	}
 	if item.ReplacementIntervalKM != nil || item.ReplacementIntervalMonths != nil {
-		if err := s.createScheduleFromItem(ctx, o, &item); err != nil {
+		if err := s.createScheduleFromMaintenanceItem(ctx, m, &item); err != nil {
 			s.log.Warn("add_item: create schedule failed", "item_id", item.ID, "error", err)
 		}
 	}
 	return &item, nil
 }
 
-func (s *Service) UpdateServiceOrderItem(ctx context.Context, workspaceID, id uuid.UUID, in ServiceOrderItemInput) (*dom.ServiceOrderItem, error) {
-	item, err := s.repo.GetServiceOrderItemByID(ctx, workspaceID, id)
+func (s *Service) UpdateMaintenanceItem(ctx context.Context, workspaceID, id uuid.UUID, in MaintenanceItemInput) (*dom.VehicleMaintenanceItem, error) {
+	item, err := s.repo.GetMaintenanceItemByID(ctx, workspaceID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -219,25 +196,25 @@ func (s *Service) UpdateServiceOrderItem(ctx context.Context, workspaceID, id uu
 	item.WarrantyExpiresDate = in.WarrantyExpiresDate
 	item.WarrantyExpiresKM = in.WarrantyExpiresKM
 	item.Notes = in.Notes
-	if err := s.repo.UpdateServiceOrderItem(ctx, item); err != nil {
+	if err := s.repo.UpdateMaintenanceItem(ctx, item); err != nil {
 		return nil, err
 	}
-	if err := s.repo.RecalcServiceOrderTotals(ctx, workspaceID, item.ServiceOrderID); err != nil {
+	if err := s.repo.RecalcMaintenanceTotals(ctx, workspaceID, item.MaintenanceID); err != nil {
 		return nil, err
 	}
 	return item, nil
 }
 
-func (s *Service) DeleteServiceOrderItem(ctx context.Context, workspaceID, id uuid.UUID) error {
-	item, err := s.repo.GetServiceOrderItemByID(ctx, workspaceID, id)
+func (s *Service) DeleteMaintenanceItem(ctx context.Context, workspaceID, id uuid.UUID) error {
+	item, err := s.repo.GetMaintenanceItemByID(ctx, workspaceID, id)
 	if err != nil {
 		return err
 	}
-	osID := item.ServiceOrderID
-	if err := s.repo.DeleteServiceOrderItem(ctx, workspaceID, id); err != nil {
+	mID := item.MaintenanceID
+	if err := s.repo.DeleteMaintenanceItem(ctx, workspaceID, id); err != nil {
 		return err
 	}
-	return s.repo.RecalcServiceOrderTotals(ctx, workspaceID, osID)
+	return s.repo.RecalcMaintenanceTotals(ctx, workspaceID, mID)
 }
 
 // ─── Maintenance Catalog ──────────────────────────────────────────────────────
@@ -249,14 +226,14 @@ func (s *Service) SearchCatalog(ctx context.Context, query, category string, lim
 // ─── Schedules ────────────────────────────────────────────────────────────────
 
 type CreateScheduleInput struct {
-	WorkspaceID        uuid.UUID
-	VehicleID          uuid.UUID
-	ServiceOrderItemID *uuid.UUID
-	Description        string
-	Category           string
-	ScheduledKM        *int
-	ScheduledDate      *time.Time
-	Notes              *string
+	WorkspaceID       uuid.UUID
+	VehicleID         uuid.UUID
+	MaintenanceItemID *uuid.UUID // era ServiceOrderItemID
+	Description       string
+	Category          string
+	ScheduledKM       *int
+	ScheduledDate     *time.Time
+	Notes             *string
 }
 
 type UpdateScheduleInput struct {
@@ -276,18 +253,18 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		return nil, err
 	}
 	sched := &dom.MaintenanceSchedule{
-		ID:                 uuid.New(),
-		VehicleID:          in.VehicleID,
-		WorkspaceID:        in.WorkspaceID,
-		ServiceOrderItemID: in.ServiceOrderItemID,
-		Description:        in.Description,
-		Category:           dom.OSItemCategory(in.Category),
-		ScheduledKM:        in.ScheduledKM,
-		ScheduledDate:      in.ScheduledDate,
-		AlertStatus:        dom.ScheduleStatusPending,
-		Notes:              in.Notes,
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
+		ID:                uuid.New(),
+		VehicleID:         in.VehicleID,
+		WorkspaceID:       in.WorkspaceID,
+		MaintenanceItemID: in.MaintenanceItemID,
+		Description:       in.Description,
+		Category:          dom.OSItemCategory(in.Category),
+		ScheduledKM:       in.ScheduledKM,
+		ScheduledDate:     in.ScheduledDate,
+		AlertStatus:       dom.ScheduleStatusPending,
+		Notes:             in.Notes,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
 	}
 	if sched.Category == "" {
 		sched.Category = dom.OSItemCategoryOutros
@@ -347,7 +324,7 @@ func (s *Service) GetAnalytics(ctx context.Context, workspaceID, vehicleID uuid.
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-func buildItem(osID, vehicleID, workspaceID uuid.UUID, serviceDate time.Time, kmAtService int, inp ServiceOrderItemInput) dom.ServiceOrderItem {
+func buildMaintenanceItem(maintenanceID, vehicleID, workspaceID uuid.UUID, serviceDate *time.Time, kmAtService int, inp MaintenanceItemInput) dom.VehicleMaintenanceItem {
 	category := dom.OSItemCategory(inp.Category)
 	if category == "" {
 		category = dom.OSItemCategoryOutros
@@ -358,9 +335,9 @@ func buildItem(osID, vehicleID, workspaceID uuid.UUID, serviceDate time.Time, km
 	}
 	total := int64(float64(inp.UnitPriceCents) * q)
 
-	item := dom.ServiceOrderItem{
+	item := dom.VehicleMaintenanceItem{
 		ID:                        uuid.New(),
-		ServiceOrderID:            osID,
+		MaintenanceID:             maintenanceID,
 		VehicleID:                 vehicleID,
 		WorkspaceID:               workspaceID,
 		CatalogItemID:             inp.CatalogItemID,
@@ -379,11 +356,11 @@ func buildItem(osID, vehicleID, workspaceID uuid.UUID, serviceDate time.Time, km
 		CreatedAt:                 time.Now().UTC(),
 	}
 
-	// Compute next_due_date in application (date math with months)
 	if inp.KMAtInstallation == nil && kmAtService > 0 {
 		item.KMAtInstallation = &kmAtService
 	}
-	if inp.ReplacementIntervalMonths != nil {
+	// Compute next_due_date in application (date math with months)
+	if inp.ReplacementIntervalMonths != nil && serviceDate != nil {
 		dueDate := serviceDate.AddDate(0, *inp.ReplacementIntervalMonths, 0)
 		item.NextDueDate = &dueDate
 	}
@@ -391,20 +368,20 @@ func buildItem(osID, vehicleID, workspaceID uuid.UUID, serviceDate time.Time, km
 	return item
 }
 
-func (s *Service) createScheduleFromItem(ctx context.Context, o *dom.ServiceOrder, item *dom.ServiceOrderItem) error {
+func (s *Service) createScheduleFromMaintenanceItem(ctx context.Context, m *dom.VehicleMaintenance, item *dom.VehicleMaintenanceItem) error {
 	sched := &dom.MaintenanceSchedule{
-		ID:                 uuid.New(),
-		VehicleID:          o.VehicleID,
-		WorkspaceID:        o.WorkspaceID,
-		ServiceOrderItemID: &item.ID,
-		Description:        item.Description,
-		Category:           item.Category,
-		ScheduledKM:        item.NextDueKM,
-		ScheduledDate:      item.NextDueDate,
-		AlertStatus:        dom.ScheduleStatusPending,
-		Notes:              item.Notes,
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
+		ID:                uuid.New(),
+		VehicleID:         m.VehicleID,
+		WorkspaceID:       m.WorkspaceID,
+		MaintenanceItemID: &item.ID,
+		Description:       item.Description,
+		Category:          item.Category,
+		ScheduledKM:       item.NextDueKM,
+		ScheduledDate:     item.NextDueDate,
+		AlertStatus:       dom.ScheduleStatusPending,
+		Notes:             item.Notes,
+		CreatedAt:         time.Now().UTC(),
+		UpdatedAt:         time.Now().UTC(),
 	}
 	return s.repo.CreateSchedule(ctx, sched)
 }

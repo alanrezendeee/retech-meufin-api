@@ -10,78 +10,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// ─── Service Orders ───────────────────────────────────────────────────────────
+// ─── Maintenance Items ────────────────────────────────────────────────────────
 
-func (r *VehicleRepository) CreateServiceOrder(ctx context.Context, o *dom.ServiceOrder) error {
-	if o.ID == uuid.Nil {
-		o.ID = uuid.New()
-	}
-	m := serviceOrderToModel(o)
-	return r.db.WithContext(ctx).Omit("Items").Create(&m).Error
-}
-
-func (r *VehicleRepository) GetServiceOrderByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.ServiceOrder, error) {
-	var m ServiceOrderModel
-	err := r.db.WithContext(ctx).
-		Preload("Items").
-		Where("id = ? AND workspace_id = ?", id.String(), workspaceID.String()).
-		First(&m).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, dom.ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := modelToServiceOrder(m)
-	return &out, nil
-}
-
-func (r *VehicleRepository) ListServiceOrders(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]dom.ServiceOrder, error) {
-	var models []ServiceOrderModel
-	if err := r.db.WithContext(ctx).
-		Preload("Items").
-		Where("workspace_id = ? AND vehicle_id = ?", workspaceID.String(), vehicleID.String()).
-		Order("service_date DESC").
-		Find(&models).Error; err != nil {
-		return nil, err
-	}
-	out := make([]dom.ServiceOrder, len(models))
-	for i, m := range models {
-		out[i] = modelToServiceOrder(m)
-	}
-	return out, nil
-}
-
-func (r *VehicleRepository) UpdateServiceOrder(ctx context.Context, o *dom.ServiceOrder) error {
-	m := serviceOrderToModel(o)
-	return r.db.WithContext(ctx).Omit("Items", "CreatedAt").Save(&m).Error
-}
-
-func (r *VehicleRepository) DeleteServiceOrder(ctx context.Context, workspaceID, id uuid.UUID) error {
-	result := r.db.WithContext(ctx).
-		Where("id = ? AND workspace_id = ?", id.String(), workspaceID.String()).
-		Delete(&ServiceOrderModel{})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return dom.ErrNotFound
-	}
-	return nil
-}
-
-// ─── Service Order Items ──────────────────────────────────────────────────────
-
-func (r *VehicleRepository) CreateServiceOrderItem(ctx context.Context, item *dom.ServiceOrderItem) error {
+func (r *VehicleRepository) CreateMaintenanceItem(ctx context.Context, item *dom.VehicleMaintenanceItem) error {
 	if item.ID == uuid.Nil {
 		item.ID = uuid.New()
 	}
-	m := serviceOrderItemToModel(item)
+	m := maintenanceItemToModel(item)
 	return r.db.WithContext(ctx).Create(&m).Error
 }
 
-func (r *VehicleRepository) GetServiceOrderItemByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.ServiceOrderItem, error) {
-	var m ServiceOrderItemModel
+func (r *VehicleRepository) GetMaintenanceItemByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.VehicleMaintenanceItem, error) {
+	var m MaintenanceItemModel
 	err := r.db.WithContext(ctx).
 		Where("id = ? AND workspace_id = ?", id.String(), workspaceID.String()).
 		First(&m).Error
@@ -91,34 +31,34 @@ func (r *VehicleRepository) GetServiceOrderItemByID(ctx context.Context, workspa
 	if err != nil {
 		return nil, err
 	}
-	out := modelToServiceOrderItem(m)
+	out := modelToMaintenanceItem(m)
 	return &out, nil
 }
 
-func (r *VehicleRepository) ListServiceOrderItems(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) ([]dom.ServiceOrderItem, error) {
-	var models []ServiceOrderItemModel
+func (r *VehicleRepository) ListMaintenanceItems(ctx context.Context, workspaceID, maintenanceID uuid.UUID) ([]dom.VehicleMaintenanceItem, error) {
+	var models []MaintenanceItemModel
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND service_order_id = ?", workspaceID.String(), serviceOrderID.String()).
+		Where("workspace_id = ? AND maintenance_id = ?", workspaceID.String(), maintenanceID.String()).
 		Order("created_at ASC").
 		Find(&models).Error; err != nil {
 		return nil, err
 	}
-	out := make([]dom.ServiceOrderItem, len(models))
+	out := make([]dom.VehicleMaintenanceItem, len(models))
 	for i, m := range models {
-		out[i] = modelToServiceOrderItem(m)
+		out[i] = modelToMaintenanceItem(m)
 	}
 	return out, nil
 }
 
-func (r *VehicleRepository) UpdateServiceOrderItem(ctx context.Context, item *dom.ServiceOrderItem) error {
-	m := serviceOrderItemToModel(item)
+func (r *VehicleRepository) UpdateMaintenanceItem(ctx context.Context, item *dom.VehicleMaintenanceItem) error {
+	m := maintenanceItemToModel(item)
 	return r.db.WithContext(ctx).Omit("CreatedAt").Save(&m).Error
 }
 
-func (r *VehicleRepository) DeleteServiceOrderItem(ctx context.Context, workspaceID, id uuid.UUID) error {
+func (r *VehicleRepository) DeleteMaintenanceItem(ctx context.Context, workspaceID, id uuid.UUID) error {
 	result := r.db.WithContext(ctx).
 		Where("id = ? AND workspace_id = ?", id.String(), workspaceID.String()).
-		Delete(&ServiceOrderItemModel{})
+		Delete(&MaintenanceItemModel{})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -128,26 +68,26 @@ func (r *VehicleRepository) DeleteServiceOrderItem(ctx context.Context, workspac
 	return nil
 }
 
-func (r *VehicleRepository) RecalcServiceOrderTotals(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) error {
+func (r *VehicleRepository) RecalcMaintenanceTotals(ctx context.Context, workspaceID, maintenanceID uuid.UUID) error {
 	type totals struct {
 		ProductsCents int64
 		ServicesCents int64
 	}
 	var t totals
 	err := r.db.WithContext(ctx).
-		Model(&ServiceOrderItemModel{}).
+		Model(&MaintenanceItemModel{}).
 		Select(
-			"COALESCE(SUM(CASE WHEN item_type = 'product' THEN total_price_cents ELSE 0 END), 0) AS products_cents, "+
+			"COALESCE(SUM(CASE WHEN item_type = 'product' THEN total_price_cents ELSE 0 END), 0) AS products_cents, " +
 				"COALESCE(SUM(CASE WHEN item_type = 'service' THEN total_price_cents ELSE 0 END), 0) AS services_cents",
 		).
-		Where("service_order_id = ? AND workspace_id = ?", serviceOrderID.String(), workspaceID.String()).
+		Where("maintenance_id = ? AND workspace_id = ?", maintenanceID.String(), workspaceID.String()).
 		Scan(&t).Error
 	if err != nil {
 		return err
 	}
 	return r.db.WithContext(ctx).
-		Model(&ServiceOrderModel{}).
-		Where("id = ? AND workspace_id = ?", serviceOrderID.String(), workspaceID.String()).
+		Model(&VehicleMaintenanceModel{}).
+		Where("id = ? AND workspace_id = ?", maintenanceID.String(), workspaceID.String()).
 		Updates(map[string]any{
 			"total_products_cents": t.ProductsCents,
 			"total_services_cents": t.ServicesCents,
@@ -261,7 +201,7 @@ func (r *VehicleRepository) RefreshScheduleStatuses(ctx context.Context, vehicle
 		return err
 	}
 
-	// Due soon por km (overdue já foi tratado acima, não precisa excluir 'overdue' aqui pois condição due_soon só se aplica a não-overdue)
+	// Due soon por km
 	if err := r.db.WithContext(ctx).
 		Model(&MaintenanceScheduleModel{}).
 		Where("vehicle_id = ? AND alert_status NOT IN ('done','cancelled','overdue') AND scheduled_km IS NOT NULL AND scheduled_km <= ?", vehicleID.String(), currentKM+1000).
@@ -295,30 +235,30 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 	wsID := workspaceID.String()
 	vID := vehicleID.String()
 
-	baseQ := r.db.WithContext(ctx).
-		Model(&ServiceOrderModel{}).
-		Where("workspace_id = ? AND vehicle_id = ? AND status != 'cancelled' AND service_date >= ?", wsID, vID, since)
-
-	// Totais gerais
+	// Totais gerais a partir de vehicle_maintenance
 	type summary struct {
 		TotalCents    int64
 		ProductsCents int64
 		ServicesCents int64
-		OSCount       int
+		TotalCount    int
 	}
 	var s summary
-	if err := baseQ.Select(
-		"COALESCE(SUM(total_cents),0) AS total_cents," +
-			"COALESCE(SUM(total_products_cents),0) AS products_cents," +
-			"COALESCE(SUM(total_services_cents),0) AS services_cents," +
-			"COUNT(*) AS os_count",
-	).Scan(&s).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Model(&VehicleMaintenanceModel{}).
+		Select(
+			"COALESCE(SUM(total_cents),0) AS total_cents," +
+				"COALESCE(SUM(total_products_cents),0) AS products_cents," +
+				"COALESCE(SUM(total_services_cents),0) AS services_cents," +
+				"COUNT(*) FILTER (WHERE status = 'realizado') AS total_count",
+		).
+		Where("workspace_id = ? AND vehicle_id = ? AND status != 'cancelado' AND service_date >= ?", wsID, vID, since).
+		Scan(&s).Error; err != nil {
 		return nil, err
 	}
 
 	avg := int64(0)
-	if s.OSCount > 0 {
-		avg = s.TotalCents / int64(s.OSCount)
+	if s.TotalCount > 0 {
+		avg = s.TotalCents / int64(s.TotalCount)
 	}
 
 	// Odômetro atual para custo por km
@@ -329,16 +269,16 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 		costPerKM = &val
 	}
 
-	// Gasto por categoria
+	// Gasto por categoria via items
 	type catRow struct {
 		Category   string
 		TotalCents int64
 	}
 	var catRows []catRow
 	r.db.WithContext(ctx).
-		Model(&ServiceOrderItemModel{}).
+		Model(&MaintenanceItemModel{}).
 		Select("category, COALESCE(SUM(total_price_cents),0) AS total_cents").
-		Where("workspace_id = ? AND vehicle_id = ? AND EXISTS (SELECT 1 FROM vehicle_service_orders o WHERE o.id = service_order_id AND o.status != 'cancelled' AND o.service_date >= ?)", wsID, vID, since).
+		Where("workspace_id = ? AND vehicle_id = ? AND EXISTS (SELECT 1 FROM vehicle_maintenance m WHERE m.id = maintenance_id AND m.status != 'cancelado' AND m.service_date >= ?)", wsID, vID, since).
 		Group("category").
 		Order("total_cents DESC").
 		Scan(&catRows)
@@ -355,11 +295,11 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 	}
 	var supRows []supRow
 	r.db.WithContext(ctx).
-		Model(&ServiceOrderModel{}).
-		Joins("LEFT JOIN suppliers s ON s.id::text = vehicle_service_orders.supplier_id::text").
-		Select("vehicle_service_orders.supplier_id, COALESCE(s.name,'Sem fornecedor') AS supplier_name, COALESCE(SUM(vehicle_service_orders.total_cents),0) AS total_cents").
-		Where("vehicle_service_orders.workspace_id = ? AND vehicle_service_orders.vehicle_id = ? AND vehicle_service_orders.status != 'cancelled' AND vehicle_service_orders.service_date >= ?", wsID, vID, since).
-		Group("vehicle_service_orders.supplier_id, s.name").
+		Model(&VehicleMaintenanceModel{}).
+		Joins("LEFT JOIN suppliers s ON s.id::text = vehicle_maintenance.supplier_id::text").
+		Select("vehicle_maintenance.supplier_id, COALESCE(s.name,'Sem fornecedor') AS supplier_name, COALESCE(SUM(vehicle_maintenance.total_cents),0) AS total_cents").
+		Where("vehicle_maintenance.workspace_id = ? AND vehicle_maintenance.vehicle_id = ? AND vehicle_maintenance.status != 'cancelado' AND vehicle_maintenance.service_date >= ?", wsID, vID, since).
+		Group("vehicle_maintenance.supplier_id, s.name").
 		Order("total_cents DESC").
 		Limit(10).
 		Scan(&supRows)
@@ -379,9 +319,9 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 	}
 	var monthRows []monthRow
 	r.db.WithContext(ctx).
-		Model(&ServiceOrderModel{}).
+		Model(&VehicleMaintenanceModel{}).
 		Select("TO_CHAR(service_date, 'YYYY-MM') AS month, COALESCE(SUM(total_cents),0) AS total_cents").
-		Where("workspace_id = ? AND vehicle_id = ? AND status != 'cancelled' AND service_date >= ?", wsID, vID, since).
+		Where("workspace_id = ? AND vehicle_id = ? AND status != 'cancelado' AND service_date >= ?", wsID, vID, since).
 		Group("month").
 		Order("month ASC").
 		Scan(&monthRows)
@@ -395,7 +335,7 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 		TotalProductsCents: s.ProductsCents,
 		TotalServicesCents: s.ServicesCents,
 		CostPerKM:          costPerKM,
-		TotalOSCount:       s.OSCount,
+		TotalCount:         s.TotalCount,
 		AvgCostPerOSCents:  avg,
 		SpendingByCategory: byCategory,
 		SpendingBySupplier: bySupplier,
