@@ -109,6 +109,13 @@ func buildManifest() manifest {
 		perm("admin.permissions", "view", "Ver catálogo de permissões"),
 		perm("admin.permissions", "manage", "Gerenciar catálogo de permissões"),
 
+		// Frota Familiar
+		perm("vehicles.dashboard", "view", "Dashboard da frota"),
+		perm("vehicles.list", "view", "Listar veículos da frota"),
+		perm("vehicles.list", "manage", "Cadastrar e remover veículos"),
+		perm("vehicles.detail", "view", "Ver detalhes de um veículo"),
+		perm("vehicles.detail", "manage", "Editar veículo, registrar manutenções e agendamentos"),
+
 		// Placeholders do menu legado ("em breve")
 		perm("retechfin.transactions", "view", "Transações (em breve)"),
 		perm("retechfin.accounts", "view", "Contas legado (em breve)"),
