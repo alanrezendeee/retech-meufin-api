@@ -36,6 +36,7 @@ type ServiceOrderItemModel struct {
 	ServiceOrderID            string     `gorm:"column:service_order_id"`
 	VehicleID                 string     `gorm:"column:vehicle_id"`
 	WorkspaceID               string     `gorm:"column:workspace_id"`
+	CatalogItemID             *string    `gorm:"column:catalog_item_id"`
 	ItemType                  string     `gorm:"column:item_type;size:10"`
 	Category                  string     `gorm:"column:category;size:30"`
 	Description               string     `gorm:"column:description"`
@@ -148,7 +149,7 @@ func modelToServiceOrder(m ServiceOrderModel) dom.ServiceOrder {
 }
 
 func serviceOrderItemToModel(item *dom.ServiceOrderItem) ServiceOrderItemModel {
-	return ServiceOrderItemModel{
+	m := ServiceOrderItemModel{
 		ID:                        item.ID.String(),
 		ServiceOrderID:            item.ServiceOrderID.String(),
 		VehicleID:                 item.VehicleID.String(),
@@ -168,6 +169,11 @@ func serviceOrderItemToModel(item *dom.ServiceOrderItem) ServiceOrderItemModel {
 		Notes:                     item.Notes,
 		CreatedAt:                 item.CreatedAt,
 	}
+	if item.CatalogItemID != nil {
+		s := item.CatalogItemID.String()
+		m.CatalogItemID = &s
+	}
+	return m
 }
 
 func modelToServiceOrderItem(m ServiceOrderItemModel) dom.ServiceOrderItem {
@@ -175,7 +181,7 @@ func modelToServiceOrderItem(m ServiceOrderItemModel) dom.ServiceOrderItem {
 	osID, _ := uuid.Parse(m.ServiceOrderID)
 	vid, _ := uuid.Parse(m.VehicleID)
 	wsID, _ := uuid.Parse(m.WorkspaceID)
-	return dom.ServiceOrderItem{
+	item := dom.ServiceOrderItem{
 		ID:                        id,
 		ServiceOrderID:            osID,
 		VehicleID:                 vid,
@@ -196,6 +202,11 @@ func modelToServiceOrderItem(m ServiceOrderItemModel) dom.ServiceOrderItem {
 		Notes:                     m.Notes,
 		CreatedAt:                 m.CreatedAt,
 	}
+	if m.CatalogItemID != nil {
+		cid, _ := uuid.Parse(*m.CatalogItemID)
+		item.CatalogItemID = &cid
+	}
+	return item
 }
 
 func modelToCatalogItem(m MaintenanceCatalogItemModel) dom.MaintenanceCatalogItem {

@@ -25,6 +25,7 @@ type CreateServiceOrderInput struct {
 }
 
 type ServiceOrderItemInput struct {
+	CatalogItemID             *uuid.UUID
 	ItemType                  string
 	Category                  string
 	Description               string
@@ -144,6 +145,7 @@ func (s *Service) DeleteServiceOrder(ctx context.Context, workspaceID, id uuid.U
 type AddServiceOrderItemInput struct {
 	WorkspaceID               uuid.UUID
 	ServiceOrderID            uuid.UUID
+	CatalogItemID             *uuid.UUID
 	ItemType                  string
 	Category                  string
 	Description               string
@@ -163,6 +165,7 @@ func (s *Service) AddServiceOrderItem(ctx context.Context, in AddServiceOrderIte
 		return nil, err
 	}
 	inp := ServiceOrderItemInput{
+		CatalogItemID:             in.CatalogItemID,
 		ItemType:                  in.ItemType,
 		Category:                  in.Category,
 		Description:               in.Description,
@@ -203,6 +206,7 @@ func (s *Service) UpdateServiceOrderItem(ctx context.Context, workspaceID, id uu
 	if q <= 0 {
 		q = 1
 	}
+	item.CatalogItemID = in.CatalogItemID
 	item.ItemType = dom.OSItemType(in.ItemType)
 	item.Category = category
 	item.Description = in.Description
@@ -359,6 +363,7 @@ func buildItem(osID, vehicleID, workspaceID uuid.UUID, serviceDate time.Time, km
 		ServiceOrderID:            osID,
 		VehicleID:                 vehicleID,
 		WorkspaceID:               workspaceID,
+		CatalogItemID:             inp.CatalogItemID,
 		ItemType:                  dom.OSItemType(inp.ItemType),
 		Category:                  category,
 		Description:               inp.Description,
