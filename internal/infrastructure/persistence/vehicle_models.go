@@ -81,13 +81,22 @@ type VehicleMaintenanceModel struct {
 	Title               string     `gorm:"column:title;size:150"`
 	Description         *string    `gorm:"column:description"`
 	OdometerAtService   *int       `gorm:"column:odometer_at_service"`
-	ServiceDate         time.Time  `gorm:"column:service_date"`
+	ServiceDate         *time.Time `gorm:"column:service_date"` // nullable — orçamento ainda não tem data
 	Cost                *float64   `gorm:"column:cost"`
 	SupplierID          *string    `gorm:"column:supplier_id"`
 	NextServiceOdometer *int       `gorm:"column:next_service_odometer"`
 	NextServiceDate     *time.Time `gorm:"column:next_service_date"`
 	Notes               *string    `gorm:"column:notes"`
+	Status              string     `gorm:"column:status;size:20"`
+	OSNumber            *string    `gorm:"column:os_number"`
+	Technician          *string    `gorm:"column:technician"`
+	PaymentMethod       *string    `gorm:"column:payment_method"`
+	TotalProductsCents  int64      `gorm:"column:total_products_cents"`
+	TotalServicesCents  int64      `gorm:"column:total_services_cents"`
+	TotalCents          int64      `gorm:"column:total_cents"`
 	CreatedAt           time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt           time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	Items               []MaintenanceItemModel `gorm:"foreignKey:MaintenanceID;references:ID"`
 }
 
 func (VehicleMaintenanceModel) TableName() string { return "vehicle_maintenance" }
@@ -225,6 +234,10 @@ func modelToMaintenance(m VehicleMaintenanceModel) dom.VehicleMaintenance {
 	id, _ := uuid.Parse(m.ID)
 	vid, _ := uuid.Parse(m.VehicleID)
 	wsID, _ := uuid.Parse(m.WorkspaceID)
+	status := dom.MaintenanceStatus(m.Status)
+	if status == "" {
+		status = dom.MaintenanceStatusRealizado
+	}
 	out := dom.VehicleMaintenance{
 		ID:                  id,
 		VehicleID:           vid,
@@ -238,7 +251,15 @@ func modelToMaintenance(m VehicleMaintenanceModel) dom.VehicleMaintenance {
 		NextServiceOdometer: m.NextServiceOdometer,
 		NextServiceDate:     m.NextServiceDate,
 		Notes:               m.Notes,
+		Status:              status,
+		OSNumber:            m.OSNumber,
+		Technician:          m.Technician,
+		PaymentMethod:       m.PaymentMethod,
+		TotalProductsCents:  m.TotalProductsCents,
+		TotalServicesCents:  m.TotalServicesCents,
+		TotalCents:          m.TotalCents,
 		CreatedAt:           m.CreatedAt,
+		UpdatedAt:           m.UpdatedAt,
 	}
 	if m.TemplateID != nil {
 		tid, _ := uuid.Parse(*m.TemplateID)
@@ -248,10 +269,18 @@ func modelToMaintenance(m VehicleMaintenanceModel) dom.VehicleMaintenance {
 		sid, _ := uuid.Parse(*m.SupplierID)
 		out.SupplierID = &sid
 	}
+	out.Items = make([]dom.VehicleMaintenanceItem, len(m.Items))
+	for i, it := range m.Items {
+		out.Items[i] = modelToMaintenanceItem(it)
+	}
 	return out
 }
 
 func maintenanceToModel(m *dom.VehicleMaintenance) VehicleMaintenanceModel {
+	status := string(m.Status)
+	if status == "" {
+		status = string(dom.MaintenanceStatusRealizado)
+	}
 	out := VehicleMaintenanceModel{
 		ID:                  m.ID.String(),
 		VehicleID:           m.VehicleID.String(),
@@ -265,7 +294,15 @@ func maintenanceToModel(m *dom.VehicleMaintenance) VehicleMaintenanceModel {
 		NextServiceOdometer: m.NextServiceOdometer,
 		NextServiceDate:     m.NextServiceDate,
 		Notes:               m.Notes,
+		Status:              status,
+		OSNumber:            m.OSNumber,
+		Technician:          m.Technician,
+		PaymentMethod:       m.PaymentMethod,
+		TotalProductsCents:  m.TotalProductsCents,
+		TotalServicesCents:  m.TotalServicesCents,
+		TotalCents:          m.TotalCents,
 		CreatedAt:           m.CreatedAt,
+		UpdatedAt:           m.UpdatedAt,
 	}
 	if m.TemplateID != nil {
 		s := m.TemplateID.String()

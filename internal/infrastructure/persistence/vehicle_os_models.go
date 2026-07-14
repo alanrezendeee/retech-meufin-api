@@ -9,31 +9,9 @@ import (
 
 // ─── GORM models ─────────────────────────────────────────────────────────────
 
-type ServiceOrderModel struct {
-	ID                 string    `gorm:"primaryKey;column:id"`
-	VehicleID          string    `gorm:"column:vehicle_id"`
-	WorkspaceID        string    `gorm:"column:workspace_id"`
-	SupplierID         *string   `gorm:"column:supplier_id"`
-	OSNumber           *string   `gorm:"column:os_number"`
-	ServiceDate        time.Time `gorm:"column:service_date;type:date"`
-	KMAtService        int       `gorm:"column:km_at_service"`
-	TotalProductsCents int64     `gorm:"column:total_products_cents"`
-	TotalServicesCents int64     `gorm:"column:total_services_cents"`
-	TotalCents         int64     `gorm:"column:total_cents"`
-	PaymentMethod      *string   `gorm:"column:payment_method"`
-	Technician         *string   `gorm:"column:technician"`
-	Notes              *string   `gorm:"column:notes"`
-	Status             string    `gorm:"column:status;size:20"`
-	Items              []ServiceOrderItemModel `gorm:"foreignKey:ServiceOrderID;references:ID"`
-	CreatedAt          time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt          time.Time `gorm:"column:updated_at;autoUpdateTime"`
-}
-
-func (ServiceOrderModel) TableName() string { return "vehicle_service_orders" }
-
-type ServiceOrderItemModel struct {
+type MaintenanceItemModel struct {
 	ID                        string     `gorm:"primaryKey;column:id"`
-	ServiceOrderID            string     `gorm:"column:service_order_id"`
+	MaintenanceID             string     `gorm:"column:maintenance_id"`
 	VehicleID                 string     `gorm:"column:vehicle_id"`
 	WorkspaceID               string     `gorm:"column:workspace_id"`
 	CatalogItemID             *string    `gorm:"column:catalog_item_id"`
@@ -54,7 +32,7 @@ type ServiceOrderItemModel struct {
 	CreatedAt                 time.Time  `gorm:"column:created_at;autoCreateTime"`
 }
 
-func (ServiceOrderItemModel) TableName() string { return "vehicle_service_order_items" }
+func (MaintenanceItemModel) TableName() string { return "vehicle_maintenance_items" }
 
 type MaintenanceCatalogItemModel struct {
 	ID                    string  `gorm:"primaryKey;column:id"`
@@ -72,86 +50,29 @@ type MaintenanceCatalogItemModel struct {
 func (MaintenanceCatalogItemModel) TableName() string { return "maintenance_catalog_items" }
 
 type MaintenanceScheduleModel struct {
-	ID                 string     `gorm:"primaryKey;column:id"`
-	VehicleID          string     `gorm:"column:vehicle_id"`
-	WorkspaceID        string     `gorm:"column:workspace_id"`
-	ServiceOrderItemID *string    `gorm:"column:service_order_item_id"`
-	Description        string     `gorm:"column:description"`
-	Category           string     `gorm:"column:category;size:30"`
-	ScheduledKM        *int       `gorm:"column:scheduled_km"`
-	ScheduledDate      *time.Time `gorm:"column:scheduled_date;type:date"`
-	AlertStatus        string     `gorm:"column:alert_status;size:20"`
-	CompletedAt        *time.Time `gorm:"column:completed_at;type:date"`
-	Notes              *string    `gorm:"column:notes"`
-	CreatedAt          time.Time  `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt          time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	ID                string     `gorm:"primaryKey;column:id"`
+	VehicleID         string     `gorm:"column:vehicle_id"`
+	WorkspaceID       string     `gorm:"column:workspace_id"`
+	MaintenanceItemID *string    `gorm:"column:maintenance_item_id"` // era service_order_item_id
+	Description       string     `gorm:"column:description"`
+	Category          string     `gorm:"column:category;size:30"`
+	ScheduledKM       *int       `gorm:"column:scheduled_km"`
+	ScheduledDate     *time.Time `gorm:"column:scheduled_date;type:date"`
+	AlertStatus       string     `gorm:"column:alert_status;size:20"`
+	CompletedAt       *time.Time `gorm:"column:completed_at;type:date"`
+	Notes             *string    `gorm:"column:notes"`
+	CreatedAt         time.Time  `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt         time.Time  `gorm:"column:updated_at;autoUpdateTime"`
 }
 
 func (MaintenanceScheduleModel) TableName() string { return "vehicle_maintenance_schedules" }
 
 // ─── Converters ───────────────────────────────────────────────────────────────
 
-func serviceOrderToModel(o *dom.ServiceOrder) ServiceOrderModel {
-	m := ServiceOrderModel{
-		ID:                 o.ID.String(),
-		VehicleID:          o.VehicleID.String(),
-		WorkspaceID:        o.WorkspaceID.String(),
-		OSNumber:           o.OSNumber,
-		ServiceDate:        o.ServiceDate,
-		KMAtService:        o.KMAtService,
-		TotalProductsCents: o.TotalProductsCents,
-		TotalServicesCents: o.TotalServicesCents,
-		TotalCents:         o.TotalCents,
-		PaymentMethod:      o.PaymentMethod,
-		Technician:         o.Technician,
-		Notes:              o.Notes,
-		Status:             string(o.Status),
-		CreatedAt:          o.CreatedAt,
-		UpdatedAt:          o.UpdatedAt,
-	}
-	if o.SupplierID != nil {
-		s := o.SupplierID.String()
-		m.SupplierID = &s
-	}
-	return m
-}
-
-func modelToServiceOrder(m ServiceOrderModel) dom.ServiceOrder {
-	id, _ := uuid.Parse(m.ID)
-	vid, _ := uuid.Parse(m.VehicleID)
-	wsID, _ := uuid.Parse(m.WorkspaceID)
-	o := dom.ServiceOrder{
-		ID:                 id,
-		VehicleID:          vid,
-		WorkspaceID:        wsID,
-		OSNumber:           m.OSNumber,
-		ServiceDate:        m.ServiceDate,
-		KMAtService:        m.KMAtService,
-		TotalProductsCents: m.TotalProductsCents,
-		TotalServicesCents: m.TotalServicesCents,
-		TotalCents:         m.TotalCents,
-		PaymentMethod:      m.PaymentMethod,
-		Technician:         m.Technician,
-		Notes:              m.Notes,
-		Status:             dom.OSStatus(m.Status),
-		CreatedAt:          m.CreatedAt,
-		UpdatedAt:          m.UpdatedAt,
-	}
-	if m.SupplierID != nil {
-		sid, _ := uuid.Parse(*m.SupplierID)
-		o.SupplierID = &sid
-	}
-	o.Items = make([]dom.ServiceOrderItem, len(m.Items))
-	for i, item := range m.Items {
-		o.Items[i] = modelToServiceOrderItem(item)
-	}
-	return o
-}
-
-func serviceOrderItemToModel(item *dom.ServiceOrderItem) ServiceOrderItemModel {
-	m := ServiceOrderItemModel{
+func maintenanceItemToModel(item *dom.VehicleMaintenanceItem) MaintenanceItemModel {
+	m := MaintenanceItemModel{
 		ID:                        item.ID.String(),
-		ServiceOrderID:            item.ServiceOrderID.String(),
+		MaintenanceID:             item.MaintenanceID.String(),
 		VehicleID:                 item.VehicleID.String(),
 		WorkspaceID:               item.WorkspaceID.String(),
 		ItemType:                  string(item.ItemType),
@@ -176,14 +97,14 @@ func serviceOrderItemToModel(item *dom.ServiceOrderItem) ServiceOrderItemModel {
 	return m
 }
 
-func modelToServiceOrderItem(m ServiceOrderItemModel) dom.ServiceOrderItem {
+func modelToMaintenanceItem(m MaintenanceItemModel) dom.VehicleMaintenanceItem {
 	id, _ := uuid.Parse(m.ID)
-	osID, _ := uuid.Parse(m.ServiceOrderID)
+	mID, _ := uuid.Parse(m.MaintenanceID)
 	vid, _ := uuid.Parse(m.VehicleID)
 	wsID, _ := uuid.Parse(m.WorkspaceID)
-	item := dom.ServiceOrderItem{
+	item := dom.VehicleMaintenanceItem{
 		ID:                        id,
-		ServiceOrderID:            osID,
+		MaintenanceID:             mID,
 		VehicleID:                 vid,
 		WorkspaceID:               wsID,
 		ItemType:                  dom.OSItemType(m.ItemType),
@@ -239,9 +160,9 @@ func scheduleToModel(s *dom.MaintenanceSchedule) MaintenanceScheduleModel {
 		CreatedAt:     s.CreatedAt,
 		UpdatedAt:     s.UpdatedAt,
 	}
-	if s.ServiceOrderItemID != nil {
-		str := s.ServiceOrderItemID.String()
-		m.ServiceOrderItemID = &str
+	if s.MaintenanceItemID != nil {
+		str := s.MaintenanceItemID.String()
+		m.MaintenanceItemID = &str
 	}
 	return m
 }
@@ -264,9 +185,9 @@ func modelToSchedule(m MaintenanceScheduleModel) dom.MaintenanceSchedule {
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 	}
-	if m.ServiceOrderItemID != nil {
-		itemID, _ := uuid.Parse(*m.ServiceOrderItemID)
-		s.ServiceOrderItemID = &itemID
+	if m.MaintenanceItemID != nil {
+		itemID, _ := uuid.Parse(*m.MaintenanceItemID)
+		s.MaintenanceItemID = &itemID
 	}
 	return s
 }

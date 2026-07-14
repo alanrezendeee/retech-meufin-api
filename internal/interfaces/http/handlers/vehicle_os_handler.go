@@ -15,9 +15,9 @@ import (
 
 // ─── Response types ────────────────────────────────────────────────────────────
 
-type serviceOrderItemResponse struct {
+type maintenanceItemResponse struct {
 	ID                        string   `json:"id"`
-	ServiceOrderID            string   `json:"service_order_id"`
+	MaintenanceID             string   `json:"maintenance_id"`
 	CatalogItemID             *string  `json:"catalog_item_id"`
 	ItemType                  string   `json:"item_type"`
 	Category                  string   `json:"category"`
@@ -36,10 +36,10 @@ type serviceOrderItemResponse struct {
 	CreatedAt                 string   `json:"created_at"`
 }
 
-func mapOSItem(item *dom.ServiceOrderItem) serviceOrderItemResponse {
-	r := serviceOrderItemResponse{
+func mapMaintenanceItem(item *dom.VehicleMaintenanceItem) maintenanceItemResponse {
+	r := maintenanceItemResponse{
 		ID:                        item.ID.String(),
-		ServiceOrderID:            item.ServiceOrderID.String(),
+		MaintenanceID:             item.MaintenanceID.String(),
 		ItemType:                  string(item.ItemType),
 		Category:                  string(item.Category),
 		Description:               item.Description,
@@ -69,53 +69,6 @@ func mapOSItem(item *dom.ServiceOrderItem) serviceOrderItemResponse {
 	return r
 }
 
-type serviceOrderResponse struct {
-	ID                 string                     `json:"id"`
-	VehicleID          string                     `json:"vehicle_id"`
-	SupplierID         *string                    `json:"supplier_id"`
-	OSNumber           *string                    `json:"os_number"`
-	ServiceDate        string                     `json:"service_date"`
-	KMAtService        int                        `json:"km_at_service"`
-	TotalProductsCents int64                      `json:"total_products_cents"`
-	TotalServicesCents int64                      `json:"total_services_cents"`
-	TotalCents         int64                      `json:"total_cents"`
-	PaymentMethod      *string                    `json:"payment_method"`
-	Technician         *string                    `json:"technician"`
-	Notes              *string                    `json:"notes"`
-	Status             string                     `json:"status"`
-	Items              []serviceOrderItemResponse `json:"items"`
-	CreatedAt          string                     `json:"created_at"`
-	UpdatedAt          string                     `json:"updated_at"`
-}
-
-func mapServiceOrder(o *dom.ServiceOrder) serviceOrderResponse {
-	r := serviceOrderResponse{
-		ID:                 o.ID.String(),
-		VehicleID:          o.VehicleID.String(),
-		OSNumber:           o.OSNumber,
-		ServiceDate:        o.ServiceDate.Format("2006-01-02"),
-		KMAtService:        o.KMAtService,
-		TotalProductsCents: o.TotalProductsCents,
-		TotalServicesCents: o.TotalServicesCents,
-		TotalCents:         o.TotalCents,
-		PaymentMethod:      o.PaymentMethod,
-		Technician:         o.Technician,
-		Notes:              o.Notes,
-		Status:             string(o.Status),
-		CreatedAt:          o.CreatedAt.UTC().Format(time.RFC3339),
-		UpdatedAt:          o.UpdatedAt.UTC().Format(time.RFC3339),
-	}
-	if o.SupplierID != nil {
-		s := o.SupplierID.String()
-		r.SupplierID = &s
-	}
-	r.Items = make([]serviceOrderItemResponse, len(o.Items))
-	for i := range o.Items {
-		r.Items[i] = mapOSItem(&o.Items[i])
-	}
-	return r
-}
-
 type catalogItemResponse struct {
 	ID                    string  `json:"id"`
 	Category              string  `json:"category"`
@@ -141,18 +94,18 @@ func mapCatalogItem(c dom.MaintenanceCatalogItem) catalogItemResponse {
 }
 
 type scheduleResponse struct {
-	ID                 string  `json:"id"`
-	VehicleID          string  `json:"vehicle_id"`
-	ServiceOrderItemID *string `json:"service_order_item_id"`
-	Description        string  `json:"description"`
-	Category           string  `json:"category"`
-	ScheduledKM        *int    `json:"scheduled_km"`
-	ScheduledDate      *string `json:"scheduled_date"`
-	AlertStatus        string  `json:"alert_status"`
-	CompletedAt        *string `json:"completed_at"`
-	Notes              *string `json:"notes"`
-	CreatedAt          string  `json:"created_at"`
-	UpdatedAt          string  `json:"updated_at"`
+	ID                string  `json:"id"`
+	VehicleID         string  `json:"vehicle_id"`
+	MaintenanceItemID *string `json:"maintenance_item_id"`
+	Description       string  `json:"description"`
+	Category          string  `json:"category"`
+	ScheduledKM       *int    `json:"scheduled_km"`
+	ScheduledDate     *string `json:"scheduled_date"`
+	AlertStatus       string  `json:"alert_status"`
+	CompletedAt       *string `json:"completed_at"`
+	Notes             *string `json:"notes"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 func mapSchedule(s *dom.MaintenanceSchedule) scheduleResponse {
@@ -167,9 +120,9 @@ func mapSchedule(s *dom.MaintenanceSchedule) scheduleResponse {
 		CreatedAt:   s.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   s.UpdatedAt.UTC().Format(time.RFC3339),
 	}
-	if s.ServiceOrderItemID != nil {
-		v := s.ServiceOrderItemID.String()
-		r.ServiceOrderItemID = &v
+	if s.MaintenanceItemID != nil {
+		v := s.MaintenanceItemID.String()
+		r.MaintenanceItemID = &v
 	}
 	if s.ScheduledDate != nil {
 		v := s.ScheduledDate.Format("2006-01-02")
@@ -183,15 +136,15 @@ func mapSchedule(s *dom.MaintenanceSchedule) scheduleResponse {
 }
 
 type analyticsResponse struct {
-	TotalSpentCents    int64                    `json:"total_spent_cents"`
-	TotalProductsCents int64                    `json:"total_products_cents"`
-	TotalServicesCents int64                    `json:"total_services_cents"`
-	CostPerKM          *float64                 `json:"cost_per_km"`
-	TotalOSCount       int                      `json:"total_os_count"`
-	AvgCostPerOSCents  int64                    `json:"avg_cost_per_os_cents"`
-	SpendingByCategory []categorySpendingResp   `json:"spending_by_category"`
-	SpendingBySupplier []supplierSpendingResp   `json:"spending_by_supplier"`
-	MonthlySpending    []monthlySpendingResp    `json:"monthly_spending"`
+	TotalSpentCents    int64                  `json:"total_spent_cents"`
+	TotalProductsCents int64                  `json:"total_products_cents"`
+	TotalServicesCents int64                  `json:"total_services_cents"`
+	CostPerKM          *float64               `json:"cost_per_km"`
+	TotalCount         int                    `json:"total_count"`
+	AvgCostPerOSCents  int64                  `json:"avg_cost_per_os_cents"`
+	SpendingByCategory []categorySpendingResp `json:"spending_by_category"`
+	SpendingBySupplier []supplierSpendingResp `json:"spending_by_supplier"`
+	MonthlySpending    []monthlySpendingResp  `json:"monthly_spending"`
 }
 
 type categorySpendingResp struct {
@@ -214,7 +167,7 @@ func mapAnalytics(a *dom.VehicleAnalytics) analyticsResponse {
 		TotalProductsCents: a.TotalProductsCents,
 		TotalServicesCents: a.TotalServicesCents,
 		CostPerKM:          a.CostPerKM,
-		TotalOSCount:       a.TotalOSCount,
+		TotalCount:         a.TotalCount,
 		AvgCostPerOSCents:  a.AvgCostPerOSCents,
 	}
 	r.SpendingByCategory = make([]categorySpendingResp, len(a.SpendingByCategory))
@@ -234,51 +187,28 @@ func mapAnalytics(a *dom.VehicleAnalytics) analyticsResponse {
 
 // ─── Input types ──────────────────────────────────────────────────────────────
 
-type osItemJSON struct {
-	CatalogItemID             *string  `json:"catalog_item_id"`
-	ItemType                  string   `json:"item_type" binding:"required"`
-	Category                  string   `json:"category"`
-	Description               string   `json:"description" binding:"required"`
-	Quantity                  float64  `json:"quantity"`
-	UnitPriceCents            int64    `json:"unit_price_cents"`
-	KMAtInstallation          *int     `json:"km_at_installation"`
-	ReplacementIntervalKM     *int     `json:"replacement_interval_km"`
-	ReplacementIntervalMonths *int     `json:"replacement_interval_months"`
-	WarrantyExpiresDate       *string  `json:"warranty_expires_date"`
-	WarrantyExpiresKM         *int     `json:"warranty_expires_km"`
-	Notes                     *string  `json:"notes"`
-}
-
-type serviceOrderCreateJSON struct {
-	SupplierID    *string      `json:"supplier_id"`
-	OSNumber      *string      `json:"os_number"`
-	ServiceDate   string       `json:"service_date" binding:"required"`
-	KMAtService   int          `json:"km_at_service"`
-	PaymentMethod *string      `json:"payment_method"`
-	Technician    *string      `json:"technician"`
-	Notes         *string      `json:"notes"`
-	Status        string       `json:"status"`
-	Items         []osItemJSON `json:"items"`
-}
-
-type serviceOrderUpdateJSON struct {
-	SupplierID    *string `json:"supplier_id"`
-	OSNumber      *string `json:"os_number"`
-	ServiceDate   string  `json:"service_date" binding:"required"`
-	KMAtService   int     `json:"km_at_service"`
-	PaymentMethod *string `json:"payment_method"`
-	Technician    *string `json:"technician"`
-	Notes         *string `json:"notes"`
-	Status        string  `json:"status"`
+type maintenanceItemJSON struct {
+	CatalogItemID             *string `json:"catalog_item_id"`
+	ItemType                  string  `json:"item_type" binding:"required"`
+	Category                  string  `json:"category"`
+	Description               string  `json:"description" binding:"required"`
+	Quantity                  float64 `json:"quantity"`
+	UnitPriceCents            int64   `json:"unit_price_cents"`
+	KMAtInstallation          *int    `json:"km_at_installation"`
+	ReplacementIntervalKM     *int    `json:"replacement_interval_km"`
+	ReplacementIntervalMonths *int    `json:"replacement_interval_months"`
+	WarrantyExpiresDate       *string `json:"warranty_expires_date"`
+	WarrantyExpiresKM         *int    `json:"warranty_expires_km"`
+	Notes                     *string `json:"notes"`
 }
 
 type scheduleCreateJSON struct {
-	ServiceOrderItemID *string `json:"service_order_item_id"`
-	Description        string  `json:"description" binding:"required"`
-	Category           string  `json:"category"`
-	ScheduledKM        *int    `json:"scheduled_km"`
-	ScheduledDate      *string `json:"scheduled_date"`
-	Notes              *string `json:"notes"`
+	MaintenanceItemID *string `json:"maintenance_item_id"`
+	Description       string  `json:"description" binding:"required"`
+	Category          string  `json:"category"`
+	ScheduledKM       *int    `json:"scheduled_km"`
+	ScheduledDate     *string `json:"scheduled_date"`
+	Notes             *string `json:"notes"`
 }
 
 type scheduleUpdateJSON struct {
@@ -291,177 +221,20 @@ type scheduleUpdateJSON struct {
 	Notes         *string `json:"notes"`
 }
 
-// ─── Handlers: Service Orders ─────────────────────────────────────────────────
+// ─── Handlers: Maintenance Items ──────────────────────────────────────────────
 
-func (h *VehicleHandler) ListServiceOrders(c *gin.Context) {
-	ws, vid, ok := vehicleContext(c)
-	if !ok {
-		return
-	}
-	orders, err := h.svc.ListServiceOrders(c.Request.Context(), ws, vid)
-	if err != nil {
-		errrespond.Write(c, err)
-		return
-	}
-	items := make([]serviceOrderResponse, len(orders))
-	for i := range orders {
-		items[i] = mapServiceOrder(&orders[i])
-	}
-	c.JSON(http.StatusOK, gin.H{"items": items})
-}
-
-func (h *VehicleHandler) CreateServiceOrder(c *gin.Context) {
-	ws, vid, ok := vehicleContext(c)
-	if !ok {
-		return
-	}
-	var body serviceOrderCreateJSON
-	if err := c.ShouldBindJSON(&body); err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido: "+err.Error())
-		return
-	}
-	serviceDate, err := time.Parse("2006-01-02", body.ServiceDate)
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "service_date inválido")
-		return
-	}
-
-	var supplierID *uuid.UUID
-	if body.SupplierID != nil {
-		sid, err := uuid.Parse(*body.SupplierID)
-		if err != nil {
-			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "supplier_id inválido")
-			return
-		}
-		supplierID = &sid
-	}
-
-	items, err := parseOSItems(body.Items)
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, err.Error())
-		return
-	}
-
-	o, err := h.svc.CreateServiceOrder(c.Request.Context(), appv.CreateServiceOrderInput{
-		WorkspaceID:   ws,
-		VehicleID:     vid,
-		SupplierID:    supplierID,
-		OSNumber:      body.OSNumber,
-		ServiceDate:   serviceDate,
-		KMAtService:   body.KMAtService,
-		PaymentMethod: body.PaymentMethod,
-		Technician:    body.Technician,
-		Notes:         body.Notes,
-		Status:        body.Status,
-		Items:         items,
-	})
-	if err != nil {
-		errrespond.Write(c, err)
-		return
-	}
-	c.JSON(http.StatusCreated, mapServiceOrder(o))
-}
-
-func (h *VehicleHandler) GetServiceOrder(c *gin.Context) {
+func (h *VehicleHandler) AddMaintenanceItem(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
 		return
 	}
-	osID, err := uuid.Parse(c.Param("osId"))
+	mID, err := uuid.Parse(c.Param("mId"))
 	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "osId inválido")
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "mId inválido")
 		return
 	}
-	o, err := h.svc.GetServiceOrder(c.Request.Context(), ws, osID)
-	if err != nil {
-		errrespond.Write(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, mapServiceOrder(o))
-}
-
-func (h *VehicleHandler) UpdateServiceOrder(c *gin.Context) {
-	ws, ok := middleware.WorkspaceID(c)
-	if !ok {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
-		return
-	}
-	osID, err := uuid.Parse(c.Param("osId"))
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "osId inválido")
-		return
-	}
-	var body serviceOrderUpdateJSON
-	if err := c.ShouldBindJSON(&body); err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido: "+err.Error())
-		return
-	}
-	serviceDate, err := time.Parse("2006-01-02", body.ServiceDate)
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "service_date inválido")
-		return
-	}
-	var supplierID *uuid.UUID
-	if body.SupplierID != nil {
-		sid, err := uuid.Parse(*body.SupplierID)
-		if err != nil {
-			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "supplier_id inválido")
-			return
-		}
-		supplierID = &sid
-	}
-	o, err := h.svc.UpdateServiceOrder(c.Request.Context(), appv.UpdateServiceOrderInput{
-		WorkspaceID:   ws,
-		ID:            osID,
-		SupplierID:    supplierID,
-		OSNumber:      body.OSNumber,
-		ServiceDate:   serviceDate,
-		KMAtService:   body.KMAtService,
-		PaymentMethod: body.PaymentMethod,
-		Technician:    body.Technician,
-		Notes:         body.Notes,
-		Status:        body.Status,
-	})
-	if err != nil {
-		errrespond.Write(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, mapServiceOrder(o))
-}
-
-func (h *VehicleHandler) DeleteServiceOrder(c *gin.Context) {
-	ws, ok := middleware.WorkspaceID(c)
-	if !ok {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
-		return
-	}
-	osID, err := uuid.Parse(c.Param("osId"))
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "osId inválido")
-		return
-	}
-	if err := h.svc.DeleteServiceOrder(c.Request.Context(), ws, osID); err != nil {
-		errrespond.Write(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
-}
-
-// ─── Handlers: OS Items ───────────────────────────────────────────────────────
-
-func (h *VehicleHandler) AddOSItem(c *gin.Context) {
-	ws, ok := middleware.WorkspaceID(c)
-	if !ok {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
-		return
-	}
-	osID, err := uuid.Parse(c.Param("osId"))
-	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "osId inválido")
-		return
-	}
-	var body osItemJSON
+	var body maintenanceItemJSON
 	if err := c.ShouldBindJSON(&body); err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido: "+err.Error())
 		return
@@ -471,9 +244,9 @@ func (h *VehicleHandler) AddOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "warranty_expires_date inválido")
 		return
 	}
-	addInput := appv.AddServiceOrderItemInput{
+	addInput := appv.AddMaintenanceItemInput{
 		WorkspaceID:               ws,
-		ServiceOrderID:            osID,
+		MaintenanceID:             mID,
 		ItemType:                  body.ItemType,
 		Category:                  body.Category,
 		Description:               body.Description,
@@ -494,15 +267,15 @@ func (h *VehicleHandler) AddOSItem(c *gin.Context) {
 		}
 		addInput.CatalogItemID = &cid
 	}
-	item, err := h.svc.AddServiceOrderItem(c.Request.Context(), addInput)
+	item, err := h.svc.AddMaintenanceItem(c.Request.Context(), addInput)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, mapOSItem(item))
+	c.JSON(http.StatusCreated, mapMaintenanceItem(item))
 }
 
-func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
+func (h *VehicleHandler) UpdateMaintenanceItem(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
@@ -513,7 +286,7 @@ func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "itemId inválido")
 		return
 	}
-	var body osItemJSON
+	var body maintenanceItemJSON
 	if err := c.ShouldBindJSON(&body); err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido: "+err.Error())
 		return
@@ -523,7 +296,7 @@ func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "warranty_expires_date inválido")
 		return
 	}
-	updateInput := appv.ServiceOrderItemInput{
+	updateInput := appv.MaintenanceItemInput{
 		ItemType:                  body.ItemType,
 		Category:                  body.Category,
 		Description:               body.Description,
@@ -544,15 +317,15 @@ func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
 		}
 		updateInput.CatalogItemID = &cid
 	}
-	item, err := h.svc.UpdateServiceOrderItem(c.Request.Context(), ws, itemID, updateInput)
+	item, err := h.svc.UpdateMaintenanceItem(c.Request.Context(), ws, itemID, updateInput)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, mapOSItem(item))
+	c.JSON(http.StatusOK, mapMaintenanceItem(item))
 }
 
-func (h *VehicleHandler) DeleteOSItem(c *gin.Context) {
+func (h *VehicleHandler) DeleteMaintenanceItem(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
@@ -563,7 +336,7 @@ func (h *VehicleHandler) DeleteOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "itemId inválido")
 		return
 	}
-	if err := h.svc.DeleteServiceOrderItem(c.Request.Context(), ws, itemID); err != nil {
+	if err := h.svc.DeleteMaintenanceItem(c.Request.Context(), ws, itemID); err != nil {
 		errrespond.Write(c, err)
 		return
 	}
@@ -622,24 +395,24 @@ func (h *VehicleHandler) CreateSchedule(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "scheduled_date inválido")
 		return
 	}
-	var osItemID *uuid.UUID
-	if body.ServiceOrderItemID != nil {
-		id, err := uuid.Parse(*body.ServiceOrderItemID)
+	var maintItemID *uuid.UUID
+	if body.MaintenanceItemID != nil {
+		id, err := uuid.Parse(*body.MaintenanceItemID)
 		if err != nil {
-			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "service_order_item_id inválido")
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "maintenance_item_id inválido")
 			return
 		}
-		osItemID = &id
+		maintItemID = &id
 	}
 	sched, err := h.svc.CreateSchedule(c.Request.Context(), appv.CreateScheduleInput{
-		WorkspaceID:        ws,
-		VehicleID:          vid,
-		ServiceOrderItemID: osItemID,
-		Description:        body.Description,
-		Category:           body.Category,
-		ScheduledKM:        body.ScheduledKM,
-		ScheduledDate:      schedDate,
-		Notes:              body.Notes,
+		WorkspaceID:       ws,
+		VehicleID:         vid,
+		MaintenanceItemID: maintItemID,
+		Description:       body.Description,
+		Category:          body.Category,
+		ScheduledKM:       body.ScheduledKM,
+		ScheduledDate:     schedDate,
+		Notes:             body.Notes,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -742,14 +515,14 @@ func vehicleContext(c *gin.Context) (uuid.UUID, uuid.UUID, bool) {
 	return ws, vid, true
 }
 
-func parseOSItems(raw []osItemJSON) ([]appv.ServiceOrderItemInput, error) {
-	items := make([]appv.ServiceOrderItemInput, len(raw))
+func parseMaintenanceItems(raw []maintenanceItemJSON) ([]appv.MaintenanceItemInput, error) {
+	items := make([]appv.MaintenanceItemInput, len(raw))
 	for i, r := range raw {
 		warrantyDate, err := parseOptionalDate(r.WarrantyExpiresDate)
 		if err != nil {
 			return nil, err
 		}
-		inp := appv.ServiceOrderItemInput{
+		inp := appv.MaintenanceItemInput{
 			ItemType:                  r.ItemType,
 			Category:                  r.Category,
 			Description:               r.Description,

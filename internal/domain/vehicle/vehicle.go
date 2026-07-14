@@ -106,7 +106,20 @@ type VehicleMaintenancePlan struct {
 	Template     *MaintenancePlanTemplate
 }
 
-// VehicleMaintenance é um registro de manutenção executada.
+// ─── Maintenance (unified) ────────────────────────────────────────────────────
+
+// MaintenanceStatus é o estado de uma manutenção / OS unificada.
+type MaintenanceStatus string
+
+const (
+	MaintenanceStatusOrcado      MaintenanceStatus = "orcado"
+	MaintenanceStatusAgendado    MaintenanceStatus = "agendado"
+	MaintenanceStatusEmAndamento MaintenanceStatus = "em_andamento"
+	MaintenanceStatusRealizado   MaintenanceStatus = "realizado"
+	MaintenanceStatusCancelado   MaintenanceStatus = "cancelado"
+)
+
+// VehicleMaintenance é um registro de manutenção / OS unificada.
 type VehicleMaintenance struct {
 	ID                  uuid.UUID
 	VehicleID           uuid.UUID
@@ -116,13 +129,46 @@ type VehicleMaintenance struct {
 	Title               string
 	Description         *string
 	OdometerAtService   *int
-	ServiceDate         time.Time
+	ServiceDate         *time.Time // nullable — orçamento ainda não tem data
 	Cost                *float64
 	SupplierID          *uuid.UUID
 	NextServiceOdometer *int
 	NextServiceDate     *time.Time
 	Notes               *string
+	Status              MaintenanceStatus
+	OSNumber            *string
+	Technician          *string
+	PaymentMethod       *string
+	TotalProductsCents  int64
+	TotalServicesCents  int64
+	TotalCents          int64
+	Items               []VehicleMaintenanceItem
 	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+// VehicleMaintenanceItem é um item de linha de uma manutenção unificada.
+type VehicleMaintenanceItem struct {
+	ID                        uuid.UUID
+	MaintenanceID             uuid.UUID
+	VehicleID                 uuid.UUID
+	WorkspaceID               uuid.UUID
+	CatalogItemID             *uuid.UUID
+	ItemType                  OSItemType
+	Category                  OSItemCategory
+	Description               string
+	Quantity                  float64
+	UnitPriceCents            int64
+	TotalPriceCents           int64
+	KMAtInstallation          *int
+	ReplacementIntervalKM     *int
+	ReplacementIntervalMonths *int
+	NextDueKM                 *int
+	NextDueDate               *time.Time
+	WarrantyExpiresDate       *time.Time
+	WarrantyExpiresKM         *int
+	Notes                     *string
+	CreatedAt                 time.Time
 }
 
 // VehicleFipeHistory é um snapshot mensal do valor FIPE do veículo.
@@ -163,15 +209,7 @@ type MaintenanceAlert struct {
 	LastDate      *time.Time
 }
 
-// ─── Service Orders ───────────────────────────────────────────────────────────
-
-type OSStatus string
-
-const (
-	OSStatusDraft     OSStatus = "draft"
-	OSStatusCompleted OSStatus = "completed"
-	OSStatusCancelled OSStatus = "cancelled"
-)
+// ─── Catalog & Schedules ──────────────────────────────────────────────────────
 
 type OSItemType string
 
@@ -206,49 +244,6 @@ const (
 	ScheduleStatusCancelled ScheduleStatus = "cancelled"
 )
 
-type ServiceOrder struct {
-	ID                 uuid.UUID
-	VehicleID          uuid.UUID
-	WorkspaceID        uuid.UUID
-	SupplierID         *uuid.UUID
-	OSNumber           *string
-	ServiceDate        time.Time
-	KMAtService        int
-	TotalProductsCents int64
-	TotalServicesCents int64
-	TotalCents         int64
-	PaymentMethod      *string
-	Technician         *string
-	Notes              *string
-	Status             OSStatus
-	Items              []ServiceOrderItem
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
-}
-
-type ServiceOrderItem struct {
-	ID                        uuid.UUID
-	ServiceOrderID            uuid.UUID
-	VehicleID                 uuid.UUID
-	WorkspaceID               uuid.UUID
-	CatalogItemID             *uuid.UUID
-	ItemType                  OSItemType
-	Category                  OSItemCategory
-	Description               string
-	Quantity                  float64
-	UnitPriceCents            int64
-	TotalPriceCents           int64
-	KMAtInstallation          *int
-	ReplacementIntervalKM     *int
-	ReplacementIntervalMonths *int
-	NextDueKM                 *int
-	NextDueDate               *time.Time
-	WarrantyExpiresDate       *time.Time
-	WarrantyExpiresKM         *int
-	Notes                     *string
-	CreatedAt                 time.Time
-}
-
 type MaintenanceCatalogItem struct {
 	ID                    uuid.UUID
 	Category              OSItemCategory
@@ -262,20 +257,22 @@ type MaintenanceCatalogItem struct {
 }
 
 type MaintenanceSchedule struct {
-	ID                 uuid.UUID
-	VehicleID          uuid.UUID
-	WorkspaceID        uuid.UUID
-	ServiceOrderItemID *uuid.UUID
-	Description        string
-	Category           OSItemCategory
-	ScheduledKM        *int
-	ScheduledDate      *time.Time
-	AlertStatus        ScheduleStatus
-	CompletedAt        *time.Time
-	Notes              *string
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	ID                uuid.UUID
+	VehicleID         uuid.UUID
+	WorkspaceID       uuid.UUID
+	MaintenanceItemID *uuid.UUID // era ServiceOrderItemID
+	Description       string
+	Category          OSItemCategory
+	ScheduledKM       *int
+	ScheduledDate     *time.Time
+	AlertStatus       ScheduleStatus
+	CompletedAt       *time.Time
+	Notes             *string
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
+
+// ─── Analytics ────────────────────────────────────────────────────────────────
 
 type CategorySpending struct {
 	Category   string
@@ -298,12 +295,14 @@ type VehicleAnalytics struct {
 	TotalProductsCents int64
 	TotalServicesCents int64
 	CostPerKM          *float64
-	TotalOSCount       int
+	TotalCount         int // era TotalOSCount
 	AvgCostPerOSCents  int64
 	SpendingByCategory []CategorySpending
 	SpendingBySupplier []SupplierSpending
 	MonthlySpending    []MonthlySpending
 }
+
+// ─── Errors ───────────────────────────────────────────────────────────────────
 
 // ValidationError é retornado quando a entidade viola regras de domínio.
 type ValidationError struct {
@@ -373,20 +372,13 @@ type VehicleRepository interface {
 	ListFipeHistory(ctx context.Context, vehicleID uuid.UUID) ([]VehicleFipeHistory, error)
 	ListActiveVehiclesForFipeUpdate(ctx context.Context) ([]Vehicle, error)
 
-	// Service Orders
-	CreateServiceOrder(ctx context.Context, o *ServiceOrder) error
-	GetServiceOrderByID(ctx context.Context, workspaceID, id uuid.UUID) (*ServiceOrder, error)
-	ListServiceOrders(ctx context.Context, workspaceID, vehicleID uuid.UUID) ([]ServiceOrder, error)
-	UpdateServiceOrder(ctx context.Context, o *ServiceOrder) error
-	DeleteServiceOrder(ctx context.Context, workspaceID, id uuid.UUID) error
-
-	// Service Order Items
-	CreateServiceOrderItem(ctx context.Context, item *ServiceOrderItem) error
-	GetServiceOrderItemByID(ctx context.Context, workspaceID, id uuid.UUID) (*ServiceOrderItem, error)
-	ListServiceOrderItems(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) ([]ServiceOrderItem, error)
-	UpdateServiceOrderItem(ctx context.Context, item *ServiceOrderItem) error
-	DeleteServiceOrderItem(ctx context.Context, workspaceID, id uuid.UUID) error
-	RecalcServiceOrderTotals(ctx context.Context, workspaceID, serviceOrderID uuid.UUID) error
+	// Maintenance Items
+	CreateMaintenanceItem(ctx context.Context, item *VehicleMaintenanceItem) error
+	GetMaintenanceItemByID(ctx context.Context, workspaceID, id uuid.UUID) (*VehicleMaintenanceItem, error)
+	ListMaintenanceItems(ctx context.Context, workspaceID, maintenanceID uuid.UUID) ([]VehicleMaintenanceItem, error)
+	UpdateMaintenanceItem(ctx context.Context, item *VehicleMaintenanceItem) error
+	DeleteMaintenanceItem(ctx context.Context, workspaceID, id uuid.UUID) error
+	RecalcMaintenanceTotals(ctx context.Context, workspaceID, maintenanceID uuid.UUID) error
 
 	// Catalog
 	SearchCatalog(ctx context.Context, query, category string, limit int) ([]MaintenanceCatalogItem, error)

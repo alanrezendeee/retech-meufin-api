@@ -98,20 +98,29 @@ func mapVehicle(v *dom.Vehicle) vehicleResponse {
 }
 
 type maintenanceResponse struct {
-	ID                  string   `json:"id"`
-	VehicleID           string   `json:"vehicle_id"`
-	TemplateID          *string  `json:"template_id"`
-	Type                string   `json:"type"`
-	Title               string   `json:"title"`
-	Description         *string  `json:"description"`
-	OdometerAtService   *int     `json:"odometer_at_service"`
-	ServiceDate         string   `json:"service_date"`
-	Cost                *float64 `json:"cost"`
-	SupplierID          *string  `json:"supplier_id"`
-	NextServiceOdometer *int     `json:"next_service_odometer"`
-	NextServiceDate     *string  `json:"next_service_date"`
-	Notes               *string  `json:"notes"`
-	CreatedAt           string   `json:"created_at"`
+	ID                  string                    `json:"id"`
+	VehicleID           string                    `json:"vehicle_id"`
+	TemplateID          *string                   `json:"template_id"`
+	Type                string                    `json:"type"`
+	Title               string                    `json:"title"`
+	Description         *string                   `json:"description"`
+	OdometerAtService   *int                      `json:"odometer_at_service"`
+	ServiceDate         *string                   `json:"service_date,omitempty"`
+	Cost                *float64                  `json:"cost"`
+	SupplierID          *string                   `json:"supplier_id"`
+	NextServiceOdometer *int                      `json:"next_service_odometer"`
+	NextServiceDate     *string                   `json:"next_service_date"`
+	Notes               *string                   `json:"notes"`
+	Status              string                    `json:"status"`
+	OSNumber            *string                   `json:"os_number"`
+	Technician          *string                   `json:"technician"`
+	PaymentMethod       *string                   `json:"payment_method"`
+	TotalProductsCents  int64                     `json:"total_products_cents"`
+	TotalServicesCents  int64                     `json:"total_services_cents"`
+	TotalCents          int64                     `json:"total_cents"`
+	Items               []maintenanceItemResponse `json:"items"`
+	CreatedAt           string                    `json:"created_at"`
+	UpdatedAt           string                    `json:"updated_at"`
 }
 
 func mapMaintenance(m *dom.VehicleMaintenance) maintenanceResponse {
@@ -122,11 +131,18 @@ func mapMaintenance(m *dom.VehicleMaintenance) maintenanceResponse {
 		Title:               m.Title,
 		Description:         m.Description,
 		OdometerAtService:   m.OdometerAtService,
-		ServiceDate:         m.ServiceDate.Format("2006-01-02"),
 		Cost:                m.Cost,
 		NextServiceOdometer: m.NextServiceOdometer,
 		Notes:               m.Notes,
+		Status:              string(m.Status),
+		OSNumber:            m.OSNumber,
+		Technician:          m.Technician,
+		PaymentMethod:       m.PaymentMethod,
+		TotalProductsCents:  m.TotalProductsCents,
+		TotalServicesCents:  m.TotalServicesCents,
+		TotalCents:          m.TotalCents,
 		CreatedAt:           m.CreatedAt.UTC().Format(time.RFC3339),
+		UpdatedAt:           m.UpdatedAt.UTC().Format(time.RFC3339),
 	}
 	if m.TemplateID != nil {
 		s := m.TemplateID.String()
@@ -136,9 +152,17 @@ func mapMaintenance(m *dom.VehicleMaintenance) maintenanceResponse {
 		s := m.SupplierID.String()
 		r.SupplierID = &s
 	}
+	if m.ServiceDate != nil {
+		s := m.ServiceDate.Format("2006-01-02")
+		r.ServiceDate = &s
+	}
 	if m.NextServiceDate != nil {
 		s := m.NextServiceDate.Format("2006-01-02")
 		r.NextServiceDate = &s
+	}
+	r.Items = make([]maintenanceItemResponse, len(m.Items))
+	for i := range m.Items {
+		r.Items[i] = mapMaintenanceItem(&m.Items[i])
 	}
 	return r
 }
@@ -279,29 +303,35 @@ type vehicleUpdateJSON struct {
 }
 
 type maintenanceCreateJSON struct {
-	TemplateID          *string  `json:"template_id"`
-	Type                string   `json:"type" binding:"required"`
-	Title               string   `json:"title" binding:"required"`
-	Description         *string  `json:"description"`
-	OdometerAtService   *int     `json:"odometer_at_service"`
-	ServiceDate         string   `json:"service_date" binding:"required"`
-	Cost                *float64 `json:"cost"`
-	SupplierID          *string  `json:"supplier_id"`
-	NextServiceOdometer *int     `json:"next_service_odometer"`
-	NextServiceDate     *string  `json:"next_service_date"`
-	Notes               *string  `json:"notes"`
+	TemplateID          *string              `json:"template_id"`
+	Type                string               `json:"type"`
+	Title               string               `json:"title" binding:"required"`
+	Description         *string              `json:"description"`
+	OdometerAtService   *int                 `json:"odometer_at_service"`
+	ServiceDate         *string              `json:"service_date,omitempty"` // nullable — orçamento não tem data
+	Cost                *float64             `json:"cost"`
+	SupplierID          *string              `json:"supplier_id"`
+	NextServiceOdometer *int                 `json:"next_service_odometer"`
+	NextServiceDate     *string              `json:"next_service_date"`
+	Notes               *string              `json:"notes"`
+	Status              string               `json:"status"`
+	OSNumber            *string              `json:"os_number"`
+	Technician          *string              `json:"technician"`
+	PaymentMethod       *string              `json:"payment_method"`
+	Items               []maintenanceItemJSON `json:"items"`
 }
 
 type maintenanceUpdateJSON struct {
 	Title               string   `json:"title" binding:"required"`
 	Description         *string  `json:"description"`
 	OdometerAtService   *int     `json:"odometer_at_service"`
-	ServiceDate         string   `json:"service_date" binding:"required"`
+	ServiceDate         *string  `json:"service_date,omitempty"` // nullable
 	Cost                *float64 `json:"cost"`
 	SupplierID          *string  `json:"supplier_id"`
 	NextServiceOdometer *int     `json:"next_service_odometer"`
 	NextServiceDate     *string  `json:"next_service_date"`
 	Notes               *string  `json:"notes"`
+	Status              string   `json:"status"`
 }
 
 type planUpdateJSON struct {
@@ -542,6 +572,25 @@ func (h *VehicleHandler) ListMaintenance(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": resp})
 }
 
+func (h *VehicleHandler) GetMaintenance(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	mID, err := uuid.Parse(c.Param("mId"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "mId inválido")
+		return
+	}
+	m, err := h.svc.GetMaintenance(c.Request.Context(), ws, mID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapMaintenance(m))
+}
+
 func (h *VehicleHandler) CreateMaintenance(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
@@ -559,7 +608,7 @@ func (h *VehicleHandler) CreateMaintenance(c *gin.Context) {
 		return
 	}
 
-	serviceDate, err := time.Parse("2006-01-02", body.ServiceDate)
+	serviceDate, err := parseOptionalDate(body.ServiceDate)
 	if err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "service_date inválido (use YYYY-MM-DD)")
 		return
@@ -567,6 +616,12 @@ func (h *VehicleHandler) CreateMaintenance(c *gin.Context) {
 	nextDate, err := parseOptionalDate(body.NextServiceDate)
 	if err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "next_service_date inválido")
+		return
+	}
+
+	items, err := parseMaintenanceItems(body.Items)
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, err.Error())
 		return
 	}
 
@@ -582,6 +637,11 @@ func (h *VehicleHandler) CreateMaintenance(c *gin.Context) {
 		NextServiceOdometer: body.NextServiceOdometer,
 		NextServiceDate:     nextDate,
 		Notes:               body.Notes,
+		Status:              body.Status,
+		OSNumber:            body.OSNumber,
+		Technician:          body.Technician,
+		PaymentMethod:       body.PaymentMethod,
+		Items:               items,
 	}
 	if body.TemplateID != nil {
 		tid, err := uuid.Parse(*body.TemplateID)
@@ -596,7 +656,7 @@ func (h *VehicleHandler) CreateMaintenance(c *gin.Context) {
 		}
 	}
 
-	m, err := h.svc.LogMaintenance(c.Request.Context(), in)
+	m, err := h.svc.CreateMaintenance(c.Request.Context(), in)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
@@ -610,9 +670,9 @@ func (h *VehicleHandler) UpdateMaintenance(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
 		return
 	}
-	mID, err := uuid.Parse(c.Param("mainId"))
+	mID, err := uuid.Parse(c.Param("mId"))
 	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "maintenance id inválido")
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "mId inválido")
 		return
 	}
 	var body maintenanceUpdateJSON
@@ -620,7 +680,7 @@ func (h *VehicleHandler) UpdateMaintenance(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido: "+err.Error())
 		return
 	}
-	serviceDate, err := time.Parse("2006-01-02", body.ServiceDate)
+	serviceDate, err := parseOptionalDate(body.ServiceDate)
 	if err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "service_date inválido")
 		return
@@ -638,6 +698,7 @@ func (h *VehicleHandler) UpdateMaintenance(c *gin.Context) {
 		NextServiceOdometer: body.NextServiceOdometer,
 		NextServiceDate:     nextDate,
 		Notes:               body.Notes,
+		Status:              body.Status,
 	}
 	if body.SupplierID != nil {
 		sid, err := uuid.Parse(*body.SupplierID)
@@ -660,9 +721,9 @@ func (h *VehicleHandler) DeleteMaintenance(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
 		return
 	}
-	mID, err := uuid.Parse(c.Param("mainId"))
+	mID, err := uuid.Parse(c.Param("mId"))
 	if err != nil {
-		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "maintenance id inválido")
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "mId inválido")
 		return
 	}
 	if err := h.svc.DeleteMaintenance(c.Request.Context(), ws, mID); err != nil {
