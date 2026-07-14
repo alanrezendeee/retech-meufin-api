@@ -260,7 +260,8 @@ type MaintenanceSchedule struct {
 	ID                uuid.UUID
 	VehicleID         uuid.UUID
 	WorkspaceID       uuid.UUID
-	MaintenanceItemID *uuid.UUID // era ServiceOrderItemID
+	MaintenanceID     *uuid.UUID // manutenção vinculada (substituiu categoria)
+	MaintenanceItemID *uuid.UUID
 	Description       string
 	Category          OSItemCategory
 	ScheduledKM       *int

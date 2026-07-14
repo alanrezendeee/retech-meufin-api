@@ -228,7 +228,8 @@ func (s *Service) SearchCatalog(ctx context.Context, query, category string, lim
 type CreateScheduleInput struct {
 	WorkspaceID       uuid.UUID
 	VehicleID         uuid.UUID
-	MaintenanceItemID *uuid.UUID // era ServiceOrderItemID
+	MaintenanceID     *uuid.UUID
+	MaintenanceItemID *uuid.UUID
 	Description       string
 	Category          string
 	ScheduledKM       *int
@@ -239,6 +240,7 @@ type CreateScheduleInput struct {
 type UpdateScheduleInput struct {
 	WorkspaceID   uuid.UUID
 	ID            uuid.UUID
+	MaintenanceID *uuid.UUID
 	Description   string
 	Category      string
 	ScheduledKM   *int
@@ -256,6 +258,7 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (*
 		ID:                uuid.New(),
 		VehicleID:         in.VehicleID,
 		WorkspaceID:       in.WorkspaceID,
+		MaintenanceID:     in.MaintenanceID,
 		MaintenanceItemID: in.MaintenanceItemID,
 		Description:       in.Description,
 		Category:          dom.OSItemCategory(in.Category),
@@ -291,6 +294,7 @@ func (s *Service) UpdateSchedule(ctx context.Context, in UpdateScheduleInput) (*
 	if err != nil {
 		return nil, err
 	}
+	sched.MaintenanceID = in.MaintenanceID
 	sched.Description = in.Description
 	if in.Category != "" {
 		sched.Category = dom.OSItemCategory(in.Category)

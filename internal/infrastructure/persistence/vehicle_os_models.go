@@ -53,7 +53,8 @@ type MaintenanceScheduleModel struct {
 	ID                string     `gorm:"primaryKey;column:id"`
 	VehicleID         string     `gorm:"column:vehicle_id"`
 	WorkspaceID       string     `gorm:"column:workspace_id"`
-	MaintenanceItemID *string    `gorm:"column:maintenance_item_id"` // era service_order_item_id
+	MaintenanceID     *string    `gorm:"column:maintenance_id"`
+	MaintenanceItemID *string    `gorm:"column:maintenance_item_id"`
 	Description       string     `gorm:"column:description"`
 	Category          string     `gorm:"column:category;size:30"`
 	ScheduledKM       *int       `gorm:"column:scheduled_km"`
@@ -160,6 +161,10 @@ func scheduleToModel(s *dom.MaintenanceSchedule) MaintenanceScheduleModel {
 		CreatedAt:     s.CreatedAt,
 		UpdatedAt:     s.UpdatedAt,
 	}
+	if s.MaintenanceID != nil {
+		str := s.MaintenanceID.String()
+		m.MaintenanceID = &str
+	}
 	if s.MaintenanceItemID != nil {
 		str := s.MaintenanceItemID.String()
 		m.MaintenanceItemID = &str
@@ -184,6 +189,10 @@ func modelToSchedule(m MaintenanceScheduleModel) dom.MaintenanceSchedule {
 		Notes:         m.Notes,
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
+	}
+	if m.MaintenanceID != nil {
+		mID, _ := uuid.Parse(*m.MaintenanceID)
+		s.MaintenanceID = &mID
 	}
 	if m.MaintenanceItemID != nil {
 		itemID, _ := uuid.Parse(*m.MaintenanceItemID)
