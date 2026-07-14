@@ -18,6 +18,7 @@ import (
 type serviceOrderItemResponse struct {
 	ID                        string   `json:"id"`
 	ServiceOrderID            string   `json:"service_order_id"`
+	CatalogItemID             *string  `json:"catalog_item_id"`
 	ItemType                  string   `json:"item_type"`
 	Category                  string   `json:"category"`
 	Description               string   `json:"description"`
@@ -52,6 +53,10 @@ func mapOSItem(item *dom.ServiceOrderItem) serviceOrderItemResponse {
 		WarrantyExpiresKM:         item.WarrantyExpiresKM,
 		Notes:                     item.Notes,
 		CreatedAt:                 item.CreatedAt.UTC().Format(time.RFC3339),
+	}
+	if item.CatalogItemID != nil {
+		s := item.CatalogItemID.String()
+		r.CatalogItemID = &s
 	}
 	if item.NextDueDate != nil {
 		s := item.NextDueDate.Format("2006-01-02")
@@ -230,6 +235,7 @@ func mapAnalytics(a *dom.VehicleAnalytics) analyticsResponse {
 // ─── Input types ──────────────────────────────────────────────────────────────
 
 type osItemJSON struct {
+	CatalogItemID             *string  `json:"catalog_item_id"`
 	ItemType                  string   `json:"item_type" binding:"required"`
 	Category                  string   `json:"category"`
 	Description               string   `json:"description" binding:"required"`
@@ -465,7 +471,7 @@ func (h *VehicleHandler) AddOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "warranty_expires_date inválido")
 		return
 	}
-	item, err := h.svc.AddServiceOrderItem(c.Request.Context(), appv.AddServiceOrderItemInput{
+	addInput := appv.AddServiceOrderItemInput{
 		WorkspaceID:               ws,
 		ServiceOrderID:            osID,
 		ItemType:                  body.ItemType,
@@ -479,7 +485,16 @@ func (h *VehicleHandler) AddOSItem(c *gin.Context) {
 		WarrantyExpiresDate:       warrantyDate,
 		WarrantyExpiresKM:         body.WarrantyExpiresKM,
 		Notes:                     body.Notes,
-	})
+	}
+	if body.CatalogItemID != nil {
+		cid, err := uuid.Parse(*body.CatalogItemID)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "catalog_item_id inválido")
+			return
+		}
+		addInput.CatalogItemID = &cid
+	}
+	item, err := h.svc.AddServiceOrderItem(c.Request.Context(), addInput)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
@@ -508,7 +523,7 @@ func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "warranty_expires_date inválido")
 		return
 	}
-	item, err := h.svc.UpdateServiceOrderItem(c.Request.Context(), ws, itemID, appv.ServiceOrderItemInput{
+	updateInput := appv.ServiceOrderItemInput{
 		ItemType:                  body.ItemType,
 		Category:                  body.Category,
 		Description:               body.Description,
@@ -520,7 +535,16 @@ func (h *VehicleHandler) UpdateOSItem(c *gin.Context) {
 		WarrantyExpiresDate:       warrantyDate,
 		WarrantyExpiresKM:         body.WarrantyExpiresKM,
 		Notes:                     body.Notes,
-	})
+	}
+	if body.CatalogItemID != nil {
+		cid, err := uuid.Parse(*body.CatalogItemID)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "catalog_item_id inválido")
+			return
+		}
+		updateInput.CatalogItemID = &cid
+	}
+	item, err := h.svc.UpdateServiceOrderItem(c.Request.Context(), ws, itemID, updateInput)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
@@ -725,7 +749,7 @@ func parseOSItems(raw []osItemJSON) ([]appv.ServiceOrderItemInput, error) {
 		if err != nil {
 			return nil, err
 		}
-		items[i] = appv.ServiceOrderItemInput{
+		inp := appv.ServiceOrderItemInput{
 			ItemType:                  r.ItemType,
 			Category:                  r.Category,
 			Description:               r.Description,
@@ -738,6 +762,14 @@ func parseOSItems(raw []osItemJSON) ([]appv.ServiceOrderItemInput, error) {
 			WarrantyExpiresKM:         r.WarrantyExpiresKM,
 			Notes:                     r.Notes,
 		}
+		if r.CatalogItemID != nil {
+			cid, err := uuid.Parse(*r.CatalogItemID)
+			if err != nil {
+				return nil, err
+			}
+			inp.CatalogItemID = &cid
+		}
+		items[i] = inp
 	}
 	return items, nil
 }

@@ -231,6 +231,7 @@ type ServiceOrderItem struct {
 	ServiceOrderID            uuid.UUID
 	VehicleID                 uuid.UUID
 	WorkspaceID               uuid.UUID
+	CatalogItemID             *uuid.UUID
 	ItemType                  OSItemType
 	Category                  OSItemCategory
 	Description               string
