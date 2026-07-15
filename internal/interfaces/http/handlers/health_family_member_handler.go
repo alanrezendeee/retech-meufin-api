@@ -60,11 +60,14 @@ type familyMemberResponse struct {
 	WeightKg     *float64  `json:"weight_kg"`
 	Age          *int      `json:"age"`
 	Active       bool      `json:"active"`
+	AvatarURL    *string   `json:"avatar_url"`
 	CreatedAt    string    `json:"created_at"`
 	UpdatedAt    string    `json:"updated_at"`
 }
 
-func mapFamilyMember(f *dom.FamilyMember) familyMemberResponse {
+// mapFamilyMember converte o domínio para a resposta, incluindo a URL presignada
+// da foto (quando houver). ctx é usado para gerar a URL temporária.
+func (h *HealthFamilyMemberHandler) mapFamilyMember(c *gin.Context, f *dom.FamilyMember) familyMemberResponse {
 	var birth *string
 	if f.BirthDate != nil {
 		s := f.BirthDate.UTC().Format(familyMemberBirthDateLayout)
@@ -83,6 +86,7 @@ func mapFamilyMember(f *dom.FamilyMember) familyMemberResponse {
 		WeightKg:     f.WeightKg,
 		Age:          f.Age(),
 		Active:       f.Active,
+		AvatarURL:    h.svc.AvatarURL(c.Request.Context(), f.AvatarObjectKey),
 		CreatedAt:    f.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:    f.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
@@ -97,9 +101,10 @@ type birthdayResponse struct {
 	Turns        int       `json:"turns"`
 	NextBirthday string    `json:"next_birthday"`
 	DaysUntil    int       `json:"days_until"`
+	AvatarURL    *string   `json:"avatar_url"`
 }
 
-func mapBirthday(b *dom.Birthday) birthdayResponse {
+func (h *HealthFamilyMemberHandler) mapBirthday(c *gin.Context, b *dom.Birthday) birthdayResponse {
 	var birth string
 	if b.Member.BirthDate != nil {
 		birth = b.Member.BirthDate.UTC().Format(familyMemberBirthDateLayout)
@@ -113,6 +118,7 @@ func mapBirthday(b *dom.Birthday) birthdayResponse {
 		Turns:        b.Turns,
 		NextBirthday: b.NextBirthday.Format(familyMemberBirthDateLayout),
 		DaysUntil:    b.DaysUntil,
+		AvatarURL:    h.svc.AvatarURL(c.Request.Context(), b.Member.AvatarObjectKey),
 	}
 }
 
@@ -159,7 +165,7 @@ func (h *HealthFamilyMemberHandler) Create(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, mapFamilyMember(f))
+	c.JSON(http.StatusCreated, h.mapFamilyMember(c, f))
 }
 
 func (h *HealthFamilyMemberHandler) Get(c *gin.Context) {
@@ -178,7 +184,7 @@ func (h *HealthFamilyMemberHandler) Get(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, mapFamilyMember(f))
+	c.JSON(http.StatusOK, h.mapFamilyMember(c, f))
 }
 
 func (h *HealthFamilyMemberHandler) Update(c *gin.Context) {
@@ -218,7 +224,7 @@ func (h *HealthFamilyMemberHandler) Update(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, mapFamilyMember(f))
+	c.JSON(http.StatusOK, h.mapFamilyMember(c, f))
 }
 
 func (h *HealthFamilyMemberHandler) Delete(c *gin.Context) {
@@ -258,7 +264,7 @@ func (h *HealthFamilyMemberHandler) List(c *gin.Context) {
 	}
 	items := make([]familyMemberResponse, len(res.Items))
 	for i := range res.Items {
-		items[i] = mapFamilyMember(&res.Items[i])
+		items[i] = h.mapFamilyMember(c, &res.Items[i])
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": res.Total})
 }
@@ -277,7 +283,64 @@ func (h *HealthFamilyMemberHandler) Birthdays(c *gin.Context) {
 	}
 	items := make([]birthdayResponse, len(list))
 	for i := range list {
-		items[i] = mapBirthday(&list[i])
+		items[i] = h.mapBirthday(c, &list[i])
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items})
+}
+
+// UploadAvatar recebe a foto do membro :id (multipart, campo 'file').
+func (h *HealthFamilyMemberHandler) UploadAvatar(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "campo 'file' obrigatório")
+		return
+	}
+	f, err := fileHeader.Open()
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "não foi possível ler o arquivo")
+		return
+	}
+	defer f.Close()
+
+	member, err := h.svc.SetAvatar(c.Request.Context(), app.SetAvatarInput{
+		WorkspaceID: ws,
+		MemberID:    id,
+		MimeType:    fileHeader.Header.Get("Content-Type"),
+		Size:        fileHeader.Size,
+		Content:     f,
+	})
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, h.mapFamilyMember(c, member))
+}
+
+// DeleteAvatar remove a foto do membro :id (não apaga o objeto do storage).
+func (h *HealthFamilyMemberHandler) DeleteAvatar(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	if err := h.svc.RemoveAvatar(c.Request.Context(), ws, id); err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }

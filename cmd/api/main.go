@@ -228,7 +228,7 @@ func main() {
 	txSvc := appl.NewTransactionService(txRepo, accRepo, catRepo)
 	budSvc := appb.NewService(budRepo, catRepo, txRepo)
 	markerSvc := apph.NewMarkerService(markerRepo)
-	familySvc := apph.NewFamilyMemberService(familyRepo)
+	familySvc := apph.NewFamilyMemberService(familyRepo, objStorage)
 	labSvc := apph.NewLabService(labRepo)
 	examReqSvc := apph.NewExamRequestService(examReqRepo)
 	examResSvc := apph.NewExamResultService(examResRepo)
@@ -272,6 +272,9 @@ func main() {
 	healthApptSvc := apph.NewAppointmentService(healthApptRepo)
 	healthPlanRepo := persistence.NewHealthPlanRepository(db)
 	healthPlanSvc := apph.NewPlanService(healthPlanRepo)
+
+	userProfileRepo := persistence.NewUserProfileRepository(db)
+	profileSvc := appacc.NewProfileService(userProfileRepo, objStorage)
 
 	// Notificações (e-mail via useSend) + fluxo "esqueci a senha"
 	mailer := notification.New(notification.ConfigFromEnv())
@@ -326,6 +329,7 @@ func main() {
 		PasswordResetService:          passwordResetSvc,
 		HealthAppointmentService:      healthApptSvc,
 		HealthPlanService:             healthPlanSvc,
+		ProfileService:                profileSvc,
 	})
 
 	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.

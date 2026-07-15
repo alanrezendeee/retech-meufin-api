@@ -3,19 +3,42 @@ package health
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/health"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
+)
+
+// memberAvatarAllowedMimes restringe o avatar a formatos de imagem web comuns.
+var memberAvatarAllowedMimes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+}
+
+const (
+	memberAvatarMaxBytes = 5 * 1024 * 1024
+	memberAvatarTTL      = 15 * time.Minute
 )
 
 type FamilyMemberService struct {
-	repo dom.FamilyMemberRepository
+	repo    dom.FamilyMemberRepository
+	storage storage.ObjectStorage
 }
 
-func NewFamilyMemberService(repo dom.FamilyMemberRepository) *FamilyMemberService {
-	return &FamilyMemberService{repo: repo}
+// NewFamilyMemberService cria o serviço. O object storage é opcional (variádico)
+// para não quebrar chamadas existentes: passe-o para habilitar avatares de membro.
+func NewFamilyMemberService(repo dom.FamilyMemberRepository, st ...storage.ObjectStorage) *FamilyMemberService {
+	var s storage.ObjectStorage
+	if len(st) > 0 {
+		s = st[0]
+	}
+	return &FamilyMemberService{repo: repo, storage: s}
 }
 
 type CreateFamilyMemberInput struct {
@@ -144,6 +167,72 @@ func (s *FamilyMemberService) Birthdays(ctx context.Context, workspaceID uuid.UU
 		return out[i].Member.FullName < out[j].Member.FullName
 	})
 	return out, nil
+}
+
+// SetAvatarInput carrega a foto enviada para um membro da família.
+type SetAvatarInput struct {
+	WorkspaceID uuid.UUID
+	MemberID    uuid.UUID
+	MimeType    string
+	Size        int64
+	Content     io.Reader
+}
+
+// SetAvatar valida e envia a foto do membro ao storage, gravando a object key.
+// A key é fixa por membro (avatar.jpg), então novos uploads sobrescrevem o anterior.
+func (s *FamilyMemberService) SetAvatar(ctx context.Context, in SetAvatarInput) (*dom.FamilyMember, error) {
+	if s.storage == nil || !s.storage.Enabled() {
+		return nil, &dom.ValidationError{Msg: "armazenamento de fotos indisponível (storage não configurado)"}
+	}
+	member, err := s.repo.GetByID(ctx, in.WorkspaceID, in.MemberID)
+	if err != nil {
+		return nil, err
+	}
+	if in.Size <= 0 {
+		return nil, &dom.ValidationError{Msg: "arquivo vazio"}
+	}
+	if in.Size > memberAvatarMaxBytes {
+		return nil, &dom.ValidationError{Msg: "imagem excede o limite de 5 MB"}
+	}
+	mime := strings.ToLower(strings.TrimSpace(in.MimeType))
+	if !memberAvatarAllowedMimes[mime] {
+		return nil, &dom.ValidationError{Msg: "formato inválido (use JPEG, PNG ou WEBP)"}
+	}
+
+	key := buildMemberAvatarObjectKey(in.WorkspaceID, in.MemberID)
+	if err := s.storage.Put(ctx, key, in.Content, in.Size, mime); err != nil {
+		return nil, fmt.Errorf("falha ao enviar foto: %w", err)
+	}
+	if err := s.repo.UpdateAvatar(ctx, in.WorkspaceID, in.MemberID, &key); err != nil {
+		return nil, err
+	}
+	member.AvatarObjectKey = &key
+	return member, nil
+}
+
+// RemoveAvatar limpa a foto do membro (não apaga o objeto do storage).
+func (s *FamilyMemberService) RemoveAvatar(ctx context.Context, workspaceID, id uuid.UUID) error {
+	return s.repo.UpdateAvatar(ctx, workspaceID, id, nil)
+}
+
+// AvatarURL gera uma URL presignada (15min) da foto, ou nil se não houver foto
+// ou o storage estiver indisponível. Best-effort: nunca propaga erro.
+func (s *FamilyMemberService) AvatarURL(ctx context.Context, key *string) *string {
+	if key == nil || strings.TrimSpace(*key) == "" {
+		return nil
+	}
+	if s.storage == nil || !s.storage.Enabled() {
+		return nil
+	}
+	url, err := s.storage.PresignedGetURL(ctx, *key, memberAvatarTTL)
+	if err != nil || url == "" {
+		return nil
+	}
+	return &url
+}
+
+func buildMemberAvatarObjectKey(workspaceID, memberID uuid.UUID) string {
+	return fmt.Sprintf("tenants/%s/members/%s/avatar.jpg", workspaceID.String(), memberID.String())
 }
 
 func IsNotFound(err error) bool {
