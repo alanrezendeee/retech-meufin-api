@@ -62,6 +62,8 @@ type RouterDeps struct {
 	EducationService              *appedu.Service
 	HomeSafetyService             *apphs.Service
 	PasswordResetService          *appacc.PasswordResetService
+	HealthAppointmentService      *apph.AppointmentService
+	HealthPlanService             *apph.PlanService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -169,6 +171,28 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 			health.GET("/dashboard", dashH.Counts)
 			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
+
+			// Planos de saúde
+			planH := handlers.NewHealthPlanHandler(d.HealthPlanService)
+			health.GET("/plans", planH.List)
+			health.POST("/plans", planH.Create)
+			health.GET("/plans/:id", planH.Get)
+			health.PUT("/plans/:id", planH.Update)
+			health.DELETE("/plans/:id", planH.Delete)
+			health.PUT("/plans/:id/members", planH.ReplaceMembers)
+
+			// Consultas & agenda (rotas estáticas ANTES de /appointments/:id)
+			apptH := handlers.NewHealthAppointmentHandler(d.HealthAppointmentService)
+			health.GET("/appointments/agenda", apptH.Agenda)
+			health.GET("/appointments", apptH.List)
+			health.POST("/appointments", apptH.Create)
+			health.GET("/appointments/:id", apptH.Get)
+			health.PUT("/appointments/:id", apptH.Update)
+			health.DELETE("/appointments/:id", apptH.Delete)
+			health.POST("/appointments/:id/confirm", apptH.Confirm)
+			health.POST("/appointments/:id/complete", apptH.Complete)
+			health.POST("/appointments/:id/cancel", apptH.Cancel)
+			health.POST("/appointments/:id/no-show", apptH.NoShow)
 
 			// Documentos pessoais dos membros (cpf, rg, cnh, ...)
 			memberDocH := handlers.NewHealthMemberDocumentHandler(d.MemberDocumentService)

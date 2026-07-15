@@ -268,6 +268,11 @@ func main() {
 	homeSafetyRepo := persistence.NewHomeSafetyRepository(db)
 	homeSafetySvc := apphs.NewService(homeSafetyRepo)
 
+	healthApptRepo := persistence.NewHealthAppointmentRepository(db)
+	healthApptSvc := apph.NewAppointmentService(healthApptRepo)
+	healthPlanRepo := persistence.NewHealthPlanRepository(db)
+	healthPlanSvc := apph.NewPlanService(healthPlanRepo)
+
 	// Notificações (e-mail via useSend) + fluxo "esqueci a senha"
 	mailer := notification.New(notification.ConfigFromEnv())
 	if mailer.Enabled() {
@@ -319,6 +324,8 @@ func main() {
 		EducationService:              educationSvc,
 		HomeSafetyService:             homeSafetySvc,
 		PasswordResetService:          passwordResetSvc,
+		HealthAppointmentService:      healthApptSvc,
+		HealthPlanService:             healthPlanSvc,
 	})
 
 	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.

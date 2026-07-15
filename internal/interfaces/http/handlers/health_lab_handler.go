@@ -23,6 +23,7 @@ func NewHealthLabHandler(svc *app.LabService) *HealthLabHandler {
 
 type labCreateJSON struct {
 	Name           string  `json:"name" binding:"required"`
+	Kind           string  `json:"kind"`
 	WebsiteURL     *string `json:"website_url"`
 	ExamResultsURL *string `json:"exam_results_url"`
 	ContactPhone   *string `json:"contact_phone"`
@@ -33,6 +34,7 @@ type labCreateJSON struct {
 
 type labUpdateJSON struct {
 	Name           string  `json:"name" binding:"required"`
+	Kind           string  `json:"kind"`
 	WebsiteURL     *string `json:"website_url"`
 	ExamResultsURL *string `json:"exam_results_url"`
 	ContactPhone   *string `json:"contact_phone"`
@@ -45,6 +47,7 @@ type labResponse struct {
 	ID             uuid.UUID `json:"id"`
 	WorkspaceID    uuid.UUID `json:"workspace_id"`
 	Name           string    `json:"name"`
+	Kind           string    `json:"kind"`
 	WebsiteURL     *string   `json:"website_url"`
 	ExamResultsURL *string   `json:"exam_results_url"`
 	ContactPhone   *string   `json:"contact_phone"`
@@ -60,6 +63,7 @@ func mapLab(l *dom.Lab) labResponse {
 		ID:             l.ID,
 		WorkspaceID:    l.WorkspaceID,
 		Name:           l.Name,
+		Kind:           string(l.Kind),
 		WebsiteURL:     l.WebsiteURL,
 		ExamResultsURL: l.ExamResultsURL,
 		ContactPhone:   l.ContactPhone,
@@ -89,6 +93,7 @@ func (h *HealthLabHandler) Create(c *gin.Context) {
 	l, err := h.svc.Create(c.Request.Context(), app.CreateLabInput{
 		WorkspaceID:    ws,
 		Name:           body.Name,
+		Kind:           dom.LabKind(body.Kind),
 		WebsiteURL:     body.WebsiteURL,
 		ExamResultsURL: body.ExamResultsURL,
 		ContactPhone:   body.ContactPhone,
@@ -146,6 +151,7 @@ func (h *HealthLabHandler) Update(c *gin.Context) {
 		WorkspaceID:    ws,
 		ID:             id,
 		Name:           body.Name,
+		Kind:           dom.LabKind(body.Kind),
 		WebsiteURL:     body.WebsiteURL,
 		ExamResultsURL: body.ExamResultsURL,
 		ContactPhone:   body.ContactPhone,

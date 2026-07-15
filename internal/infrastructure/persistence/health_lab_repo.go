@@ -38,6 +38,7 @@ func (r *HealthLabRepository) Update(ctx context.Context, l *dom.Lab) error {
 		Where("id = ? AND workspace_id = ?", l.ID, l.WorkspaceID).
 		Updates(map[string]any{
 			"name":             m.Name,
+			"kind":             m.Kind,
 			"website_url":      m.WebsiteURL,
 			"exam_results_url": m.ExamResultsURL,
 			"contact_phone":    m.ContactPhone,
@@ -98,6 +99,7 @@ func labToModel(l *dom.Lab) HealthLabModel {
 		ID:             l.ID,
 		WorkspaceID:    l.WorkspaceID,
 		Name:           l.Name,
+		Kind:           string(l.Kind),
 		WebsiteURL:     l.WebsiteURL,
 		ExamResultsURL: l.ExamResultsURL,
 		ContactPhone:   l.ContactPhone,
@@ -114,6 +116,7 @@ func modelToLab(m *HealthLabModel) *dom.Lab {
 		ID:             m.ID,
 		WorkspaceID:    m.WorkspaceID,
 		Name:           m.Name,
+		Kind:           dom.LabKind(m.Kind),
 		WebsiteURL:     m.WebsiteURL,
 		ExamResultsURL: m.ExamResultsURL,
 		ContactPhone:   m.ContactPhone,

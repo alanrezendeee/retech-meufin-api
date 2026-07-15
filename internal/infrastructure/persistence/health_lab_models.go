@@ -11,6 +11,7 @@ type HealthLabModel struct {
 	ID             uuid.UUID `gorm:"type:uuid;primaryKey"`
 	WorkspaceID    uuid.UUID `gorm:"type:uuid;not null;index:idx_health_labs_workspace"`
 	Name           string    `gorm:"size:255;not null"`
+	Kind           string    `gorm:"size:20;not null;default:laboratorio"`
 	WebsiteURL     *string   `gorm:"column:website_url;size:500"`
 	ExamResultsURL *string   `gorm:"column:exam_results_url;size:500"`
 	ContactPhone   *string   `gorm:"column:contact_phone;size:50"`

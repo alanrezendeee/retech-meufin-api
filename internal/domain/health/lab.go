@@ -10,12 +10,36 @@ import (
 
 const maxLabNameLen = 255
 
-// Lab representa um laboratório de exames vinculado a um workspace.
-// Não há campos de login/senha por decisão de segurança.
+// LabKind classifica o tipo de local de saúde (laboratório, clínica, hospital...).
+type LabKind string
+
+const (
+	LabKindLaboratorio LabKind = "laboratorio"
+	LabKindClinica     LabKind = "clinica"
+	LabKindHospital    LabKind = "hospital"
+	LabKindConsultorio LabKind = "consultorio"
+	LabKindOtica       LabKind = "otica"
+	LabKindOutros      LabKind = "outros"
+)
+
+func validLabKinds() map[LabKind]struct{} {
+	return map[LabKind]struct{}{
+		LabKindLaboratorio: {},
+		LabKindClinica:     {},
+		LabKindHospital:    {},
+		LabKindConsultorio: {},
+		LabKindOtica:       {},
+		LabKindOutros:      {},
+	}
+}
+
+// Lab representa um local de saúde (laboratório, clínica, hospital, ótica...)
+// vinculado a um workspace. Não há campos de login/senha por decisão de segurança.
 type Lab struct {
 	ID             uuid.UUID
 	WorkspaceID    uuid.UUID
 	Name           string
+	Kind           LabKind
 	WebsiteURL     *string
 	ExamResultsURL *string
 	ContactPhone   *string
@@ -38,6 +62,13 @@ func (l *Lab) Validate() error {
 		return &ValidationError{Msg: "nome do laboratório excede o tamanho máximo"}
 	}
 	l.Name = name
+
+	if l.Kind == "" {
+		l.Kind = LabKindLaboratorio
+	}
+	if _, ok := validLabKinds()[l.Kind]; !ok {
+		return &ValidationError{Msg: "tipo de local inválido (laboratorio|clinica|hospital|consultorio|otica|outros)"}
+	}
 	return nil
 }
 
