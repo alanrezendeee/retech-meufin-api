@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"os"
+	"strings"
 )
 
 // Identidade visual do MeuFin (espelho do tema do admin: colorTemplate.ts).
@@ -38,8 +40,19 @@ var baseEmailTmpl = template.Must(template.New("base").Parse(`<!DOCTYPE html>
           <!-- Logo -->
           <tr>
             <td align="center" style="padding-bottom:28px;">
-              <span style="font-size:26px;font-weight:800;letter-spacing:-0.5px;color:` + brandText + `;">meu<span style="color:` + brandNeon + `;">fin</span></span>
-              <div style="font-size:11px;color:` + brandTextDim + `;letter-spacing:2px;text-transform:uppercase;margin-top:4px;">gestão familiar completa</div>
+              <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto;">
+                <tr>
+                  {{if .LogoURL}}
+                  <td style="vertical-align:middle;padding-right:12px;">
+                    <img src="{{.LogoURL}}" width="44" height="44" alt="MeuFin" style="display:block;border:0;border-radius:12px;">
+                  </td>
+                  {{end}}
+                  <td style="vertical-align:middle;text-align:left;">
+                    <span style="font-size:26px;font-weight:800;letter-spacing:-0.5px;color:` + brandText + `;">meu<span style="color:` + brandNeon + `;">fin</span></span>
+                    <div style="font-size:11px;color:` + brandTextDim + `;letter-spacing:2px;text-transform:uppercase;margin-top:2px;">gestão familiar completa</div>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <!-- Card -->
@@ -104,9 +117,19 @@ type emailData struct {
 	ButtonURL   string
 	ButtonLabel string
 	FooterNote  template.HTML
+	LogoURL     string
+}
+
+// logoURL lê MAIL_LOGO_URL — imagem pública do ícone da marca (PNG hospedado
+// no admin: {ADMIN_BASE_URL}/logo-email.png). Vazio = header só com wordmark.
+func logoURL() string {
+	return strings.TrimSpace(os.Getenv("MAIL_LOGO_URL"))
 }
 
 func renderBase(data emailData) (string, error) {
+	if data.LogoURL == "" {
+		data.LogoURL = logoURL()
+	}
 	var buf bytes.Buffer
 	if err := baseEmailTmpl.Execute(&buf, data); err != nil {
 		return "", fmt.Errorf("notification: renderizar template: %w", err)
