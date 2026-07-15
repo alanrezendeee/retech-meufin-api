@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/health"
@@ -112,40 +113,59 @@ func (r *HealthFamilyMemberRepository) ListWithBirthDate(ctx context.Context, wo
 	return out, nil
 }
 
+// UpdateAvatar grava (ou limpa, com key nil) a object key da foto do membro.
+func (r *HealthFamilyMemberRepository) UpdateAvatar(ctx context.Context, workspaceID, id uuid.UUID, key *string) error {
+	res := r.db.WithContext(ctx).Model(&HealthFamilyMemberModel{}).
+		Where("id = ? AND workspace_id = ?", id, workspaceID).
+		Updates(map[string]any{
+			"avatar_object_key": key,
+			"updated_at":        time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return mapHealthErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return dom.ErrNotFound
+	}
+	return nil
+}
+
 // --- conversões ---
 
 func familyMemberToModel(f *dom.FamilyMember) HealthFamilyMemberModel {
 	return HealthFamilyMemberModel{
-		ID:           f.ID,
-		WorkspaceID:  f.WorkspaceID,
-		FullName:     f.FullName,
-		Relationship: f.Relationship,
-		BirthDate:    f.BirthDate,
-		Gender:       f.Gender,
-		Document:     f.Document,
-		Notes:        f.Notes,
-		HeightCm:     f.HeightCm,
-		WeightKg:     f.WeightKg,
-		Active:       f.Active,
-		CreatedAt:    f.CreatedAt,
-		UpdatedAt:    f.UpdatedAt,
+		ID:              f.ID,
+		WorkspaceID:     f.WorkspaceID,
+		FullName:        f.FullName,
+		Relationship:    f.Relationship,
+		BirthDate:       f.BirthDate,
+		Gender:          f.Gender,
+		Document:        f.Document,
+		Notes:           f.Notes,
+		HeightCm:        f.HeightCm,
+		WeightKg:        f.WeightKg,
+		Active:          f.Active,
+		AvatarObjectKey: f.AvatarObjectKey,
+		CreatedAt:       f.CreatedAt,
+		UpdatedAt:       f.UpdatedAt,
 	}
 }
 
 func modelToFamilyMember(m *HealthFamilyMemberModel) *dom.FamilyMember {
 	return &dom.FamilyMember{
-		ID:           m.ID,
-		WorkspaceID:  m.WorkspaceID,
-		FullName:     m.FullName,
-		Relationship: m.Relationship,
-		BirthDate:    m.BirthDate,
-		Gender:       m.Gender,
-		Document:     m.Document,
-		Notes:        m.Notes,
-		HeightCm:     m.HeightCm,
-		WeightKg:     m.WeightKg,
-		Active:       m.Active,
-		CreatedAt:    m.CreatedAt,
-		UpdatedAt:    m.UpdatedAt,
+		ID:              m.ID,
+		WorkspaceID:     m.WorkspaceID,
+		FullName:        m.FullName,
+		Relationship:    m.Relationship,
+		BirthDate:       m.BirthDate,
+		Gender:          m.Gender,
+		Document:        m.Document,
+		Notes:           m.Notes,
+		HeightCm:        m.HeightCm,
+		WeightKg:        m.WeightKg,
+		Active:          m.Active,
+		AvatarObjectKey: m.AvatarObjectKey,
+		CreatedAt:       m.CreatedAt,
+		UpdatedAt:       m.UpdatedAt,
 	}
 }

@@ -8,20 +8,21 @@ import (
 )
 
 type HealthFamilyMemberModel struct {
-	ID           uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	WorkspaceID  uuid.UUID  `gorm:"type:uuid;not null;index:idx_health_family_members_workspace"`
-	FullName     string     `gorm:"size:255;not null"`
-	Relationship string     `gorm:"size:20;not null"`
-	BirthDate    *time.Time `gorm:"column:birth_date"`
-	Gender       *string    `gorm:"size:20"`
-	Document     *string    `gorm:"size:50"`
-	Notes        *string    `gorm:"type:text"`
-	HeightCm     *float64   `gorm:"column:height_cm"`
-	WeightKg     *float64   `gorm:"column:weight_kg"`
-	Active       bool       `gorm:"not null;default:true"`
-	CreatedAt    time.Time  `gorm:"not null"`
-	UpdatedAt    time.Time  `gorm:"not null"`
-	DeletedAt    gorm.DeletedAt
+	ID              uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	WorkspaceID     uuid.UUID  `gorm:"type:uuid;not null;index:idx_health_family_members_workspace"`
+	FullName        string     `gorm:"size:255;not null"`
+	Relationship    string     `gorm:"size:20;not null"`
+	BirthDate       *time.Time `gorm:"column:birth_date"`
+	Gender          *string    `gorm:"size:20"`
+	Document        *string    `gorm:"size:50"`
+	Notes           *string    `gorm:"type:text"`
+	HeightCm        *float64   `gorm:"column:height_cm"`
+	WeightKg        *float64   `gorm:"column:weight_kg"`
+	Active          bool       `gorm:"not null;default:true"`
+	AvatarObjectKey *string    `gorm:"column:avatar_object_key;size:500"`
+	CreatedAt       time.Time  `gorm:"not null"`
+	UpdatedAt       time.Time  `gorm:"not null"`
+	DeletedAt       gorm.DeletedAt
 }
 
 func (HealthFamilyMemberModel) TableName() string { return "health_family_members" }

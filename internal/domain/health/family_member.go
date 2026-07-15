@@ -44,8 +44,10 @@ type FamilyMember struct {
 	HeightCm     *float64
 	WeightKg     *float64
 	Active       bool
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// AvatarObjectKey aponta para a foto do membro no object storage (nil = sem foto).
+	AvatarObjectKey *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // Age retorna a idade atual em anos completos, ou nil se não houver data de nascimento.
@@ -185,4 +187,6 @@ type FamilyMemberRepository interface {
 	List(ctx context.Context, workspaceID uuid.UUID, filter FamilyMemberFilter, limit, offset int) ([]FamilyMember, int64, error)
 	// ListWithBirthDate retorna membros ativos que possuem data de nascimento.
 	ListWithBirthDate(ctx context.Context, workspaceID uuid.UUID) ([]FamilyMember, error)
+	// UpdateAvatar grava (ou limpa, com key nil) a object key da foto do membro.
+	UpdateAvatar(ctx context.Context, workspaceID, id uuid.UUID, key *string) error
 }

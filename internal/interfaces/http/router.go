@@ -64,6 +64,7 @@ type RouterDeps struct {
 	PasswordResetService          *appacc.PasswordResetService
 	HealthAppointmentService      *apph.AppointmentService
 	HealthPlanService             *apph.PlanService
+	ProfileService                *appacc.ProfileService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -92,6 +93,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.Use(middleware.RequireAuth(d.JWKS, d.ApplicationID))
 	{
+		// Perfil do usuário logado (só autenticação; sem módulo/permission)
+		meH := handlers.NewMeHandler(d.ProfileService)
+		v1.POST("/me/avatar", meH.UploadAvatar)
+		v1.GET("/me/avatar-url", meH.AvatarURL)
+		v1.DELETE("/me/avatar", meH.DeleteAvatar)
+
 		// Módulo legado (ledger/budget) — subjects retechfin.*
 		legacy := v1.Group("", middleware.RequireModule("retechfin", d.PermsEnforcement))
 		legacy.POST("/accounts", accH.Create)
@@ -144,6 +151,8 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.GET("/family-members/:id", fmH.Get)
 			health.PUT("/family-members/:id", fmH.Update)
 			health.DELETE("/family-members/:id", fmH.Delete)
+			health.POST("/family-members/:id/avatar", fmH.UploadAvatar)
+			health.DELETE("/family-members/:id/avatar", fmH.DeleteAvatar)
 
 			health.GET("/labs", labH.List)
 			health.POST("/labs", labH.Create)
