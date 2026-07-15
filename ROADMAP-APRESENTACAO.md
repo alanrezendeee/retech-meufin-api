@@ -1,5 +1,9 @@
 # MeuFin — Roadmap & Entrega da Apresentação (2026-07-15)
 
+## PRs para merge (nesta ordem)
+1. API: https://github.com/alanrezendeee/retech-meufin-api/pull/57
+2. Admin: https://github.com/alanrezendeee/retech-meufin-admin/pull/72
+
 ## O que foi entregue nesta rodada (branch `feat/presentation-mega`)
 
 ### Correção crítica de produção
@@ -13,7 +17,7 @@
   - 1.200+ lançamentos (salários, aluguel recebido, dividendos, freelas, 13º, férias; despesas fixas com reajuste anual, sazonalidade de luz, IPVA/IPTU/seguros anuais)
   - 6 parcelamentos grandes (geladeira 10x, TV 12x, notebook 12x, sofá 8x, iPhone 12x, ar-condicionado 6x)
   - ~48 faturas de cartão importadas (2 cartões, pai+filhos com data de compra)
-  - ~96 cupons fiscais com ~990 itens — **picanha comprada 48 vezes** com inflação de ~28% a.a. (case do gráfico de inflação por item)
+  - 56 cupons fiscais com 990 itens — **picanha comprada 48 vezes** com inflação de ~28% a.a. (case do gráfico de inflação por item)
   - Saúde: 2 laboratórios, 15 pedidos + 15 resultados de exame, 90 itens de resultado com evolução (glicada do avô caindo com tratamento, colesterol do Carlos melhorando)
   - Frota: 3 veículos (CR-V, Argo, CG 160), 6 manutenções com itens, 6 agendamentos, 42 meses de histórico FIPE
 
@@ -47,6 +51,6 @@
 - **App mobile** (React Native reaproveitando o design system)
 
 ## Pendências operacionais pós-merge
-1. Merge das PRs (API e Admin) → deploy Railway roda migrations 29–33 (todas idempotentes; dados demo já populados não conflitam)
+1. Merge das PRs (API e Admin) → deploy Railway. Migrations 29–33 JÁ aplicadas em prod (schema_migrations em 33) — deploy não re-roda nada
 2. Boot da API sincroniza o manifesto de permissions novo (patrimony.*, warranties.*, education.*, homesafety.*, finance.fiscal-dashboard) com o auth
 3. Validar login demo e navegação em todas as áreas novas
