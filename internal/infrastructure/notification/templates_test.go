@@ -39,3 +39,20 @@ func TestFactoryFallsBackToDisabled(t *testing.T) {
 		t.Error("factory sem config deveria devolver sender desabilitado")
 	}
 }
+
+func TestPasswordResetEmailLogo(t *testing.T) {
+	t.Setenv("MAIL_LOGO_URL", "https://admin.meufin.app/logo-email.png")
+	msg, err := PasswordResetEmail("Alan", "https://x/reset", 60)
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !strings.Contains(msg.HTML, `src="https://admin.meufin.app/logo-email.png"`) {
+		t.Error("HTML não contém a imagem da logo quando MAIL_LOGO_URL está setada")
+	}
+
+	t.Setenv("MAIL_LOGO_URL", "")
+	msg2, _ := PasswordResetEmail("Alan", "https://x/reset", 60)
+	if strings.Contains(msg2.HTML, "<img") {
+		t.Error("HTML não deveria ter <img> sem MAIL_LOGO_URL")
+	}
+}
