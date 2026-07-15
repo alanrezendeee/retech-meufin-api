@@ -6,10 +6,14 @@ import (
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	appedu "github.com/retechfin/retechfin-api/internal/application/education"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
+	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
+	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 	"gorm.io/gorm"
@@ -47,6 +51,15 @@ type RouterDeps struct {
 	MemberDocumentService    *apph.MemberDocumentService
 	VehicleService           *appv.Service
 	PermsEnforcement         middleware.EnforcementMode
+
+	// Módulos da apresentação (2026-07)
+	FinanceFiscalDashboardService *appf.FiscalDashboardService
+	PatrimonyService              *appp.Service
+	PatrimonyDocumentService      *appp.DocumentService
+	WarrantyService               *appw.Service
+	WarrantyDocumentService       *appw.DocumentService
+	EducationService              *appedu.Service
+	HomeSafetyService             *apphs.Service
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -115,6 +128,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 			health.GET("/family-members", fmH.List)
 			health.POST("/family-members", fmH.Create)
+			health.GET("/family-members/birthdays", fmH.Birthdays)
 			health.GET("/family-members/:id", fmH.Get)
 			health.PUT("/family-members/:id", fmH.Update)
 			health.DELETE("/family-members/:id", fmH.Delete)
@@ -244,6 +258,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/documents/:id/confirm", finExtH.Confirm)
 		finance.POST("/documents/:id/fiscal-confirm", finFiscalH.Confirm)
 		finance.GET("/entries/:id/fiscal-items", finFiscalH.ListByEntry)
+
+		// Dashboard fiscal (inflação pessoal por item comprado)
+		finFiscalDashH := handlers.NewFinanceFiscalDashboardHandler(d.FinanceFiscalDashboardService)
+		finance.GET("/fiscal/dashboard", finFiscalDashH.Summary)
+		finance.GET("/fiscal/products", finFiscalDashH.Products)
+		finance.GET("/fiscal/products/price-history", finFiscalDashH.PriceHistory)
+		finance.GET("/fiscal/inflation", finFiscalDashH.Inflation)
 	}
 
 	// Frota Familiar
@@ -297,6 +318,91 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 		// Catálogo global de manutenção (sem /:id)
 		vehicles.GET("/maintenance/catalog", vehicleH.SearchCatalog)
+	}
+
+	// Patrimônio — imóveis + impostos de bens
+	patrimonyH := handlers.NewPatrimonyHandler(d.PatrimonyService)
+	patrimonyDocH := handlers.NewPropertyDocumentHandler(d.PatrimonyDocumentService)
+	patrimony := v1.Group("/patrimony", middleware.RequireModule("patrimony", d.PermsEnforcement))
+	{
+		patrimony.GET("/properties", patrimonyH.ListProperties)
+		patrimony.POST("/properties", patrimonyH.CreateProperty)
+		patrimony.GET("/properties/:id", patrimonyH.GetProperty)
+		patrimony.PUT("/properties/:id", patrimonyH.UpdateProperty)
+		patrimony.DELETE("/properties/:id", patrimonyH.DeleteProperty)
+
+		patrimony.POST("/properties/:id/documents", patrimonyDocH.Upload)
+		patrimony.GET("/properties/:id/documents", patrimonyDocH.List)
+		patrimony.GET("/properties/:id/documents/:docId/download-url", patrimonyDocH.DownloadURL)
+		patrimony.DELETE("/properties/:id/documents/:docId", patrimonyDocH.Delete)
+
+		// /taxes/overview ANTES de /taxes/:id (conflito de wildcard do Gin)
+		patrimony.GET("/taxes/overview", patrimonyH.Overview)
+		patrimony.GET("/taxes", patrimonyH.ListTaxes)
+		patrimony.POST("/taxes", patrimonyH.CreateTax)
+		patrimony.GET("/taxes/:id", patrimonyH.GetTax)
+		patrimony.PUT("/taxes/:id", patrimonyH.UpdateTax)
+		patrimony.DELETE("/taxes/:id", patrimonyH.DeleteTax)
+		patrimony.POST("/taxes/:id/pay", patrimonyH.PayTax)
+	}
+
+	// Garantias de bens
+	warrantyH := handlers.NewWarrantyHandler(d.WarrantyService, d.WarrantyDocumentService)
+	warranties := v1.Group("/warranties", middleware.RequireModule("warranties", d.PermsEnforcement))
+	{
+		warranties.GET("/summary", warrantyH.Summary)
+		warranties.GET("", warrantyH.List)
+		warranties.POST("", warrantyH.Create)
+		warranties.GET("/:id", warrantyH.Get)
+		warranties.PUT("/:id", warrantyH.Update)
+		warranties.DELETE("/:id", warrantyH.Delete)
+
+		warranties.POST("/:id/documents", warrantyH.UploadDocument)
+		warranties.GET("/:id/documents", warrantyH.ListDocuments)
+		warranties.GET("/:id/documents/:docId/download-url", warrantyH.DocumentDownloadURL)
+		warranties.DELETE("/:id/documents/:docId", warrantyH.DeleteDocument)
+	}
+
+	// Educação / Material Escolar
+	educationH := handlers.NewEducationHandler(d.EducationService)
+	education := v1.Group("/education", middleware.RequireModule("education", d.PermsEnforcement))
+	{
+		education.GET("/dashboard", educationH.Dashboard)
+
+		education.GET("/enrollments", educationH.ListEnrollments)
+		education.POST("/enrollments", educationH.CreateEnrollment)
+		education.GET("/enrollments/:id", educationH.GetEnrollment)
+		education.PUT("/enrollments/:id", educationH.UpdateEnrollment)
+		education.DELETE("/enrollments/:id", educationH.DeleteEnrollment)
+
+		education.GET("/supply-lists", educationH.ListSupplyLists)
+		education.POST("/supply-lists", educationH.CreateSupplyList)
+		education.GET("/supply-lists/:id", educationH.GetSupplyList)
+		education.PUT("/supply-lists/:id", educationH.UpdateSupplyList)
+		education.DELETE("/supply-lists/:id", educationH.DeleteSupplyList)
+
+		education.POST("/supply-lists/:id/items", educationH.AddItem)
+		education.PUT("/supply-lists/:id/items/:itemId", educationH.UpdateItem)
+		education.DELETE("/supply-lists/:id/items/:itemId", educationH.DeleteItem)
+		education.POST("/supply-lists/:id/items/:itemId/purchase", educationH.PurchaseItem)
+	}
+
+	// Segurança do Lar
+	homeSafetyH := handlers.NewHomeSafetyHandler(d.HomeSafetyService)
+	homeSafety := v1.Group("/home-safety", middleware.RequireModule("homesafety", d.PermsEnforcement))
+	{
+		homeSafety.GET("/dashboard", homeSafetyH.Dashboard)
+		homeSafety.GET("/catalog", homeSafetyH.Catalog)
+
+		homeSafety.GET("/items", homeSafetyH.ListItems)
+		homeSafety.POST("/items", homeSafetyH.CreateItem)
+		homeSafety.GET("/items/:id", homeSafetyH.GetItem)
+		homeSafety.PUT("/items/:id", homeSafetyH.UpdateItem)
+		homeSafety.DELETE("/items/:id", homeSafetyH.DeleteItem)
+
+		homeSafety.GET("/items/:id/events", homeSafetyH.ListEvents)
+		homeSafety.POST("/items/:id/events", homeSafetyH.CreateEvent)
+		homeSafety.DELETE("/items/:id/events/:eventId", homeSafetyH.DeleteEvent)
 	}
 
 	return r

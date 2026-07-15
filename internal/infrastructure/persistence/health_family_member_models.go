@@ -16,6 +16,8 @@ type HealthFamilyMemberModel struct {
 	Gender       *string    `gorm:"size:20"`
 	Document     *string    `gorm:"size:50"`
 	Notes        *string    `gorm:"type:text"`
+	HeightCm     *float64   `gorm:"column:height_cm"`
+	WeightKg     *float64   `gorm:"column:weight_kg"`
 	Active       bool       `gorm:"not null;default:true"`
 	CreatedAt    time.Time  `gorm:"not null"`
 	UpdatedAt    time.Time  `gorm:"not null"`
