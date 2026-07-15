@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
+	appacc "github.com/retechfin/retechfin-api/internal/application/account"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	appedu "github.com/retechfin/retechfin-api/internal/application/education"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
@@ -24,10 +25,12 @@ import (
 	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/fipe"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/notification"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
@@ -265,6 +268,16 @@ func main() {
 	homeSafetyRepo := persistence.NewHomeSafetyRepository(db)
 	homeSafetySvc := apphs.NewService(homeSafetyRepo)
 
+	// Notificações (e-mail via useSend) + fluxo "esqueci a senha"
+	mailer := notification.New(notification.ConfigFromEnv())
+	if mailer.Enabled() {
+		log.Info("✅ Canal de e-mail (useSend) configurado!")
+	} else {
+		log.Warn("⚠️ Canal de e-mail desabilitado — configure USESEND_BASE_URL, USESEND_API_KEY e MAIL_FROM_EMAIL")
+	}
+	authClient := authclient.New(authclient.ConfigFromEnv())
+	passwordResetSvc := appacc.NewPasswordResetService(authClient, mailer, log)
+
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
 		DB:                       db,
@@ -305,6 +318,7 @@ func main() {
 		WarrantyDocumentService:       warrantyDocSvc,
 		EducationService:              educationSvc,
 		HomeSafetyService:             homeSafetySvc,
+		PasswordResetService:          passwordResetSvc,
 	})
 
 	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.

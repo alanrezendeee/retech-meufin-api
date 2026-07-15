@@ -5,6 +5,7 @@ import (
 
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
+	appacc "github.com/retechfin/retechfin-api/internal/application/account"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	appedu "github.com/retechfin/retechfin-api/internal/application/education"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
@@ -60,6 +61,7 @@ type RouterDeps struct {
 	WarrantyDocumentService       *appw.DocumentService
 	EducationService              *appedu.Service
 	HomeSafetyService             *apphs.Service
+	PasswordResetService          *appacc.PasswordResetService
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -71,6 +73,14 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	hHealth := &handlers.Health{DB: d.DB, Env: d.Env}
 	r.GET("/health", hHealth.Get)
+
+	// Rotas públicas (usuário deslogado) — fluxo "esqueci a senha"
+	resetH := handlers.NewPasswordResetHandler(d.PasswordResetService)
+	public := r.Group("/api/v1/public")
+	{
+		public.POST("/password-reset/request", resetH.Request)
+		public.POST("/password-reset/confirm", resetH.Confirm)
+	}
 
 	accH := handlers.NewAccountHandler(d.AccountService)
 	catH := handlers.NewCategoryHandler(d.CategoryService)
