@@ -42,6 +42,8 @@ func (r *HealthFamilyMemberRepository) Update(ctx context.Context, f *dom.Family
 			"gender":       f.Gender,
 			"document":     f.Document,
 			"notes":        f.Notes,
+			"height_cm":    f.HeightCm,
+			"weight_kg":    f.WeightKg,
 			"active":       f.Active,
 			"updated_at":   f.UpdatedAt,
 		})
@@ -93,6 +95,23 @@ func (r *HealthFamilyMemberRepository) List(ctx context.Context, workspaceID uui
 	return out, total, nil
 }
 
+// ListWithBirthDate retorna membros ativos com data de nascimento preenchida.
+func (r *HealthFamilyMemberRepository) ListWithBirthDate(ctx context.Context, workspaceID uuid.UUID) ([]dom.FamilyMember, error) {
+	var rows []HealthFamilyMemberModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND active = ? AND birth_date IS NOT NULL", workspaceID, true).
+		Order("full_name ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapHealthErr(err)
+	}
+	out := make([]dom.FamilyMember, len(rows))
+	for i := range rows {
+		out[i] = *modelToFamilyMember(&rows[i])
+	}
+	return out, nil
+}
+
 // --- conversões ---
 
 func familyMemberToModel(f *dom.FamilyMember) HealthFamilyMemberModel {
@@ -105,6 +124,8 @@ func familyMemberToModel(f *dom.FamilyMember) HealthFamilyMemberModel {
 		Gender:       f.Gender,
 		Document:     f.Document,
 		Notes:        f.Notes,
+		HeightCm:     f.HeightCm,
+		WeightKg:     f.WeightKg,
 		Active:       f.Active,
 		CreatedAt:    f.CreatedAt,
 		UpdatedAt:    f.UpdatedAt,
@@ -121,6 +142,8 @@ func modelToFamilyMember(m *HealthFamilyMemberModel) *dom.FamilyMember {
 		Gender:       m.Gender,
 		Document:     m.Document,
 		Notes:        m.Notes,
+		HeightCm:     m.HeightCm,
+		WeightKg:     m.WeightKg,
 		Active:       m.Active,
 		CreatedAt:    m.CreatedAt,
 		UpdatedAt:    m.UpdatedAt,

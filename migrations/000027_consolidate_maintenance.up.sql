@@ -1,4 +1,7 @@
 -- ─── 1. Remover tabelas de OS (sem dados relevantes) ──────────────────────────
+-- schedules primeiro: tem FK (service_order_item_id) para vehicle_service_order_items,
+-- e DROP sem CASCADE falha se a dependente ainda existir (causou dirty version 27 em prod)
+DROP TABLE IF EXISTS vehicle_maintenance_schedules;
 DROP TABLE IF EXISTS vehicle_service_order_items;
 DROP TABLE IF EXISTS vehicle_service_orders;
 

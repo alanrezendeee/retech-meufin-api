@@ -116,6 +116,33 @@ func buildManifest() manifest {
 		perm("vehicles.detail", "view", "Ver detalhes de um veículo"),
 		perm("vehicles.detail", "manage", "Editar veículo, registrar manutenções e agendamentos"),
 
+		// Dashboard fiscal (notas/cupons — inflação por item)
+		perm("finance.fiscal-dashboard", "view", "Dashboard fiscal (notas/cupons)"),
+
+		// Patrimônio
+		perm("patrimony.dashboard", "view", "Dashboard de patrimônio"),
+		perm("patrimony.properties", "view", "Imóveis"),
+		perm("patrimony.properties", "manage", "Gerenciar imóveis e documentos"),
+		perm("patrimony.taxes", "view", "Impostos de bens"),
+		perm("patrimony.taxes", "manage", "Gerenciar impostos e pagamentos"),
+
+		// Garantias
+		perm("warranties.list", "view", "Listar garantias de bens"),
+		perm("warranties.list", "manage", "Cadastrar, editar e remover garantias e documentos"),
+		perm("warranties.summary", "view", "Resumo de garantias (vigentes, expirando, valor coberto)"),
+
+		// Educação / Material Escolar
+		perm("education.dashboard", "view", "Dashboard de educação"),
+		perm("education.enrollments", "view", "Matrículas escolares"),
+		perm("education.enrollments", "manage", "Gerenciar matrículas"),
+		perm("education.lists", "view", "Listas de material escolar"),
+		perm("education.lists", "manage", "Gerenciar listas e itens de material"),
+
+		// Segurança do Lar
+		perm("homesafety.dashboard", "view", "Dashboard de segurança do lar"),
+		perm("homesafety.items", "view", "Listar itens de segurança do lar"),
+		perm("homesafety.items", "manage", "Cadastrar, editar e registrar manutenções dos itens"),
+
 		// Placeholders do menu legado ("em breve")
 		perm("retechfin.transactions", "view", "Transações (em breve)"),
 		perm("retechfin.accounts", "view", "Contas legado (em breve)"),

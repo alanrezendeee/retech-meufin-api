@@ -16,10 +16,14 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
+	appedu "github.com/retechfin/retechfin-api/internal/application/education"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
+	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
+	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
+	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
@@ -243,6 +247,24 @@ func main() {
 	vehicleRepo := persistence.NewVehicleRepository(db)
 	vehicleSvc := appv.NewService(vehicleRepo, fipeClient, log)
 
+	finFiscalDashRepo := persistence.NewFiscalDashboardRepository(db)
+	finFiscalDashSvc := appf.NewFiscalDashboardService(finFiscalDashRepo)
+
+	patrimonyRepo := persistence.NewPatrimonyRepository(db)
+	patrimonyDocRepo := persistence.NewPropertyDocumentRepository(db)
+	patrimonySvc := appp.NewService(patrimonyRepo)
+	patrimonyDocSvc := appp.NewDocumentService(patrimonyDocRepo, patrimonyRepo, objStorage, storageCfg.MaxUploadMB)
+
+	warrantyRepo := persistence.NewWarrantyRepository(db)
+	warrantySvc := appw.NewService(warrantyRepo)
+	warrantyDocSvc := appw.NewDocumentService(warrantyRepo, objStorage, storageCfg.MaxUploadMB)
+
+	educationRepo := persistence.NewEducationRepository(db)
+	educationSvc := appedu.NewService(educationRepo)
+
+	homeSafetyRepo := persistence.NewHomeSafetyRepository(db)
+	homeSafetySvc := apphs.NewService(homeSafetyRepo)
+
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
 		DB:                       db,
@@ -275,6 +297,14 @@ func main() {
 		MemberDocumentService:    memberDocSvc,
 		VehicleService:           vehicleSvc,
 		PermsEnforcement:         permsMode,
+
+		FinanceFiscalDashboardService: finFiscalDashSvc,
+		PatrimonyService:              patrimonySvc,
+		PatrimonyDocumentService:      patrimonyDocSvc,
+		WarrantyService:               warrantySvc,
+		WarrantyDocumentService:       warrantyDocSvc,
+		EducationService:              educationSvc,
+		HomeSafetyService:             homeSafetySvc,
 	})
 
 	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.

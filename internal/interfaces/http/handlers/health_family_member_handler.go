@@ -24,23 +24,27 @@ func NewHealthFamilyMemberHandler(svc *app.FamilyMemberService) *HealthFamilyMem
 }
 
 type familyMemberCreateJSON struct {
-	FullName     string  `json:"full_name" binding:"required"`
-	Relationship string  `json:"relationship" binding:"required"`
-	BirthDate    *string `json:"birth_date"`
-	Gender       *string `json:"gender"`
-	Document     *string `json:"document"`
-	Notes        *string `json:"notes"`
-	Active       *bool   `json:"active"`
+	FullName     string   `json:"full_name" binding:"required"`
+	Relationship string   `json:"relationship" binding:"required"`
+	BirthDate    *string  `json:"birth_date"`
+	Gender       *string  `json:"gender"`
+	Document     *string  `json:"document"`
+	Notes        *string  `json:"notes"`
+	HeightCm     *float64 `json:"height_cm"`
+	WeightKg     *float64 `json:"weight_kg"`
+	Active       *bool    `json:"active"`
 }
 
 type familyMemberUpdateJSON struct {
-	FullName     string  `json:"full_name" binding:"required"`
-	Relationship string  `json:"relationship" binding:"required"`
-	BirthDate    *string `json:"birth_date"`
-	Gender       *string `json:"gender"`
-	Document     *string `json:"document"`
-	Notes        *string `json:"notes"`
-	Active       *bool   `json:"active"`
+	FullName     string   `json:"full_name" binding:"required"`
+	Relationship string   `json:"relationship" binding:"required"`
+	BirthDate    *string  `json:"birth_date"`
+	Gender       *string  `json:"gender"`
+	Document     *string  `json:"document"`
+	Notes        *string  `json:"notes"`
+	HeightCm     *float64 `json:"height_cm"`
+	WeightKg     *float64 `json:"weight_kg"`
+	Active       *bool    `json:"active"`
 }
 
 type familyMemberResponse struct {
@@ -52,6 +56,9 @@ type familyMemberResponse struct {
 	Gender       *string   `json:"gender"`
 	Document     *string   `json:"document"`
 	Notes        *string   `json:"notes"`
+	HeightCm     *float64  `json:"height_cm"`
+	WeightKg     *float64  `json:"weight_kg"`
+	Age          *int      `json:"age"`
 	Active       bool      `json:"active"`
 	CreatedAt    string    `json:"created_at"`
 	UpdatedAt    string    `json:"updated_at"`
@@ -72,9 +79,40 @@ func mapFamilyMember(f *dom.FamilyMember) familyMemberResponse {
 		Gender:       f.Gender,
 		Document:     f.Document,
 		Notes:        f.Notes,
+		HeightCm:     f.HeightCm,
+		WeightKg:     f.WeightKg,
+		Age:          f.Age(),
 		Active:       f.Active,
 		CreatedAt:    f.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:    f.UpdatedAt.UTC().Format(time.RFC3339Nano),
+	}
+}
+
+type birthdayResponse struct {
+	ID           uuid.UUID `json:"id"`
+	FullName     string    `json:"full_name"`
+	Relationship string    `json:"relationship"`
+	BirthDate    string    `json:"birth_date"`
+	Age          int       `json:"age"`
+	Turns        int       `json:"turns"`
+	NextBirthday string    `json:"next_birthday"`
+	DaysUntil    int       `json:"days_until"`
+}
+
+func mapBirthday(b *dom.Birthday) birthdayResponse {
+	var birth string
+	if b.Member.BirthDate != nil {
+		birth = b.Member.BirthDate.UTC().Format(familyMemberBirthDateLayout)
+	}
+	return birthdayResponse{
+		ID:           b.Member.ID,
+		FullName:     b.Member.FullName,
+		Relationship: b.Member.Relationship,
+		BirthDate:    birth,
+		Age:          b.Age,
+		Turns:        b.Turns,
+		NextBirthday: b.NextBirthday.Format(familyMemberBirthDateLayout),
+		DaysUntil:    b.DaysUntil,
 	}
 }
 
@@ -113,6 +151,8 @@ func (h *HealthFamilyMemberHandler) Create(c *gin.Context) {
 		Gender:       body.Gender,
 		Document:     body.Document,
 		Notes:        body.Notes,
+		HeightCm:     body.HeightCm,
+		WeightKg:     body.WeightKg,
 		Active:       body.Active,
 	})
 	if err != nil {
@@ -170,6 +210,8 @@ func (h *HealthFamilyMemberHandler) Update(c *gin.Context) {
 		Gender:       body.Gender,
 		Document:     body.Document,
 		Notes:        body.Notes,
+		HeightCm:     body.HeightCm,
+		WeightKg:     body.WeightKg,
 		Active:       body.Active,
 	})
 	if err != nil {
@@ -219,4 +261,23 @@ func (h *HealthFamilyMemberHandler) List(c *gin.Context) {
 		items[i] = mapFamilyMember(&res.Items[i])
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": res.Total})
+}
+
+// Birthdays lista os próximos aniversários dos membros ativos (quadro do painel).
+func (h *HealthFamilyMemberHandler) Birthdays(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	list, err := h.svc.Birthdays(c.Request.Context(), ws)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	items := make([]birthdayResponse, len(list))
+	for i := range list {
+		items[i] = mapBirthday(&list[i])
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items})
 }

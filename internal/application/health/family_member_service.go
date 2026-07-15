@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -25,6 +26,8 @@ type CreateFamilyMemberInput struct {
 	Gender       *string
 	Document     *string
 	Notes        *string
+	HeightCm     *float64
+	WeightKg     *float64
 	Active       *bool
 }
 
@@ -37,6 +40,8 @@ type UpdateFamilyMemberInput struct {
 	Gender       *string
 	Document     *string
 	Notes        *string
+	HeightCm     *float64
+	WeightKg     *float64
 	Active       *bool
 }
 
@@ -54,6 +59,8 @@ func (s *FamilyMemberService) Create(ctx context.Context, in CreateFamilyMemberI
 		Gender:       in.Gender,
 		Document:     in.Document,
 		Notes:        in.Notes,
+		HeightCm:     in.HeightCm,
+		WeightKg:     in.WeightKg,
 		Active:       active,
 		CreatedAt:    time.Now().UTC(),
 		UpdatedAt:    time.Now().UTC(),
@@ -82,6 +89,8 @@ func (s *FamilyMemberService) Update(ctx context.Context, in UpdateFamilyMemberI
 	f.Gender = in.Gender
 	f.Document = in.Document
 	f.Notes = in.Notes
+	f.HeightCm = in.HeightCm
+	f.WeightKg = in.WeightKg
 	if in.Active != nil {
 		f.Active = *in.Active
 	}
@@ -110,6 +119,31 @@ func (s *FamilyMemberService) List(ctx context.Context, workspaceID uuid.UUID, f
 		return nil, err
 	}
 	return &ListFamilyMembersResult{Items: items, Total: total}, nil
+}
+
+// Birthdays retorna os membros ativos com data de nascimento, ordenados pelo
+// próximo aniversário (menos dias restantes primeiro).
+func (s *FamilyMemberService) Birthdays(ctx context.Context, workspaceID uuid.UUID) ([]dom.Birthday, error) {
+	members, err := s.repo.ListWithBirthDate(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	out := make([]dom.Birthday, 0, len(members))
+	for i := range members {
+		b, ok := dom.NextBirthdayOf(members[i], now)
+		if !ok {
+			continue
+		}
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].DaysUntil != out[j].DaysUntil {
+			return out[i].DaysUntil < out[j].DaysUntil
+		}
+		return out[i].Member.FullName < out[j].Member.FullName
+	})
+	return out, nil
 }
 
 func IsNotFound(err error) bool {
