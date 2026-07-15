@@ -100,6 +100,10 @@ func buildManifest() manifest {
 		perm("health.results", "view", "Resultados de exames"),
 		perm("health.results", "manage", "Gerenciar resultados"),
 		perm("health.documents", "view", "Documentos de saúde (item futuro do menu)"),
+		perm("health.appointments", "view", "Consultas e agenda de saúde"),
+		perm("health.appointments", "manage", "Agendar, realizar e cancelar consultas"),
+		perm("health.plans", "view", "Planos de saúde"),
+		perm("health.plans", "manage", "Gerenciar planos de saúde e carteirinhas"),
 
 		// Administração (IAM)
 		perm("admin.users", "view", "Ver usuários"),

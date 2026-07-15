@@ -19,6 +19,7 @@ func NewLabService(repo dom.LabRepository) *LabService {
 type CreateLabInput struct {
 	WorkspaceID    uuid.UUID
 	Name           string
+	Kind           dom.LabKind
 	WebsiteURL     *string
 	ExamResultsURL *string
 	ContactPhone   *string
@@ -31,6 +32,7 @@ type UpdateLabInput struct {
 	WorkspaceID    uuid.UUID
 	ID             uuid.UUID
 	Name           string
+	Kind           dom.LabKind
 	WebsiteURL     *string
 	ExamResultsURL *string
 	ContactPhone   *string
@@ -45,6 +47,7 @@ func (s *LabService) Create(ctx context.Context, in CreateLabInput) (*dom.Lab, e
 		ID:             uuid.New(),
 		WorkspaceID:    in.WorkspaceID,
 		Name:           in.Name,
+		Kind:           in.Kind,
 		WebsiteURL:     in.WebsiteURL,
 		ExamResultsURL: in.ExamResultsURL,
 		ContactPhone:   in.ContactPhone,
@@ -73,6 +76,7 @@ func (s *LabService) Update(ctx context.Context, in UpdateLabInput) (*dom.Lab, e
 		return nil, err
 	}
 	l.Name = in.Name
+	l.Kind = in.Kind
 	l.WebsiteURL = in.WebsiteURL
 	l.ExamResultsURL = in.ExamResultsURL
 	l.ContactPhone = in.ContactPhone
