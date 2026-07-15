@@ -114,7 +114,14 @@ func (c *Client) PasswordResetRequest(ctx context.Context, email string) (*Reset
 		}
 		return &out, nil
 	case http.StatusNotFound:
-		return nil, ErrUserNotFound
+		// 404 é ambíguo: pode ser "usuário não encontrado" (fluxo normal) ou a
+		// ROTA inexistente (auth desatualizado, sem o endpoint deployado).
+		// Só o primeiro caso pode virar resposta genérica silenciosa.
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		if strings.Contains(string(raw), "usuário não encontrado") {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("authclient: endpoint /v1/password-reset/request não existe no auth (%s) — deploy do retech-auth-api pendente? resposta: %s", c.cfg.BaseURL, string(raw))
 	default:
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return nil, fmt.Errorf("authclient: auth respondeu %d: %s", resp.StatusCode, string(raw))
