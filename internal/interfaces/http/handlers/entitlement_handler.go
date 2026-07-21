@@ -10,7 +10,7 @@ import (
 )
 
 // EntitlementHandler expõe o plano/cota do workspace (para a UI mostrar
-// consumo de consultas fiscais verificadas e o degrau de plano).
+// "X de Y consultas fiscais verificadas usadas neste mês" e o degrau de plano).
 type EntitlementHandler struct {
 	svc *app.Service
 }
@@ -19,18 +19,24 @@ func NewEntitlementHandler(svc *app.Service) *EntitlementHandler {
 	return &EntitlementHandler{svc: svc}
 }
 
-type fiscalQuotaResponse struct {
+// fiscalVerificationUsage é o contador de consultas fiscais verificadas do mês
+// para a tenant. Rótulo neutro de propósito: não expõe o fornecedor (Infosimples)
+// nem detalhe de infraestrutura — só o que o usuário precisa ver (usado/limite).
+type fiscalVerificationUsage struct {
 	Tier      string `json:"tier"`
-	Quota     int    `json:"quota"`
+	Limit     int    `json:"limit"`
 	Used      int    `json:"used"`
 	Remaining int    `json:"remaining"`
+	// Period identifica o mês do contador (AAAA-MM); o uso zera a cada mês.
+	Period string `json:"period"`
 }
 
 type entitlementResponse struct {
-	FiscalSEFAZ fiscalQuotaResponse `json:"fiscal_sefaz"`
+	FiscalVerification fiscalVerificationUsage `json:"fiscal_verification"`
 }
 
-// Get responde GET /finance/entitlements — tier e cota SEFAZ do mês corrente.
+// Get responde GET /finance/entitlements — uso de consultas fiscais verificadas
+// da tenant no mês corrente (usado/limite/restante) e o tier atual.
 func (h *EntitlementHandler) Get(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
@@ -43,11 +49,12 @@ func (h *EntitlementHandler) Get(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, entitlementResponse{
-		FiscalSEFAZ: fiscalQuotaResponse{
+		FiscalVerification: fiscalVerificationUsage{
 			Tier:      string(st.Tier),
-			Quota:     st.Quota,
+			Limit:     st.Quota,
 			Used:      st.Used,
 			Remaining: st.Remaining,
+			Period:    st.Period,
 		},
 	})
 }
