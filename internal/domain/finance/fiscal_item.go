@@ -62,4 +62,7 @@ type FiscalItemRepository interface {
 	CreateBatch(ctx context.Context, items []*FiscalItem) error
 	ListByEntry(ctx context.Context, workspaceID, entryID uuid.UUID) ([]FiscalItem, error)
 	DeleteByEntry(ctx context.Context, workspaceID, entryID uuid.UUID) error
+	// ReassignEntry move os itens de um lançamento para outro (conciliação:
+	// mover o detalhamento do cupom para a compra da fatura).
+	ReassignEntry(ctx context.Context, workspaceID, fromEntryID, toEntryID uuid.UUID) error
 }
