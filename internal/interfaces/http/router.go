@@ -49,6 +49,7 @@ type RouterDeps struct {
 	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
 	FinanceFiscalService     *appf.FiscalService
+	ReconciliationService    *appf.ReconciliationService
 	EntitlementService       *appent.Service
 	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
@@ -307,6 +308,11 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		// Plano/cota do workspace (consumo de consultas fiscais verificadas).
 		entitleH := handlers.NewEntitlementHandler(d.EntitlementService)
 		finance.GET("/entitlements", entitleH.Get)
+
+		// Conciliação cupom × fatura de cartão (só sugere; usuário confirma).
+		reconH := handlers.NewReconciliationHandler(d.ReconciliationService)
+		finance.GET("/entries/:id/reconciliation", reconH.Suggest)
+		finance.POST("/reconcile", reconH.Reconcile)
 
 		// Dashboard fiscal (inflação pessoal por item comprado)
 		finFiscalDashH := handlers.NewFinanceFiscalDashboardHandler(d.FinanceFiscalDashboardService)

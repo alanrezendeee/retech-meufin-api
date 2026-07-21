@@ -67,6 +67,13 @@ func (r *FiscalItemRepository) DeleteByEntry(ctx context.Context, workspaceID, e
 	return mapFinanceErr(res.Error)
 }
 
+func (r *FiscalItemRepository) ReassignEntry(ctx context.Context, workspaceID, fromEntryID, toEntryID uuid.UUID) error {
+	res := r.db.WithContext(ctx).Model(&FinanceFiscalItemModel{}).
+		Where("workspace_id = ? AND entry_id = ?", workspaceID, fromEntryID).
+		Update("entry_id", toEntryID)
+	return mapFinanceErr(res.Error)
+}
+
 func fiscalItemToModel(i *dom.FiscalItem) FinanceFiscalItemModel {
 	return FinanceFiscalItemModel{
 		ID:            i.ID,
