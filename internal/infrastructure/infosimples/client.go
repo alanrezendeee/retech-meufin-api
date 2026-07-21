@@ -74,7 +74,10 @@ type NFCeResult struct {
 	ValorTotalCents  int64
 	TributosCents    int64
 	Produtos         []NFCeProduto
-	Warnings         []string
+	// PaymentMethod é a forma de pagamento normalizada (credito|debito|dinheiro|
+	// pix|outros); "" quando indisponível. Base para conciliar cupom × fatura.
+	PaymentMethod string
+	Warnings      []string
 	// PriceBRL é o custo cobrado pela Infosimples nesta consulta (auditoria).
 	PriceBRL string
 }
@@ -130,6 +133,8 @@ type dadoNFCe struct {
 	NormalizadoValorTotal    *float64        `json:"normalizado_valor_total"`
 	NormalizadoTributosTotal *float64        `json:"normalizado_tributos_totais"`
 	Produtos                 []produtoNFCe   `json:"produtos"`
+	// FormasPagamento varia por estado; parseado de forma tolerante (só o texto).
+	FormasPagamento json.RawMessage `json:"formas_pagamento"`
 }
 
 type produtoNFCe struct {
@@ -202,6 +207,7 @@ func (c *Client) ConsultarNFCe(ctx context.Context, nfce string) (*NFCeResult, e
 		ValorTotalCents:  reaisToCents(firstNonNil(d.NormalizadoValorAPagar, d.NormalizadoValorTotal)),
 		TributosCents:    reaisToCents(d.NormalizadoTributosTotal),
 		Produtos:         make([]NFCeProduto, 0, len(d.Produtos)),
+		PaymentMethod:    detectPaymentMethod(rawText(d.FormasPagamento)),
 		Warnings:         []string{},
 	}
 	var h headerNFCe
@@ -270,6 +276,57 @@ func reaisToCents(v *float64) int64 {
 		return 0
 	}
 	return int64(math.Round(*v * 100))
+}
+
+// rawText concatena todos os valores string de um JSON arbitrário (o formato de
+// formas_pagamento varia por estado) — usado só para detectar palavras-chave.
+func rawText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return string(raw)
+	}
+	var b strings.Builder
+	var walk func(any)
+	walk = func(x any) {
+		switch t := x.(type) {
+		case string:
+			b.WriteString(t)
+			b.WriteByte(' ')
+		case []any:
+			for _, e := range t {
+				walk(e)
+			}
+		case map[string]any:
+			for _, e := range t {
+				walk(e)
+			}
+		}
+	}
+	walk(v)
+	return b.String()
+}
+
+// detectPaymentMethod normaliza a forma de pagamento a partir de texto livre.
+// Prioriza cartão (crédito/débito) e pix; "" quando não reconhece.
+func detectPaymentMethod(s string) string {
+	l := strings.ToLower(s)
+	switch {
+	case l == "":
+		return ""
+	case strings.Contains(l, "credito") || strings.Contains(l, "crédito"):
+		return "credito"
+	case strings.Contains(l, "debito") || strings.Contains(l, "débito"):
+		return "debito"
+	case strings.Contains(l, "pix"):
+		return "pix"
+	case strings.Contains(l, "dinheiro") || strings.Contains(l, "espécie") || strings.Contains(l, "especie"):
+		return "dinheiro"
+	default:
+		return "outros"
+	}
 }
 
 func firstNonNil(vs ...*float64) *float64 {

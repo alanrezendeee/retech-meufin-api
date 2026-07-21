@@ -70,8 +70,11 @@ type FinanceDocument struct {
 	// na Receita via Infosimples) ou "ocr_llm" (leitura por IA, fallback). Nil
 	// enquanto não houver detalhamento. Só se aplica a kind=fiscal.
 	FiscalSource *string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	// PaymentMethod é a forma de pagamento do cupom (credito|debito|dinheiro|
+	// pix|outros); base para conciliar cupom × fatura. Nil quando desconhecida.
+	PaymentMethod *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Validate valida invariantes do documento financeiro.

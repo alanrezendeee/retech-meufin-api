@@ -29,6 +29,7 @@ type FinanceDocumentModel struct {
 	ExtractedJSON    datatypes.JSON `gorm:"type:jsonb"`
 	Metadata         datatypes.JSON `gorm:"type:jsonb"`
 	FiscalSource     *string        `gorm:"column:fiscal_source;size:20"`
+	PaymentMethod    *string        `gorm:"column:payment_method;size:20"`
 	CreatedAt        time.Time      `gorm:"not null"`
 	UpdatedAt        time.Time      `gorm:"not null"`
 	DeletedAt        gorm.DeletedAt
