@@ -56,12 +56,13 @@ type FinanceExtractionService struct {
 	jobs         dom.FinanceExtractionJobRepository
 	docs         dom.FinanceDocumentRepository
 	extractor    extraction.Extractor
-	infosimples  nfceConsulter      // opcional (nil = sem SEFAZ)
-	entitlements *appent.Service    // opcional (nil = sem cota)
-	cache        *cache.Cache       // opcional (nil = sem cache por chave)
-	categorizer  *FiscalCategorizer // opcional (nil = itens sem categoria)
-	queue        queue.Publisher    // opcional (nil = processa inline)
-	qr           qrDecoder          // opcional (nil = sem decode QR server-side)
+	infosimples  nfceConsulter              // opcional (nil = sem SEFAZ)
+	entitlements *appent.Service            // opcional (nil = sem cota)
+	cache        *cache.Cache               // opcional (nil = sem cache por chave)
+	categorizer  *FiscalCategorizer         // opcional (nil = itens sem categoria)
+	queue        queue.Publisher            // opcional (nil = processa inline)
+	qr           qrDecoder                  // opcional (nil = sem decode QR server-side)
+	keyReader    extraction.FiscalKeyReader // opcional (nil = sem leitura de chave por IA)
 }
 
 // NewFinanceExtractionService constrói o serviço de extração.
@@ -78,6 +79,7 @@ func NewFinanceExtractionService(
 	categorizer *FiscalCategorizer,
 	q queue.Publisher,
 	qr qrDecoder,
+	keyReader extraction.FiscalKeyReader,
 ) *FinanceExtractionService {
 	return &FinanceExtractionService{
 		jobs:         jobs,
@@ -89,6 +91,7 @@ func NewFinanceExtractionService(
 		categorizer:  categorizer,
 		queue:        q,
 		qr:           qr,
+		keyReader:    keyReader,
 	}
 }
 
@@ -368,10 +371,23 @@ func (s *FinanceExtractionService) ProcessFiscal(
 
 	// Sem chave explícita: tenta ler o QR Code da imagem no servidor.
 	chave = strings.TrimSpace(chave)
-	if chave == "" && dom.ExtractionInputType(inputType) == dom.ExtractionInputImage && s.qr != nil {
+	isImage := dom.ExtractionInputType(inputType) == dom.ExtractionInputImage
+	if chave == "" && isImage && s.qr != nil {
 		if decoded, ok := s.qr.DecodeNFCe(content); ok {
 			chave = decoded
 			slog.Info("QR Code lido server-side", slog.String("document_id", documentID.String()))
+		}
+	}
+
+	// QR ilegível (foto borrada/comprimida): a IA lê a CHAVE IMPRESSA de 44
+	// dígitos, que sobrevive ao borrão melhor que o QR. Se achar, ainda vai pra
+	// SEFAZ (dado exato) em vez de cair na extração probabilística de itens.
+	if chave == "" && isImage && s.keyReader != nil && s.keyReader.Enabled() {
+		if raw, err := s.keyReader.ReadFiscalKey(ctx, content, mimeType); err == nil {
+			if d := onlyDigits(raw); len(d) == 44 {
+				chave = d
+				slog.Info("chave lida por IA (QR ilegível)", slog.String("document_id", documentID.String()))
+			}
 		}
 	}
 
@@ -784,6 +800,17 @@ func (s *FinanceExtractionService) ParsePurchases(doc *dom.FinanceDocument) ([]P
 		})
 	}
 	return out, nil
+}
+
+// onlyDigits mantém apenas os dígitos de uma string (para validar a chave de 44).
+func onlyDigits(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // reaisToCents converte um valor em reais (float) para centavos inteiros,

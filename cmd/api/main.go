@@ -264,7 +264,8 @@ func main() {
 	// chave da imagem quando o usuário não a informa.
 	fiscalQueue := infraqueue.NewInProcess(6, 512, 3, 5*time.Second, log)
 	qrDecoder := qrdecode.New()
-	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer, fiscalQueue, qrDecoder)
+	fiscalKeyReader := extraction.NewKeyReader(extractionCfg)
+	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer, fiscalQueue, qrDecoder, fiscalKeyReader)
 
 	// Worker: consome mensagens de ingestão fiscal, recarrega o conteúdo do
 	// storage e processa. Registrado antes de Start.
