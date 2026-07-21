@@ -34,6 +34,14 @@ const (
 	DocumentFiscal DocumentKind = "fiscal"
 )
 
+// FiscalSource é a procedência do detalhamento fiscal.
+const (
+	// FiscalSourceSEFAZ: dado verificado na Receita (Infosimples).
+	FiscalSourceSEFAZ = "sefaz"
+	// FiscalSourceOCRLLM: leitura por IA (fallback), requer conferência.
+	FiscalSourceOCRLLM = "ocr_llm"
+)
+
 // FinanceDocument é um arquivo (PDF/imagem) vinculado ao módulo Financeiro
 // (fatura importada ou comprovante de pagamento), armazenado no object storage.
 // Mapeia a tabela finance_documents.
@@ -58,8 +66,12 @@ type FinanceDocument struct {
 	ExtractedText    *string
 	ExtractedJSON    []byte // JSON cru (JSONB); nil quando ausente
 	Metadata         []byte // JSON cru (JSONB); nil quando ausente
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// FiscalSource é a procedência do detalhamento fiscal: "sefaz" (verificado
+	// na Receita via Infosimples) ou "ocr_llm" (leitura por IA, fallback). Nil
+	// enquanto não houver detalhamento. Só se aplica a kind=fiscal.
+	FiscalSource *string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // Validate valida invariantes do documento financeiro.
@@ -87,7 +99,7 @@ type FinanceDocumentFilter struct {
 	Kind    *DocumentKind
 	EntryID *uuid.UUID
 	// Query busca (case-insensitive) no nome original do arquivo.
-	Query string
+	Query  string
 	Status *ExtractionStatus
 	// Linked filtra pelo vínculo com lançamento: true = com entry_id, false = sem.
 	Linked *bool

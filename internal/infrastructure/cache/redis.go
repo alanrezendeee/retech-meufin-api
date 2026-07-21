@@ -71,3 +71,47 @@ func (c *Cache) Del(ctx context.Context, key string) error {
 	}
 	return c.client.Del(ctx, key).Err()
 }
+
+// Incr incrementa uma chave inteira e, na primeira criação, aplica o TTL
+// (contadores mensais expiram sozinhos ao virar o mês). Retorna o novo valor.
+// Se o cache for nil, retorna (0, nil) — sem Redis não há metering (fail-open).
+func (c *Cache) Incr(ctx context.Context, key string, ttl time.Duration) (int64, error) {
+	if c == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	n, err := c.client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, err
+	}
+	if n == 1 && ttl > 0 {
+		_ = c.client.Expire(ctx, key, ttl).Err()
+	}
+	return n, nil
+}
+
+// Decr decrementa uma chave inteira (usado para devolver cota reservada quando a
+// operação subsequente falha). No-op se cache for nil.
+func (c *Cache) Decr(ctx context.Context, key string) error {
+	if c == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+	defer cancel()
+	return c.client.Decr(ctx, key).Err()
+}
+
+// GetInt lê o valor inteiro de uma chave. Retorna (0, nil) se ausente ou nil.
+func (c *Cache) GetInt(ctx context.Context, key string) (int64, error) {
+	if c == nil {
+		return 0, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+	n, err := c.client.Get(ctx, key).Int64()
+	if err == redis.Nil {
+		return 0, nil
+	}
+	return n, err
+}

@@ -12,26 +12,51 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appent "github.com/retechfin/retechfin-api/internal/application/entitlement"
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/infosimples"
 )
 
-// FinanceExtractionService orquestra a criação e execução (assíncrona) de jobs
-// de extração LLM de faturas de cartão. Ao concluir, atualiza tanto o job
-// quanto o documento (extraction_status/extracted_text/extracted_json).
-type FinanceExtractionService struct {
-	jobs      dom.FinanceExtractionJobRepository
-	docs      dom.FinanceDocumentRepository
-	extractor extraction.Extractor
+// nfceConsulter é a porta (nil-safe) para a consulta de NFC-e na SEFAZ via
+// Infosimples. Mantida como interface local para permitir ausência do provider.
+type nfceConsulter interface {
+	Enabled() bool
+	ConsultarNFCe(ctx context.Context, nfce string) (*infosimples.NFCeResult, error)
 }
 
-// NewFinanceExtractionService constrói o serviço de extração de faturas.
+// FinanceExtractionService orquestra a criação e execução (assíncrona) de jobs
+// de extração de faturas (LLM) e de cupons/notas fiscais (SEFAZ com fallback
+// IA). Ao concluir, atualiza tanto o job quanto o documento.
+type FinanceExtractionService struct {
+	jobs         dom.FinanceExtractionJobRepository
+	docs         dom.FinanceDocumentRepository
+	extractor    extraction.Extractor
+	infosimples  nfceConsulter   // opcional (nil = sem SEFAZ)
+	entitlements *appent.Service // opcional (nil = sem cota)
+	cache        *cache.Cache    // opcional (nil = sem cache por chave)
+}
+
+// NewFinanceExtractionService constrói o serviço de extração.
+// infosimples/entitlements/cache são opcionais (podem ser nil): sem eles, a
+// ingestão fiscal opera só pelo caminho IA.
 func NewFinanceExtractionService(
 	jobs dom.FinanceExtractionJobRepository,
 	docs dom.FinanceDocumentRepository,
 	extractor extraction.Extractor,
+	nfce nfceConsulter,
+	entitlements *appent.Service,
+	c *cache.Cache,
 ) *FinanceExtractionService {
-	return &FinanceExtractionService{jobs: jobs, docs: docs, extractor: extractor}
+	return &FinanceExtractionService{
+		jobs:         jobs,
+		docs:         docs,
+		extractor:    extractor,
+		infosimples:  nfce,
+		entitlements: entitlements,
+		cache:        c,
+	}
 }
 
 // StartExtraction cria um job (status=pending) e dispara a extração em
@@ -203,6 +228,268 @@ func (s *FinanceExtractionService) markDocumentFailed(ctx context.Context, works
 // GetStatus retorna o job de extração mais recente do documento.
 func (s *FinanceExtractionService) GetStatus(ctx context.Context, workspaceID, documentID uuid.UUID) (*dom.FinanceExtractionJob, error) {
 	return s.jobs.GetByDocument(ctx, workspaceID, documentID)
+}
+
+// StartFiscalExtraction inicia a ingestão de um cupom/nota fiscal (kind=fiscal).
+// Caminho de ouro: SEFAZ via Infosimples quando há chave/QR e o provider está
+// ativo; senão, ou em falha/sem cota, cai no fallback IA (LLM). Assíncrono.
+func (s *FinanceExtractionService) StartFiscalExtraction(
+	ctx context.Context,
+	workspaceID, documentID uuid.UUID,
+	inputType, mimeType string,
+	content []byte,
+	chave string,
+) (*dom.FinanceExtractionJob, error) {
+	now := time.Now().UTC()
+	chave = strings.TrimSpace(chave)
+	sefazPossible := chave != "" && s.infosimples != nil && s.infosimples.Enabled()
+
+	provider := s.extractor.Provider()
+	if sefazPossible {
+		provider = dom.FiscalSourceSEFAZ
+	}
+
+	job := &dom.FinanceExtractionJob{
+		ID:          uuid.New(),
+		WorkspaceID: workspaceID,
+		DocumentID:  documentID,
+		Provider:    provider,
+		Status:      dom.JobPending,
+		InputType:   dom.ExtractionInputType(inputType),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+
+	// Nenhum caminho disponível (sem SEFAZ e sem LLM): falha controlada.
+	if !sefazPossible && !s.extractor.Enabled() {
+		msg := extraction.ErrExtractionDisabled.Error()
+		job.Status = dom.JobFailed
+		job.ErrorMessage = &msg
+		job.FinishedAt = &now
+		if err := s.jobs.Create(ctx, job); err != nil {
+			return nil, err
+		}
+		s.markDocumentFailed(ctx, workspaceID, documentID)
+		return job, extraction.ErrExtractionDisabled
+	}
+
+	if err := s.jobs.Create(ctx, job); err != nil {
+		return nil, err
+	}
+
+	buf := make([]byte, len(content))
+	copy(buf, content)
+	go s.runFiscal(job.ID, workspaceID, documentID, dom.ExtractionInputType(inputType), mimeType, buf, chave)
+	return job, nil
+}
+
+// runFiscal executa a ingestão fiscal: tenta SEFAZ e, em qualquer impedimento,
+// degrada para o LLM. Grava a procedência (fiscal_source) no documento.
+func (s *FinanceExtractionService) runFiscal(
+	jobID, workspaceID, documentID uuid.UUID,
+	inputType dom.ExtractionInputType,
+	mimeType string,
+	content []byte,
+	chave string,
+) {
+	ctx := context.Background()
+
+	job, err := s.jobs.GetByID(ctx, workspaceID, jobID)
+	if err != nil {
+		return
+	}
+	started := time.Now().UTC()
+	job.Status = dom.JobProcessing
+	job.StartedAt = &started
+	job.UpdatedAt = started
+	if err := s.jobs.Update(ctx, job); err != nil {
+		return
+	}
+	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionProcessing, nil, nil)
+
+	// 1) Caminho de ouro: SEFAZ (verificado). Só debita cota em sucesso.
+	if chave != "" && s.infosimples != nil && s.infosimples.Enabled() {
+		if structured, ok := s.trySEFAZ(ctx, workspaceID, chave); ok {
+			finished := time.Now().UTC()
+			job.Provider = dom.FiscalSourceSEFAZ
+			job.Status = dom.JobCompleted
+			job.FinishedAt = &finished
+			job.UpdatedAt = finished
+			_ = s.jobs.Update(ctx, job)
+			s.updateDocumentFiscalResult(ctx, workspaceID, documentID, structured, dom.FiscalSourceSEFAZ)
+			slog.Info("✅ ingestão fiscal via SEFAZ concluída",
+				slog.String("document_id", documentID.String()),
+				slog.Duration("duration", finished.Sub(started)),
+			)
+			return
+		}
+		// SEFAZ indisponível/sem cota → degrada para IA (abaixo).
+	}
+
+	// 2) Fallback IA (LLM). Requer extractor habilitado.
+	if !s.extractor.Enabled() {
+		s.failFiscalJob(ctx, job, workspaceID, documentID, extraction.ErrExtractionDisabled, started)
+		return
+	}
+	profile := extraction.FiscalReceiptProfile()
+	res, extErr := s.extractor.Extract(ctx, extraction.ExtractInput{
+		InputType: string(inputType),
+		MimeType:  mimeType,
+		Content:   content,
+		Profile:   &profile,
+	})
+	finished := time.Now().UTC()
+	job.FinishedAt = &finished
+	job.UpdatedAt = finished
+	if len(res.RawResponse) > 0 {
+		job.RawResponse = res.RawResponse
+	}
+	if res.Model != "" {
+		m := res.Model
+		job.Model = &m
+	}
+	if res.PromptVersion != "" {
+		pv := res.PromptVersion
+		job.PromptVersion = &pv
+	}
+	if extErr != nil {
+		s.failFiscalJob(ctx, job, workspaceID, documentID, friendlyExtractionErr(extErr), started)
+		return
+	}
+	job.Provider = s.extractor.Provider()
+	job.Status = dom.JobCompleted
+	_ = s.jobs.Update(ctx, job)
+	s.updateDocumentFiscalResult(ctx, workspaceID, documentID, []byte(res.StructuredJSON), dom.FiscalSourceOCRLLM)
+	slog.Info("✅ ingestão fiscal via IA (fallback) concluída",
+		slog.String("document_id", documentID.String()),
+		slog.Duration("duration", finished.Sub(started)),
+	)
+}
+
+// trySEFAZ consulta a NFC-e na Infosimples e devolve o JSON no schema fiscal
+// (fiscal-extract-v1, o mesmo do LLM). Usa cache por chave (não paga 2×) e
+// reserva de cota (estornada em falha). ok=false → chamador degrada para IA.
+func (s *FinanceExtractionService) trySEFAZ(ctx context.Context, workspaceID uuid.UUID, chave string) ([]byte, bool) {
+	cacheKey := "nfce:" + workspaceID.String() + ":" + chave
+	if cached, _ := s.cache.Get(ctx, cacheKey); cached != "" {
+		return []byte(cached), true // reuso: não debita cota nem consulta de novo
+	}
+
+	if s.entitlements != nil {
+		allowed, _, err := s.entitlements.ReserveFiscalSEFAZ(ctx, workspaceID)
+		if err == nil && !allowed {
+			slog.Info("cota SEFAZ do mês esgotada — degradando para IA",
+				slog.String("workspace_id", workspaceID.String()))
+			return nil, false
+		}
+	}
+
+	res, err := s.infosimples.ConsultarNFCe(ctx, chave)
+	if err != nil {
+		if s.entitlements != nil {
+			s.entitlements.RefundFiscalSEFAZ(ctx, workspaceID) // só sucesso debita
+		}
+		slog.Warn("consulta SEFAZ falhou — fallback IA",
+			slog.String("error", err.Error()),
+			slog.String("workspace_id", workspaceID.String()))
+		return nil, false
+	}
+
+	structured, err := fiscalJSONFromNFCe(res)
+	if err != nil {
+		if s.entitlements != nil {
+			s.entitlements.RefundFiscalSEFAZ(ctx, workspaceID)
+		}
+		return nil, false
+	}
+	_ = s.cache.Set(ctx, cacheKey, string(structured), 720*time.Hour) // 30 dias
+	return structured, true
+}
+
+// failFiscalJob marca o job fiscal como falho e o documento como failed.
+func (s *FinanceExtractionService) failFiscalJob(
+	ctx context.Context,
+	job *dom.FinanceExtractionJob,
+	workspaceID, documentID uuid.UUID,
+	cause error,
+	started time.Time,
+) {
+	finished := time.Now().UTC()
+	msg := cause.Error()
+	job.Status = dom.JobFailed
+	job.ErrorMessage = &msg
+	job.FinishedAt = &finished
+	job.UpdatedAt = finished
+	_ = s.jobs.Update(ctx, job)
+	s.markDocumentFailed(ctx, workspaceID, documentID)
+	slog.Error("❌ ingestão fiscal falhou",
+		slog.String("error", msg),
+		slog.String("document_id", documentID.String()),
+		slog.String("workspace_id", workspaceID.String()),
+		slog.Duration("duration", finished.Sub(started)),
+	)
+}
+
+// updateDocumentFiscalResult grava o detalhamento extraído + a procedência.
+func (s *FinanceExtractionService) updateDocumentFiscalResult(
+	ctx context.Context,
+	workspaceID, documentID uuid.UUID,
+	structured []byte,
+	source string,
+) {
+	doc, err := s.docs.GetByID(ctx, workspaceID, documentID)
+	if err != nil {
+		return
+	}
+	doc.ExtractionStatus = dom.ExtractionExtracted
+	if len(structured) > 0 {
+		doc.ExtractedJSON = structured
+	}
+	src := source
+	doc.FiscalSource = &src
+	doc.UpdatedAt = time.Now().UTC()
+	_ = s.docs.UpdateExtraction(ctx, doc)
+}
+
+// fiscalJSONFromNFCe converte o resultado da SEFAZ para o schema fiscal-extract-v1
+// (o mesmo produzido pelo LLM), de modo que ParseFiscal e o restante do fluxo de
+// confirmação funcionem sem alteração, independentemente da procedência.
+func fiscalJSONFromNFCe(r *infosimples.NFCeResult) ([]byte, error) {
+	type outItem struct {
+		Description        string  `json:"description"`
+		Quantity           float64 `json:"quantity"`
+		UnitAmount         float64 `json:"unit_amount"`
+		Amount             float64 `json:"amount"`
+		CategorySuggestion string  `json:"category_suggestion"`
+		RawText            string  `json:"raw_text"`
+	}
+	type out struct {
+		Merchant    string    `json:"merchant"`
+		CNPJ        string    `json:"cnpj"`
+		Date        string    `json:"date"`
+		TotalAmount float64   `json:"total_amount"`
+		Items       []outItem `json:"items"`
+		Warnings    []string  `json:"warnings"`
+	}
+	o := out{
+		Merchant:    r.EmitenteNome,
+		CNPJ:        r.EmitenteCNPJ,
+		Date:        r.DataEmissao,
+		TotalAmount: float64(r.ValorTotalCents) / 100.0,
+		Items:       make([]outItem, 0, len(r.Produtos)),
+		Warnings:    r.Warnings,
+	}
+	for _, p := range r.Produtos {
+		o.Items = append(o.Items, outItem{
+			Description:        p.Descricao,
+			Quantity:           float64(p.QuantityMilli) / 1000.0,
+			UnitAmount:         float64(p.UnitCents) / 100.0,
+			Amount:             float64(p.AmountCents) / 100.0,
+			CategorySuggestion: "",
+			RawText:            p.Codigo,
+		})
+	}
+	return json.Marshal(o)
 }
 
 // PurchaseSuggestion é uma compra sugerida a partir da extração da fatura.
