@@ -17,6 +17,7 @@ import (
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/infosimples"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/queue"
 )
 
 // nfceConsulter é a porta (nil-safe) para a consulta de NFC-e na SEFAZ via
@@ -24,6 +25,28 @@ import (
 type nfceConsulter interface {
 	Enabled() bool
 	ConsultarNFCe(ctx context.Context, nfce string) (*infosimples.NFCeResult, error)
+}
+
+// qrDecoder é a porta (nil-safe) para leitura server-side do QR Code do cupom.
+type qrDecoder interface {
+	DecodeNFCe(content []byte) (string, bool)
+}
+
+// MessageTypeFiscalIngestion roteia as mensagens de ingestão fiscal na fila.
+const MessageTypeFiscalIngestion = "fiscal_ingestion"
+
+// FiscalIngestionMessage é o payload enfileirado para processar um cupom. Não
+// carrega o conteúdo do arquivo (recarregado do storage pelo worker) — mantém a
+// mensagem pequena e durável.
+type FiscalIngestionMessage struct {
+	JobID       uuid.UUID `json:"job_id"`
+	WorkspaceID uuid.UUID `json:"workspace_id"`
+	DocumentID  uuid.UUID `json:"document_id"`
+	InputType   string    `json:"input_type"`
+	MimeType    string    `json:"mime_type"`
+	// Chave opcional (colada pelo usuário ou lida no navegador). Vazia → o worker
+	// tenta decodificar o QR Code server-side a partir da imagem.
+	Chave string `json:"chave,omitempty"`
 }
 
 // FinanceExtractionService orquestra a criação e execução (assíncrona) de jobs
@@ -37,11 +60,14 @@ type FinanceExtractionService struct {
 	entitlements *appent.Service    // opcional (nil = sem cota)
 	cache        *cache.Cache       // opcional (nil = sem cache por chave)
 	categorizer  *FiscalCategorizer // opcional (nil = itens sem categoria)
+	queue        queue.Publisher    // opcional (nil = processa inline)
+	qr           qrDecoder          // opcional (nil = sem decode QR server-side)
 }
 
 // NewFinanceExtractionService constrói o serviço de extração.
-// infosimples/entitlements/cache/categorizer são opcionais (podem ser nil):
-// sem eles, a ingestão fiscal opera só pelo caminho IA e/ou sem categoria.
+// infosimples/entitlements/cache/categorizer/queue/qr são opcionais (podem ser
+// nil): sem queue, a ingestão fiscal roda inline (goroutine); sem qr, não há
+// leitura server-side do QR Code.
 func NewFinanceExtractionService(
 	jobs dom.FinanceExtractionJobRepository,
 	docs dom.FinanceDocumentRepository,
@@ -50,6 +76,8 @@ func NewFinanceExtractionService(
 	entitlements *appent.Service,
 	c *cache.Cache,
 	categorizer *FiscalCategorizer,
+	q queue.Publisher,
+	qr qrDecoder,
 ) *FinanceExtractionService {
 	return &FinanceExtractionService{
 		jobs:         jobs,
@@ -59,6 +87,8 @@ func NewFinanceExtractionService(
 		entitlements: entitlements,
 		cache:        c,
 		categorizer:  categorizer,
+		queue:        q,
+		qr:           qr,
 	}
 }
 
@@ -234,8 +264,9 @@ func (s *FinanceExtractionService) GetStatus(ctx context.Context, workspaceID, d
 }
 
 // StartFiscalExtraction inicia a ingestão de um cupom/nota fiscal (kind=fiscal).
-// Caminho de ouro: SEFAZ via Infosimples quando há chave/QR e o provider está
-// ativo; senão, ou em falha/sem cota, cai no fallback IA (LLM). Assíncrono.
+// Cria o job (pending) e ENFILEIRA o processamento; o worker resolve SEFAZ
+// (verificado) com fallback IA. Sem fila configurada, roda inline (goroutine).
+// A chave é opcional: sem ela, o worker tenta ler o QR Code server-side.
 func (s *FinanceExtractionService) StartFiscalExtraction(
 	ctx context.Context,
 	workspaceID, documentID uuid.UUID,
@@ -245,11 +276,11 @@ func (s *FinanceExtractionService) StartFiscalExtraction(
 ) (*dom.FinanceExtractionJob, error) {
 	now := time.Now().UTC()
 	chave = strings.TrimSpace(chave)
-	sefazPossible := chave != "" && s.infosimples != nil && s.infosimples.Enabled()
+	infosimplesEnabled := s.infosimples != nil && s.infosimples.Enabled()
 
 	provider := s.extractor.Provider()
-	if sefazPossible {
-		provider = dom.FiscalSourceSEFAZ
+	if infosimplesEnabled {
+		provider = dom.FiscalSourceSEFAZ // otimista; corrigido no processamento
 	}
 
 	job := &dom.FinanceExtractionJob{
@@ -264,7 +295,7 @@ func (s *FinanceExtractionService) StartFiscalExtraction(
 	}
 
 	// Nenhum caminho disponível (sem SEFAZ e sem LLM): falha controlada.
-	if !sefazPossible && !s.extractor.Enabled() {
+	if !infosimplesEnabled && !s.extractor.Enabled() {
 		msg := extraction.ErrExtractionDisabled.Error()
 		job.Status = dom.JobFailed
 		job.ErrorMessage = &msg
@@ -280,35 +311,69 @@ func (s *FinanceExtractionService) StartFiscalExtraction(
 		return nil, err
 	}
 
+	// Fila: publica a mensagem (durável via job + sweeper) e retorna já.
+	if s.queue != nil {
+		body, err := json.Marshal(FiscalIngestionMessage{
+			JobID: job.ID, WorkspaceID: workspaceID, DocumentID: documentID,
+			InputType: inputType, MimeType: mimeType, Chave: chave,
+		})
+		if err == nil {
+			if perr := s.queue.Publish(ctx, queue.Message{Type: MessageTypeFiscalIngestion, Body: body}); perr == nil {
+				return job, nil
+			} else {
+				slog.Warn("falha ao publicar na fila — caindo para inline", slog.String("error", perr.Error()))
+			}
+		}
+	}
+
+	// Fallback inline (sem fila): goroutine própria.
 	buf := make([]byte, len(content))
 	copy(buf, content)
-	go s.runFiscal(job.ID, workspaceID, documentID, dom.ExtractionInputType(inputType), mimeType, buf, chave)
+	go func() {
+		if err := s.ProcessFiscal(context.Background(), job.ID, workspaceID, documentID, inputType, mimeType, buf, chave); err != nil {
+			slog.Error("ingestão fiscal inline falhou", slog.String("error", err.Error()))
+		}
+	}()
 	return job, nil
 }
 
-// runFiscal executa a ingestão fiscal: tenta SEFAZ e, em qualquer impedimento,
-// degrada para o LLM. Grava a procedência (fiscal_source) no documento.
-func (s *FinanceExtractionService) runFiscal(
+// ProcessFiscal executa a ingestão fiscal de forma síncrona (chamada pelo worker
+// da fila ou inline). Retorna erro quando a falha é retriável (a fila reagenda);
+// falhas terminais (sem caminho de processamento) marcam o job como failed e
+// retornam nil. Grava a procedência (fiscal_source) no documento.
+func (s *FinanceExtractionService) ProcessFiscal(
+	ctx context.Context,
 	jobID, workspaceID, documentID uuid.UUID,
-	inputType dom.ExtractionInputType,
-	mimeType string,
+	inputType, mimeType string,
 	content []byte,
 	chave string,
-) {
-	ctx := context.Background()
-
+) error {
 	job, err := s.jobs.GetByID(ctx, workspaceID, jobID)
 	if err != nil {
-		return
+		return err // transitório: a fila tenta de novo
 	}
+	// Já concluído (ex.: reenfileirado pelo sweeper após completar): no-op.
+	if job.Status == dom.JobCompleted {
+		return nil
+	}
+
 	started := time.Now().UTC()
 	job.Status = dom.JobProcessing
 	job.StartedAt = &started
 	job.UpdatedAt = started
 	if err := s.jobs.Update(ctx, job); err != nil {
-		return
+		return err
 	}
 	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionProcessing, nil, nil)
+
+	// Sem chave explícita: tenta ler o QR Code da imagem no servidor.
+	chave = strings.TrimSpace(chave)
+	if chave == "" && dom.ExtractionInputType(inputType) == dom.ExtractionInputImage && s.qr != nil {
+		if decoded, ok := s.qr.DecodeNFCe(content); ok {
+			chave = decoded
+			slog.Info("QR Code lido server-side", slog.String("document_id", documentID.String()))
+		}
+	}
 
 	// 1) Caminho de ouro: SEFAZ (verificado). Só debita cota em sucesso.
 	if chave != "" && s.infosimples != nil && s.infosimples.Enabled() {
@@ -324,7 +389,7 @@ func (s *FinanceExtractionService) runFiscal(
 				slog.String("document_id", documentID.String()),
 				slog.Duration("duration", finished.Sub(started)),
 			)
-			return
+			return nil
 		}
 		// SEFAZ indisponível/sem cota → degrada para IA (abaixo).
 	}
@@ -332,7 +397,7 @@ func (s *FinanceExtractionService) runFiscal(
 	// 2) Fallback IA (LLM). Requer extractor habilitado.
 	if !s.extractor.Enabled() {
 		s.failFiscalJob(ctx, job, workspaceID, documentID, extraction.ErrExtractionDisabled, started)
-		return
+		return nil // terminal: sem LLM não adianta reenfileirar
 	}
 	profile := extraction.FiscalReceiptProfile()
 	res, extErr := s.extractor.Extract(ctx, extraction.ExtractInput{
@@ -357,7 +422,7 @@ func (s *FinanceExtractionService) runFiscal(
 	}
 	if extErr != nil {
 		s.failFiscalJob(ctx, job, workspaceID, documentID, friendlyExtractionErr(extErr), started)
-		return
+		return extErr // pode ser transitório (rate limit): a fila reagenda
 	}
 	job.Provider = s.extractor.Provider()
 	job.Status = dom.JobCompleted
@@ -373,6 +438,44 @@ func (s *FinanceExtractionService) runFiscal(
 		slog.String("document_id", documentID.String()),
 		slog.Duration("duration", finished.Sub(started)),
 	)
+	return nil
+}
+
+// RecoverStaleFiscalJobs reenfileira jobs fiscais travados (pending/processing
+// antigos) — recuperação após restart/crash. Retorna quantos foram reenfileirados.
+// Só reenfileira jobs de documentos kind=fiscal.
+func (s *FinanceExtractionService) RecoverStaleFiscalJobs(ctx context.Context, olderThan time.Duration) (int, error) {
+	if s.queue == nil {
+		return 0, nil
+	}
+	before := time.Now().UTC().Add(-olderThan)
+	jobs, err := s.jobs.ListStale(ctx, []dom.ExtractionJobStatus{dom.JobPending, dom.JobProcessing}, before, 200)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for i := range jobs {
+		j := jobs[i]
+		doc, derr := s.docs.GetByID(ctx, j.WorkspaceID, j.DocumentID)
+		if derr != nil || doc.Kind != dom.DocumentFiscal {
+			continue // não-fiscal (ou doc sumiu): fora do escopo deste worker
+		}
+		body, merr := json.Marshal(FiscalIngestionMessage{
+			JobID: j.ID, WorkspaceID: j.WorkspaceID, DocumentID: j.DocumentID,
+			InputType: string(j.InputType), MimeType: doc.MimeType,
+			// Sem chave: o worker relê o QR server-side a partir da imagem.
+		})
+		if merr != nil {
+			continue
+		}
+		if perr := s.queue.Publish(ctx, queue.Message{Type: MessageTypeFiscalIngestion, Body: body}); perr == nil {
+			n++
+		}
+	}
+	if n > 0 {
+		slog.Info("♻️ jobs fiscais travados reenfileirados", slog.Int("count", n))
+	}
+	return n, nil
 }
 
 // trySEFAZ consulta a NFC-e na Infosimples e devolve o JSON no schema fiscal

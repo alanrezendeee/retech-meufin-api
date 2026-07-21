@@ -53,4 +53,8 @@ type FinanceExtractionJobRepository interface {
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*FinanceExtractionJob, error)
 	// GetByDocument retorna o job mais recente do documento.
 	GetByDocument(ctx context.Context, workspaceID, documentID uuid.UUID) (*FinanceExtractionJob, error)
+	// ListStale retorna jobs travados (status pending/processing) mais antigos que
+	// updatedBefore — para o sweeper reenfileirar após restart/crash. Global
+	// (todos os tenants), pois a recuperação não parte de uma request autenticada.
+	ListStale(ctx context.Context, statuses []ExtractionJobStatus, updatedBefore time.Time, limit int) ([]FinanceExtractionJob, error)
 }
