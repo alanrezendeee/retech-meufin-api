@@ -35,6 +35,28 @@ func TestBuildInflationChainedWeighted(t *testing.T) {
 	}
 }
 
+func TestBuildInflationSeparaPorUnidade(t *testing.T) {
+	// Mesmo NOME "tomate" com unidades diferentes (KG e UN) NÃO deve casar:
+	// são produtos distintos. Só o par (tomate, KG) casa entre os meses.
+	rows := []MonthlyProductPrice{
+		{Month: "2026-01", Name: "tomate", Unit: "KG", AvgUnitCents: 800, SpendCents: 1600},
+		{Month: "2026-01", Name: "tomate", Unit: "UN", AvgUnitCents: 150, SpendCents: 300},
+		{Month: "2026-02", Name: "tomate", Unit: "KG", AvgUnitCents: 1000, SpendCents: 2000},
+		// tomate/UN some no mês 2 → não casa.
+	}
+	inf := buildInflation(rows)
+	if len(inf.Points) != 2 {
+		t.Fatalf("esperava 2 pontos, veio %d", len(inf.Points))
+	}
+	if inf.Points[1].MatchedProducts != 1 {
+		t.Fatalf("só (tomate,KG) deveria casar; veio %d", inf.Points[1].MatchedProducts)
+	}
+	// fator = preço_kg mês2 / mês1 = 1000/800 = 1.25 → índice 125.
+	if diff := inf.Points[1].Index - 125.0; diff > 0.01 || diff < -0.01 {
+		t.Fatalf("índice esperado ≈125, veio %.4f", inf.Points[1].Index)
+	}
+}
+
 func TestBuildInflationEmpty(t *testing.T) {
 	inf := buildInflation(nil)
 	if len(inf.Points) != 0 {

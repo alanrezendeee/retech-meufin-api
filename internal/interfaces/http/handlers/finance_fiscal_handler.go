@@ -32,6 +32,8 @@ type fiscalItemJSON struct {
 	// para o auto-cadastro no save.
 	CategoryName  *string `json:"category_name"`
 	CategoryGroup *string `json:"category_group"`
+	// Unit é a unidade de medida (kg, un, L…) do item.
+	Unit *string `json:"unit"`
 }
 
 type fiscalNewEntryJSON struct {
@@ -110,6 +112,7 @@ func (h *FinanceFiscalHandler) Confirm(c *gin.Context) {
 			Category:      it.Category,
 			CategoryName:  it.CategoryName,
 			CategoryGroup: it.CategoryGroup,
+			Unit:          it.Unit,
 		})
 	}
 
@@ -171,6 +174,7 @@ type fiscalItemResponse struct {
 	UnitCents     int64     `json:"unit_cents"`
 	AmountCents   int64     `json:"amount_cents"`
 	Category      *string   `json:"category"`
+	Unit          *string   `json:"unit"`
 }
 
 func mapFiscalItems(items []dom.FiscalItem) []fiscalItemResponse {
@@ -185,6 +189,7 @@ func mapFiscalItems(items []dom.FiscalItem) []fiscalItemResponse {
 			UnitCents:     it.UnitCents,
 			AmountCents:   it.AmountCents,
 			Category:      it.Category,
+			Unit:          it.UnitOfMeasure,
 		}
 	}
 	return out

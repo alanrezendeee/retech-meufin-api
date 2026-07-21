@@ -20,6 +20,7 @@ type FinanceFiscalItemModel struct {
 	UnitCents     int64     `gorm:"column:unit_cents;not null;default:0"`
 	AmountCents   int64     `gorm:"column:amount_cents;not null"`
 	Category      *string   `gorm:"size:30"`
+	UnitOfMeasure *string   `gorm:"column:unit_of_measure;size:10"`
 	CreatedAt     time.Time `gorm:"not null"`
 	UpdatedAt     time.Time `gorm:"not null"`
 }
@@ -77,6 +78,7 @@ func fiscalItemToModel(i *dom.FiscalItem) FinanceFiscalItemModel {
 		UnitCents:     i.UnitCents,
 		AmountCents:   i.AmountCents,
 		Category:      i.Category,
+		UnitOfMeasure: i.UnitOfMeasure,
 		CreatedAt:     i.CreatedAt,
 		UpdatedAt:     i.UpdatedAt,
 	}
@@ -93,6 +95,7 @@ func modelToFiscalItem(m *FinanceFiscalItemModel) *dom.FiscalItem {
 		UnitCents:     m.UnitCents,
 		AmountCents:   m.AmountCents,
 		Category:      m.Category,
+		UnitOfMeasure: m.UnitOfMeasure,
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 	}
