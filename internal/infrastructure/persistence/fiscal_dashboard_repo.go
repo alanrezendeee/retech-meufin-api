@@ -31,6 +31,11 @@ const unitPriceExpr = `CASE
 // informada, senão o vencimento (due_date).
 const purchaseDateExpr = `COALESCE(e.purchase_date, e.due_date)`
 
+// Identidade do produto = (nome normalizado, unidade de medida normalizada).
+// Separar por unidade impede misturar R$/kg com R$/un no mesmo "produto".
+const productNameExpr = `LOWER(TRIM(fi.description))`
+const productUnitExpr = `UPPER(TRIM(COALESCE(fi.unit_of_measure, '')))`
+
 // fiscalJoin é o join base itens→lançamento, escopado por workspace e ignorando
 // lançamentos deletados. Sempre parametrize workspace com fi.workspace_id = ?.
 const fiscalJoin = `FROM finance_fiscal_items fi
@@ -48,7 +53,7 @@ func (r *FiscalDashboardRepository) Counts(ctx context.Context, workspaceID uuid
 		COUNT(DISTINCT fi.document_id) AS documents,
 		COUNT(*) AS items,
 		COALESCE(SUM(fi.amount_cents), 0) AS total_cents,
-		COUNT(DISTINCT LOWER(TRIM(fi.description))) AS products_count
+		COUNT(DISTINCT (` + productNameExpr + `, ` + productUnitExpr + `)) AS products_count
 	` + fiscalJoin + `
 	WHERE fi.workspace_id = ?`
 	if err := r.db.WithContext(ctx).Raw(sql, workspaceID).Scan(&row).Error; err != nil {
@@ -107,7 +112,8 @@ func (r *FiscalDashboardRepository) TopProducts(ctx context.Context, workspaceID
 
 	sql := `WITH agg AS (
 		SELECT
-			LOWER(TRIM(fi.description)) AS name,
+			` + productNameExpr + ` AS name,
+			` + productUnitExpr + ` AS unit,
 			COUNT(*) AS purchases,
 			COALESCE(SUM(fi.quantity_milli), 0) AS qty_milli_total,
 			COALESCE(SUM(fi.amount_cents), 0) AS total_cents,
@@ -120,7 +126,7 @@ func (r *FiscalDashboardRepository) TopProducts(ctx context.Context, workspaceID
 			(array_agg((` + unitPriceExpr + `)::bigint ORDER BY ` + purchaseDateExpr + ` DESC, fi.created_at DESC))[1] AS last_unit_cents
 		` + fiscalJoin + `
 		WHERE fi.workspace_id = ?
-		GROUP BY LOWER(TRIM(fi.description))
+		GROUP BY ` + productNameExpr + `, ` + productUnitExpr + `
 	)
 	SELECT *,
 		CASE WHEN first_unit_cents > 0
@@ -133,6 +139,7 @@ func (r *FiscalDashboardRepository) TopProducts(ctx context.Context, workspaceID
 	like := "%" + q + "%"
 	var rows []struct {
 		Name           string
+		Unit           string
 		Purchases      int64
 		QtyMilliTotal  int64
 		TotalCents     int64
@@ -152,6 +159,7 @@ func (r *FiscalDashboardRepository) TopProducts(ctx context.Context, workspaceID
 	for i := range rows {
 		out[i] = appf.FiscalProduct{
 			Name:           rows[i].Name,
+			Unit:           rows[i].Unit,
 			Purchases:      rows[i].Purchases,
 			QtyMilliTotal:  rows[i].QtyMilliTotal,
 			TotalCents:     rows[i].TotalCents,
@@ -170,27 +178,29 @@ func (r *FiscalDashboardRepository) TopProducts(ctx context.Context, workspaceID
 
 // PriceHistory retorna a série cronológica de compras de um produto (nome já
 // normalizado), com o nome do documento de origem quando disponível.
-func (r *FiscalDashboardRepository) PriceHistory(ctx context.Context, workspaceID uuid.UUID, name string) ([]appf.FiscalPurchase, error) {
+func (r *FiscalDashboardRepository) PriceHistory(ctx context.Context, workspaceID uuid.UUID, name, unit string) ([]appf.FiscalPurchase, error) {
 	sql := `SELECT
 		` + purchaseDateExpr + ` AS purchase_date,
 		(` + unitPriceExpr + `)::bigint AS unit_cents,
 		fi.quantity_milli AS quantity_milli,
 		fi.amount_cents AS amount_cents,
+		` + productUnitExpr + ` AS unit,
 		fi.document_id AS document_id,
 		COALESCE(d.original_file_name, '') AS document_name
 	` + fiscalJoin + `
 	LEFT JOIN finance_documents d ON d.id = fi.document_id AND d.workspace_id = fi.workspace_id AND d.deleted_at IS NULL
-	WHERE fi.workspace_id = ? AND LOWER(TRIM(fi.description)) = ?
+	WHERE fi.workspace_id = ? AND ` + productNameExpr + ` = ? AND ` + productUnitExpr + ` = ?
 	ORDER BY purchase_date ASC, fi.created_at ASC`
 	var rows []struct {
 		PurchaseDate  time.Time
 		UnitCents     int64
 		QuantityMilli int64
 		AmountCents   int64
+		Unit          string
 		DocumentID    uuid.UUID
 		DocumentName  string
 	}
-	if err := r.db.WithContext(ctx).Raw(sql, workspaceID, name).Scan(&rows).Error; err != nil {
+	if err := r.db.WithContext(ctx).Raw(sql, workspaceID, name, unit).Scan(&rows).Error; err != nil {
 		return nil, mapFinanceErr(err)
 	}
 	out := make([]appf.FiscalPurchase, len(rows))
@@ -200,6 +210,7 @@ func (r *FiscalDashboardRepository) PriceHistory(ctx context.Context, workspaceI
 			UnitCents:     rows[i].UnitCents,
 			QuantityMilli: rows[i].QuantityMilli,
 			AmountCents:   rows[i].AmountCents,
+			Unit:          rows[i].Unit,
 			DocumentID:    rows[i].DocumentID,
 			DocumentName:  rows[i].DocumentName,
 		}
@@ -212,7 +223,8 @@ func (r *FiscalDashboardRepository) PriceHistory(ctx context.Context, workspaceI
 func (r *FiscalDashboardRepository) MonthlyProductPrices(ctx context.Context, workspaceID uuid.UUID) ([]appf.MonthlyProductPrice, error) {
 	sql := `SELECT
 		to_char(date_trunc('month', ` + purchaseDateExpr + `), 'YYYY-MM') AS month,
-		LOWER(TRIM(fi.description)) AS name,
+		` + productNameExpr + ` AS name,
+		` + productUnitExpr + ` AS unit,
 		CASE WHEN SUM(fi.quantity_milli) > 0
 			THEN ROUND(SUM(fi.amount_cents) * 1000.0 / SUM(fi.quantity_milli))::bigint
 			ELSE ROUND(AVG(` + unitPriceExpr + `))::bigint END AS avg_unit_cents,
@@ -220,11 +232,12 @@ func (r *FiscalDashboardRepository) MonthlyProductPrices(ctx context.Context, wo
 		COUNT(*) AS purchases
 	` + fiscalJoin + `
 	WHERE fi.workspace_id = ?
-	GROUP BY 1, 2
+	GROUP BY 1, 2, 3
 	ORDER BY 1 ASC`
 	var rows []struct {
 		Month        string
 		Name         string
+		Unit         string
 		AvgUnitCents int64
 		SpendCents   int64
 		Purchases    int64
@@ -237,6 +250,7 @@ func (r *FiscalDashboardRepository) MonthlyProductPrices(ctx context.Context, wo
 		out[i] = appf.MonthlyProductPrice{
 			Month:        rows[i].Month,
 			Name:         rows[i].Name,
+			Unit:         rows[i].Unit,
 			AvgUnitCents: rows[i].AvgUnitCents,
 			SpendCents:   rows[i].SpendCents,
 			Purchases:    rows[i].Purchases,

@@ -41,6 +41,8 @@ type FiscalConfirmItem struct {
 	Category      *string
 	CategoryName  *string
 	CategoryGroup *string
+	// Unit é a unidade de medida (kg, un, L…); normalizada e persistida.
+	Unit *string
 }
 
 // FiscalConfirmInput confirma o vínculo do cupom: a uma despesa existente
@@ -119,6 +121,7 @@ func (s *FiscalService) Confirm(ctx context.Context, in FiscalConfirmInput) (*do
 			UnitCents:     it.UnitCents,
 			AmountCents:   it.AmountCents,
 			Category:      it.Category,
+			UnitOfMeasure: normalizeUnitPtr(it.Unit),
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		}

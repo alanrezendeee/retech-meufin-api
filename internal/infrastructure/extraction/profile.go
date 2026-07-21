@@ -124,6 +124,7 @@ func fiscalInputSchema() map[string]any {
 		"properties": map[string]any{
 			"description":         map[string]any{"type": "string"},
 			"quantity":            map[string]any{"type": []string{"number", "null"}, "description": "Quantidade (ex.: 2, 0.455 p/ peso); null se ausente"},
+			"unit":                map[string]any{"type": "string", "description": "Unidade de medida como impressa (ex.: kg, un, L, g, cx); \"\" se ausente"},
 			"unit_amount":         map[string]any{"type": []string{"number", "null"}, "description": "Valor unitário em reais"},
 			"amount":              map[string]any{"type": []string{"number", "null"}, "description": "Valor total do item em reais"},
 			"category_suggestion": map[string]any{"type": "string"},
