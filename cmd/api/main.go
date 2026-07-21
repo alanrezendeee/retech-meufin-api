@@ -287,6 +287,7 @@ func main() {
 	finAccountSvc := appf.NewAccountService(finAccountRepo)
 	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
 	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc, finCategorySvc)
+	reconciliationSvc := appf.NewReconciliationService(persistence.NewReconciliationRepository(db), financialEntryRepo, finFiscalItemRepo, finDocRepo)
 	memberDocSvc := apph.NewMemberDocumentService(memberDocRepo, familyRepo, objStorage, storageCfg.MaxUploadMB)
 
 	vehicleRepo := persistence.NewVehicleRepository(db)
@@ -356,6 +357,7 @@ func main() {
 		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,
 		FinanceFiscalService:     finFiscalSvc,
+		ReconciliationService:    reconciliationSvc,
 		EntitlementService:       entitlementSvc,
 		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
