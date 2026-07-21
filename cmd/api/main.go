@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	stdlog "log"
@@ -26,6 +27,7 @@ import (
 	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
+	domfinance "github.com/retechfin/retechfin-api/internal/domain/finance"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
@@ -34,6 +36,8 @@ import (
 	"github.com/retechfin/retechfin-api/internal/infrastructure/infosimples"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/notification"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/qrdecode"
+	infraqueue "github.com/retechfin/retechfin-api/internal/infrastructure/queue"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
@@ -255,7 +259,30 @@ func main() {
 	entitlementSvc := appent.NewService(entitlementRepo, redisCache)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
 	fiscalCategorizer := appf.NewFiscalCategorizer(finCategorySvc, extraction.NewCategorizer(extractionCfg), redisCache)
-	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer)
+	// Fila de ingestão fiscal: in-process agora (atrás da interface Publisher);
+	// trocar por RabbitMQ é só um novo adaptador. QR decoder server-side lê a
+	// chave da imagem quando o usuário não a informa.
+	fiscalQueue := infraqueue.NewInProcess(6, 512, 3, 5*time.Second, log)
+	qrDecoder := qrdecode.New()
+	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer, fiscalQueue, qrDecoder)
+
+	// Worker: consome mensagens de ingestão fiscal, recarrega o conteúdo do
+	// storage e processa. Registrado antes de Start.
+	fiscalQueue.Register(appf.MessageTypeFiscalIngestion, func(ctx context.Context, msg infraqueue.Message) error {
+		var m appf.FiscalIngestionMessage
+		if err := json.Unmarshal(msg.Body, &m); err != nil {
+			return nil // mensagem inválida: descarta
+		}
+		doc, content, err := finDocSvc.LoadContent(ctx, m.WorkspaceID, m.DocumentID)
+		if err != nil {
+			if errors.Is(err, domfinance.ErrNotFound) {
+				return nil // documento removido: descarta
+			}
+			return err // transitório: reenfileira
+		}
+		return finExtSvc.ProcessFiscal(ctx, m.JobID, m.WorkspaceID, m.DocumentID, m.InputType, doc.MimeType, content, m.Chave)
+	})
+	fiscalQueue.Start(context.Background())
 	finAccountSvc := appf.NewAccountService(finAccountRepo)
 	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
 	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc, finCategorySvc)
@@ -346,6 +373,24 @@ func main() {
 		HealthPlanService:             healthPlanSvc,
 		ProfileService:                profileSvc,
 	})
+
+	// Sweeper de ingestão fiscal: reenfileira jobs travados (pending/processing
+	// antigos) no boot e periodicamente — recuperação após restart/crash.
+	go func() {
+		sweep := func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if _, err := finExtSvc.RecoverStaleFiscalJobs(ctx, 5*time.Minute); err != nil {
+				log.Warn("⚠️ recuperação de jobs fiscais falhou", slog.String("error", err.Error()))
+			}
+		}
+		sweep()
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			sweep()
+		}
+	}()
 
 	// Recorrências rolling: completa o horizonte de 12 meses no boot e diariamente.
 	go func() {

@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
@@ -74,6 +75,35 @@ func (r *FinanceExtractionJobRepository) GetByDocument(ctx context.Context, work
 		return nil, mapFinanceErr(err)
 	}
 	return modelToFinanceExtractionJob(&m), nil
+}
+
+func (r *FinanceExtractionJobRepository) ListStale(
+	ctx context.Context,
+	statuses []dom.ExtractionJobStatus,
+	updatedBefore time.Time,
+	limit int,
+) ([]dom.FinanceExtractionJob, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	ss := make([]string, len(statuses))
+	for i, s := range statuses {
+		ss[i] = string(s)
+	}
+	var models []FinanceExtractionJobModel
+	err := r.db.WithContext(ctx).
+		Where("status IN ? AND updated_at < ?", ss, updatedBefore).
+		Order("updated_at ASC").
+		Limit(limit).
+		Find(&models).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinanceExtractionJob, len(models))
+	for i := range models {
+		out[i] = *modelToFinanceExtractionJob(&models[i])
+	}
+	return out, nil
 }
 
 // --- conversões ---
