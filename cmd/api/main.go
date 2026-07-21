@@ -254,10 +254,11 @@ func main() {
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 	entitlementSvc := appent.NewService(entitlementRepo, redisCache)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
-	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache)
+	fiscalCategorizer := appf.NewFiscalCategorizer(finCategorySvc, extraction.NewCategorizer(extractionCfg), redisCache)
+	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer)
 	finAccountSvc := appf.NewAccountService(finAccountRepo)
 	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
-	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc)
+	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc, finCategorySvc)
 	memberDocSvc := apph.NewMemberDocumentService(memberDocRepo, familyRepo, objStorage, storageCfg.MaxUploadMB)
 
 	vehicleRepo := persistence.NewVehicleRepository(db)

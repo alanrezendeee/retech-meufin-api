@@ -89,6 +89,44 @@ func (s *ExpenseCategoryService) Create(ctx context.Context, in CreateExpenseCat
 	return cat, nil
 }
 
+// EnsureBySlug garante que exista uma categoria com o slug dado, criando quando
+// ausente (mapeada ao grupo global). created=true só quando de fato criou.
+// Idempotente por (workspace, slug): reconfirmações e concorrência não duplicam.
+func (s *ExpenseCategoryService) EnsureBySlug(ctx context.Context, workspaceID uuid.UUID, slug, name, groupSlug string) (*dom.ExpenseCategory, bool, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return nil, false, &dom.ValidationError{Msg: "slug da categoria é obrigatório"}
+	}
+	exists, err := s.repo.ExistsBySlug(ctx, workspaceID, slug)
+	if err != nil {
+		return nil, false, err
+	}
+	if exists {
+		return &dom.ExpenseCategory{WorkspaceID: workspaceID, Slug: slug, Name: name, GroupSlug: groupSlug}, false, nil
+	}
+	now := time.Now().UTC()
+	cat := &dom.ExpenseCategory{
+		ID:          uuid.New(),
+		WorkspaceID: workspaceID,
+		Slug:        slug,
+		Name:        strings.TrimSpace(name),
+		GroupSlug:   strings.TrimSpace(groupSlug),
+		Active:      true,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}
+	if cat.Name == "" {
+		cat.Name = slug
+	}
+	if err := cat.Validate(); err != nil {
+		return nil, false, err
+	}
+	if err := s.repo.Create(ctx, cat); err != nil {
+		return nil, false, err
+	}
+	return cat, true, nil
+}
+
 type UpdateExpenseCategoryInput struct {
 	WorkspaceID uuid.UUID
 	ID          uuid.UUID
