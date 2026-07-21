@@ -81,6 +81,7 @@ func (r *FinanceDocumentRepository) UpdateExtraction(ctx context.Context, d *dom
 			"extracted_json":    rawToJSON(d.ExtractedJSON),
 			"entry_id":          d.EntryID,
 			"fiscal_source":     d.FiscalSource,
+			"payment_method":    d.PaymentMethod,
 			"updated_at":        d.UpdatedAt,
 		})
 	if res.Error != nil {
@@ -128,6 +129,7 @@ func financeDocumentToModel(d *dom.FinanceDocument) FinanceDocumentModel {
 		ExtractedJSON:    rawToJSON(d.ExtractedJSON),
 		Metadata:         rawToJSON(d.Metadata),
 		FiscalSource:     d.FiscalSource,
+		PaymentMethod:    d.PaymentMethod,
 		CreatedAt:        d.CreatedAt,
 		UpdatedAt:        d.UpdatedAt,
 	}
@@ -161,6 +163,7 @@ func modelToFinanceDocument(m *FinanceDocumentModel) *dom.FinanceDocument {
 		ExtractedJSON:    extracted,
 		Metadata:         metadata,
 		FiscalSource:     m.FiscalSource,
+		PaymentMethod:    m.PaymentMethod,
 		CreatedAt:        m.CreatedAt,
 		UpdatedAt:        m.UpdatedAt,
 	}

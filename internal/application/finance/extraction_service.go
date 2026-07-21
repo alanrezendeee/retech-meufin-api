@@ -573,6 +573,15 @@ func (s *FinanceExtractionService) updateDocumentFiscalResult(
 	doc.ExtractionStatus = dom.ExtractionExtracted
 	if len(structured) > 0 {
 		doc.ExtractedJSON = structured
+		// Forma de pagamento (topo do cupom) → conciliação cupom × fatura.
+		var pm struct {
+			PaymentMethod string `json:"payment_method"`
+		}
+		if json.Unmarshal(structured, &pm) == nil {
+			if v := normalizePaymentMethod(pm.PaymentMethod); v != "" {
+				doc.PaymentMethod = &v
+			}
+		}
 	}
 	src := source
 	doc.FiscalSource = &src
@@ -597,23 +606,25 @@ type storedFiscalItem struct {
 }
 
 type storedFiscal struct {
-	Merchant    string             `json:"merchant"`
-	CNPJ        string             `json:"cnpj"`
-	Date        string             `json:"date"`
-	TotalAmount float64            `json:"total_amount"`
-	Items       []storedFiscalItem `json:"items"`
-	Warnings    []string           `json:"warnings"`
+	Merchant      string             `json:"merchant"`
+	CNPJ          string             `json:"cnpj"`
+	Date          string             `json:"date"`
+	TotalAmount   float64            `json:"total_amount"`
+	PaymentMethod string             `json:"payment_method,omitempty"`
+	Items         []storedFiscalItem `json:"items"`
+	Warnings      []string           `json:"warnings"`
 }
 
 // storedFiscalFromNFCe monta o cupom (sem categoria) a partir do resultado SEFAZ.
 func storedFiscalFromNFCe(r *infosimples.NFCeResult) storedFiscal {
 	sf := storedFiscal{
-		Merchant:    r.EmitenteNome,
-		CNPJ:        r.EmitenteCNPJ,
-		Date:        r.DataEmissao,
-		TotalAmount: float64(r.ValorTotalCents) / 100.0,
-		Items:       make([]storedFiscalItem, 0, len(r.Produtos)),
-		Warnings:    r.Warnings,
+		Merchant:      r.EmitenteNome,
+		CNPJ:          r.EmitenteCNPJ,
+		Date:          r.DataEmissao,
+		TotalAmount:   float64(r.ValorTotalCents) / 100.0,
+		PaymentMethod: r.PaymentMethod,
+		Items:         make([]storedFiscalItem, 0, len(r.Produtos)),
+		Warnings:      r.Warnings,
 	}
 	for _, p := range r.Produtos {
 		sf.Items = append(sf.Items, storedFiscalItem{
@@ -637,11 +648,12 @@ func storedFiscalFromLLM(raw []byte) (storedFiscal, bool) {
 		return storedFiscal{}, false
 	}
 	sf := storedFiscal{
-		Merchant: strings.TrimSpace(f.Merchant),
-		CNPJ:     strings.TrimSpace(f.CNPJ),
-		Date:     f.Date,
-		Warnings: f.Warnings,
-		Items:    make([]storedFiscalItem, 0, len(f.Items)),
+		Merchant:      strings.TrimSpace(f.Merchant),
+		CNPJ:          strings.TrimSpace(f.CNPJ),
+		Date:          f.Date,
+		PaymentMethod: normalizePaymentMethod(f.PaymentMethod),
+		Warnings:      f.Warnings,
+		Items:         make([]storedFiscalItem, 0, len(f.Items)),
 	}
 	if f.TotalAmount != nil {
 		sf.TotalAmount = *f.TotalAmount
@@ -804,6 +816,29 @@ func (s *FinanceExtractionService) ParsePurchases(doc *dom.FinanceDocument) ([]P
 	return out, nil
 }
 
+// normalizePaymentMethod padroniza a forma de pagamento em um conjunto fechado
+// (credito|debito|dinheiro|pix|outros); "" quando desconhecida. Aceita texto
+// livre (do LLM) ou já-normalizado (da SEFAZ).
+func normalizePaymentMethod(s string) string {
+	l := strings.ToLower(strings.TrimSpace(s))
+	switch {
+	case l == "":
+		return ""
+	case l == "credito" || l == "debito" || l == "dinheiro" || l == "pix" || l == "outros":
+		return l
+	case strings.Contains(l, "credito") || strings.Contains(l, "crédito"):
+		return "credito"
+	case strings.Contains(l, "debito") || strings.Contains(l, "débito"):
+		return "debito"
+	case strings.Contains(l, "pix"):
+		return "pix"
+	case strings.Contains(l, "dinheiro") || strings.Contains(l, "espécie") || strings.Contains(l, "especie"):
+		return "dinheiro"
+	default:
+		return "outros"
+	}
+}
+
 // onlyDigits mantém apenas os dígitos de uma string (para validar a chave de 44).
 func onlyDigits(s string) string {
 	var b strings.Builder
@@ -863,22 +898,25 @@ type FiscalItemSuggestion struct {
 
 // FiscalSuggestion é o cupom/nota fiscal estruturado sugerido pela extração.
 type FiscalSuggestion struct {
-	Merchant   string
-	CNPJ       string
-	Date       string // YYYY-MM-DD ("" quando ilegível)
-	TotalCents int64
-	Items      []FiscalItemSuggestion
-	Warnings   []string
+	Merchant string
+	CNPJ     string
+	Date     string // YYYY-MM-DD ("" quando ilegível)
+	// PaymentMethod: credito|debito|dinheiro|pix|outros ("" quando desconhecido).
+	PaymentMethod string
+	TotalCents    int64
+	Items         []FiscalItemSuggestion
+	Warnings      []string
 }
 
 // fiscalExtraction espelha o schema fiscal-extract-v1 (profile.go).
 type fiscalExtraction struct {
-	Merchant    string       `json:"merchant"`
-	CNPJ        string       `json:"cnpj"`
-	Date        string       `json:"date"`
-	TotalAmount *float64     `json:"total_amount"`
-	Items       []fiscalItem `json:"items"`
-	Warnings    []string     `json:"warnings"`
+	Merchant      string       `json:"merchant"`
+	CNPJ          string       `json:"cnpj"`
+	Date          string       `json:"date"`
+	PaymentMethod string       `json:"payment_method"`
+	TotalAmount   *float64     `json:"total_amount"`
+	Items         []fiscalItem `json:"items"`
+	Warnings      []string     `json:"warnings"`
 }
 
 type fiscalItem struct {
@@ -905,12 +943,13 @@ func (s *FinanceExtractionService) ParseFiscal(doc *dom.FinanceDocument) (*Fisca
 		return nil, &dom.ValidationError{Msg: "extracted_json inválido: " + err.Error()}
 	}
 	out := &FiscalSuggestion{
-		Merchant:   strings.TrimSpace(f.Merchant),
-		CNPJ:       strings.TrimSpace(f.CNPJ),
-		Date:       normalizePurchaseDate(f.Date, ""),
-		TotalCents: reaisToCents(f.TotalAmount),
-		Items:      make([]FiscalItemSuggestion, 0, len(f.Items)),
-		Warnings:   f.Warnings,
+		Merchant:      strings.TrimSpace(f.Merchant),
+		CNPJ:          strings.TrimSpace(f.CNPJ),
+		Date:          normalizePurchaseDate(f.Date, ""),
+		PaymentMethod: normalizePaymentMethod(f.PaymentMethod),
+		TotalCents:    reaisToCents(f.TotalAmount),
+		Items:         make([]FiscalItemSuggestion, 0, len(f.Items)),
+		Warnings:      f.Warnings,
 	}
 	for _, it := range f.Items {
 		qty := int64(1000) // default 1 unidade

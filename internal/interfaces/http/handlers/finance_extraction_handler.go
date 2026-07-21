@@ -97,12 +97,13 @@ type fiscalItemSuggestionResponse struct {
 }
 
 type fiscalSuggestionResponse struct {
-	Merchant   string                         `json:"merchant,omitempty"`
-	CNPJ       string                         `json:"cnpj,omitempty"`
-	Date       string                         `json:"date,omitempty"`
-	TotalCents int64                          `json:"total_cents"`
-	Items      []fiscalItemSuggestionResponse `json:"items"`
-	Warnings   []string                       `json:"warnings,omitempty"`
+	Merchant      string                         `json:"merchant,omitempty"`
+	CNPJ          string                         `json:"cnpj,omitempty"`
+	Date          string                         `json:"date,omitempty"`
+	PaymentMethod string                         `json:"payment_method,omitempty"`
+	TotalCents    int64                          `json:"total_cents"`
+	Items         []fiscalItemSuggestionResponse `json:"items"`
+	Warnings      []string                       `json:"warnings,omitempty"`
 }
 
 // Status responde GET /documents/:id/extraction-status. Quando o documento já
@@ -187,12 +188,13 @@ func mapFiscalSuggestion(f *app.FiscalSuggestion) *fiscalSuggestionResponse {
 		}
 	}
 	return &fiscalSuggestionResponse{
-		Merchant:   f.Merchant,
-		CNPJ:       f.CNPJ,
-		Date:       f.Date,
-		TotalCents: f.TotalCents,
-		Items:      items,
-		Warnings:   f.Warnings,
+		Merchant:      f.Merchant,
+		CNPJ:          f.CNPJ,
+		Date:          f.Date,
+		PaymentMethod: f.PaymentMethod,
+		TotalCents:    f.TotalCents,
+		Items:         items,
+		Warnings:      f.Warnings,
 	}
 }
 
