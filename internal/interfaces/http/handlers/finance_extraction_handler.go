@@ -59,6 +59,10 @@ type financeExtractionStatusResponse struct {
 	Purchases    []purchaseSuggestionResponse `json:"purchases,omitempty"`
 	Invoice      *invoiceMetaResponse         `json:"invoice,omitempty"`
 	Fiscal       *fiscalSuggestionResponse    `json:"fiscal,omitempty"`
+	// FiscalSource: procedência do detalhamento fiscal — "sefaz" (verificado na
+	// Receita) ou "ocr_llm" (leitura por IA, requer conferência). Dirige o badge
+	// de confiança na UI. Presente só em documentos fiscais já extraídos.
+	FiscalSource *string `json:"fiscal_source,omitempty"`
 }
 
 type invoiceCreditResponse struct {
@@ -138,6 +142,7 @@ func (h *FinanceExtractionHandler) Status(c *gin.Context) {
 	doc, derr := h.docs.Get(c.Request.Context(), ws, documentID)
 	if derr == nil && doc.ExtractionStatus == dom.ExtractionExtracted {
 		if doc.Kind == dom.DocumentFiscal {
+			out.FiscalSource = doc.FiscalSource
 			if fiscal, ferr := h.ext.ParseFiscal(doc); ferr == nil {
 				out.Fiscal = mapFiscalSuggestion(fiscal)
 			}
@@ -237,10 +242,10 @@ func (it confirmInvoiceItemRequest) cents() int64 {
 }
 
 type confirmInvoiceRequest struct {
-	CardID      *string                     `json:"card_id"`
-	DueDate     string                      `json:"due_date"` // YYYY-MM-DD
-	Description string                      `json:"description"`
-	Status      string                      `json:"status"`
+	CardID      *string `json:"card_id"`
+	DueDate     string  `json:"due_date"` // YYYY-MM-DD
+	Description string  `json:"description"`
+	Status      string  `json:"status"`
 	// AmountCents: TOTAL A PAGAR da fatura. Em faturas com créditos difere da
 	// soma das compras. Ausente/zero = soma dos itens (comportamento antigo).
 	AmountCents *int64                      `json:"amount_cents"`

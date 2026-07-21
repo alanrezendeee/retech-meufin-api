@@ -18,6 +18,7 @@ import (
 	appacc "github.com/retechfin/retechfin-api/internal/application/account"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	appedu "github.com/retechfin/retechfin-api/internal/application/education"
+	appent "github.com/retechfin/retechfin-api/internal/application/entitlement"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
@@ -30,6 +31,7 @@ import (
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/fipe"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/infosimples"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/notification"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/persistence"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
@@ -202,6 +204,15 @@ func main() {
 		log.Warn("⚠️ REDIS_URL não configurado — cache FIPE desabilitado")
 	}
 
+	// Infosimples — consulta SEFAZ de NFC-e (cupom fiscal). Sem token, a
+	// ingestão fiscal opera só pelo caminho IA (fallback).
+	infosimplesClient := infosimples.New(infosimples.ConfigFromEnv())
+	if infosimplesClient.Enabled() {
+		log.Info("✅ Infosimples (SEFAZ/NFC-e) configurado!")
+	} else {
+		log.Warn("⚠️ Infosimples desabilitado — ingestão fiscal só por IA (defina INFOSIMPLES_TOKEN)")
+	}
+
 	// FIPE
 	fipeClient := fipe.New(cfg.FipeBaseURL, redisCache)
 	log.Info(fmt.Sprintf("✅ Cliente FIPE configurado! base_url=%s", func() string {
@@ -221,6 +232,7 @@ func main() {
 	finCategoryRepo := persistence.NewFinanceExpenseCategoryRepository(db)
 	finDashRepo := persistence.NewFinanceDashboardRepository(db)
 	finFiscalItemRepo := persistence.NewFiscalItemRepository(db)
+	entitlementRepo := persistence.NewEntitlementRepository(db)
 	memberDocRepo := persistence.NewHealthMemberDocumentRepository(db)
 
 	accSvc := appl.NewAccountService(accRepo)
@@ -240,8 +252,9 @@ func main() {
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo)
 	finCategorySvc := appf.NewExpenseCategoryService(finCategoryRepo)
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
+	entitlementSvc := appent.NewService(entitlementRepo, redisCache)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
-	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor)
+	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache)
 	finAccountSvc := appf.NewAccountService(finAccountRepo)
 	finDashSvc := appf.NewFinanceDashboardService(finDashRepo)
 	finFiscalSvc := appf.NewFiscalService(finFiscalItemRepo, financialEntryRepo, finDocRepo, financialEntrySvc)
@@ -314,6 +327,7 @@ func main() {
 		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,
 		FinanceFiscalService:     finFiscalSvc,
+		EntitlementService:       entitlementSvc,
 		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
 		VehicleService:           vehicleSvc,

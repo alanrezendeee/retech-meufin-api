@@ -8,6 +8,7 @@ import (
 	appacc "github.com/retechfin/retechfin-api/internal/application/account"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
 	appedu "github.com/retechfin/retechfin-api/internal/application/education"
+	appent "github.com/retechfin/retechfin-api/internal/application/entitlement"
 	appf "github.com/retechfin/retechfin-api/internal/application/finance"
 	apph "github.com/retechfin/retechfin-api/internal/application/health"
 	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
@@ -48,6 +49,7 @@ type RouterDeps struct {
 	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
 	FinanceFiscalService     *appf.FiscalService
+	EntitlementService       *appent.Service
 	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
 	VehicleService           *appv.Service
@@ -301,6 +303,10 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/documents/:id/confirm", finExtH.Confirm)
 		finance.POST("/documents/:id/fiscal-confirm", finFiscalH.Confirm)
 		finance.GET("/entries/:id/fiscal-items", finFiscalH.ListByEntry)
+
+		// Plano/cota do workspace (consumo de consultas fiscais verificadas).
+		entitleH := handlers.NewEntitlementHandler(d.EntitlementService)
+		finance.GET("/entitlements", entitleH.Get)
 
 		// Dashboard fiscal (inflação pessoal por item comprado)
 		finFiscalDashH := handlers.NewFinanceFiscalDashboardHandler(d.FinanceFiscalDashboardService)

@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	app "github.com/retechfin/retechfin-api/internal/application/finance"
+	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/pdfutil"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/errrespond"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
@@ -18,6 +19,10 @@ type financeExtractTriggerJSON struct {
 	// PDFPassword: senha do PDF protegido. Usada só em memória para remover
 	// a criptografia antes do LLM; nunca é persistida.
 	PDFPassword string `json:"pdf_password"`
+	// Chave: em documentos fiscais (kind=fiscal), a chave de acesso de 44
+	// dígitos ou a URL do QR Code. Quando presente, tenta a consulta SEFAZ
+	// (verificada) antes de cair no fallback IA.
+	Chave string `json:"chave"`
 }
 
 // FinanceExtractTriggerHandler dispara a extração de uma fatura: carrega o
@@ -80,7 +85,14 @@ func (h *FinanceExtractTriggerHandler) Extract(c *gin.Context) {
 		}
 	}
 
-	job, err := h.ext.StartExtraction(c.Request.Context(), ws, id, inputType, doc.MimeType, content)
+	// Documento fiscal (cupom/nota): SEFAZ-first com fallback IA. Fatura de
+	// cartão (import) segue o caminho LLM tradicional.
+	var job *dom.FinanceExtractionJob
+	if doc.Kind == dom.DocumentFiscal {
+		job, err = h.ext.StartFiscalExtraction(c.Request.Context(), ws, id, inputType, doc.MimeType, content, body.Chave)
+	} else {
+		job, err = h.ext.StartExtraction(c.Request.Context(), ws, id, inputType, doc.MimeType, content)
+	}
 	if err != nil {
 		errrespond.Write(c, err)
 		return
