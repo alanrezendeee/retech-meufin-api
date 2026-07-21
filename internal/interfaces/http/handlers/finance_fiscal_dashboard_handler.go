@@ -23,6 +23,7 @@ func NewFinanceFiscalDashboardHandler(svc *app.FiscalDashboardService) *FinanceF
 
 type fiscalProductJSON struct {
 	Name           string   `json:"name"`
+	Unit           string   `json:"unit"`
 	Purchases      int64    `json:"purchases"`
 	QtyMilliTotal  int64    `json:"qty_milli_total"`
 	TotalCents     int64    `json:"total_cents"`
@@ -39,6 +40,7 @@ type fiscalProductJSON struct {
 func mapFiscalProduct(p app.FiscalProduct) fiscalProductJSON {
 	out := fiscalProductJSON{
 		Name:           p.Name,
+		Unit:           p.Unit,
 		Purchases:      p.Purchases,
 		QtyMilliTotal:  p.QtyMilliTotal,
 		TotalCents:     p.TotalCents,
@@ -138,18 +140,19 @@ type fiscalPurchaseJSON struct {
 	UnitCents     int64  `json:"unit_cents"`
 	QuantityMilli int64  `json:"quantity_milli"`
 	AmountCents   int64  `json:"amount_cents"`
+	Unit          string `json:"unit"`
 	DocumentID    string `json:"document_id"`
 	DocumentName  string `json:"document_name"`
 }
 
-// PriceHistory responde GET /finance/fiscal/products/price-history?name=.
+// PriceHistory responde GET /finance/fiscal/products/price-history?name=&unit=.
 func (h *FinanceFiscalDashboardHandler) PriceHistory(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
 		return
 	}
-	purchases, err := h.svc.PriceHistory(c.Request.Context(), ws, c.Query("name"))
+	purchases, err := h.svc.PriceHistory(c.Request.Context(), ws, c.Query("name"), c.Query("unit"))
 	if err != nil {
 		errrespond.Write(c, err)
 		return
@@ -161,11 +164,12 @@ func (h *FinanceFiscalDashboardHandler) PriceHistory(c *gin.Context) {
 			UnitCents:     purchases[i].UnitCents,
 			QuantityMilli: purchases[i].QuantityMilli,
 			AmountCents:   purchases[i].AmountCents,
+			Unit:          purchases[i].Unit,
 			DocumentID:    purchases[i].DocumentID.String(),
 			DocumentName:  purchases[i].DocumentName,
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{"name": c.Query("name"), "purchases": items, "total": len(items)})
+	c.JSON(http.StatusOK, gin.H{"name": c.Query("name"), "unit": c.Query("unit"), "purchases": items, "total": len(items)})
 }
 
 type fiscalInflationPointJSON struct {

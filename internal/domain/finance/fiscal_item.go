@@ -25,6 +25,10 @@ type FiscalItem struct {
 	UnitCents     int64
 	AmountCents   int64
 	Category      *string
+	// UnitOfMeasure é a unidade de medida (kg, un, L, g…), normalizada em
+	// maiúsculas. Base para o preço por unidade canônica no painel. Nil quando
+	// desconhecida (leitura por IA sem unidade, ou dados anteriores).
+	UnitOfMeasure *string
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

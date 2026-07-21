@@ -572,6 +572,7 @@ type storedFiscalItem struct {
 	Quantity           float64 `json:"quantity"`
 	UnitAmount         float64 `json:"unit_amount"`
 	Amount             float64 `json:"amount"`
+	Unit               string  `json:"unit,omitempty"`
 	CategorySuggestion string  `json:"category_suggestion,omitempty"`
 	CategoryName       string  `json:"category_name,omitempty"`
 	CategoryGroup      string  `json:"category_group,omitempty"`
@@ -604,6 +605,7 @@ func storedFiscalFromNFCe(r *infosimples.NFCeResult) storedFiscal {
 			Quantity:    float64(p.QuantityMilli) / 1000.0,
 			UnitAmount:  float64(p.UnitCents) / 100.0,
 			Amount:      float64(p.AmountCents) / 100.0,
+			Unit:        p.Unidade,
 			RawText:     p.Codigo,
 		})
 	}
@@ -629,7 +631,7 @@ func storedFiscalFromLLM(raw []byte) (storedFiscal, bool) {
 		sf.TotalAmount = *f.TotalAmount
 	}
 	for _, it := range f.Items {
-		sfi := storedFiscalItem{Description: it.Description, RawText: it.RawText, Quantity: 1}
+		sfi := storedFiscalItem{Description: it.Description, RawText: it.RawText, Quantity: 1, Unit: it.Unit}
 		if it.Quantity != nil {
 			sfi.Quantity = *it.Quantity
 		}
@@ -786,6 +788,23 @@ func (s *FinanceExtractionService) ParsePurchases(doc *dom.FinanceDocument) ([]P
 	return out, nil
 }
 
+// normalizeUnit padroniza a unidade de medida (maiúsculas, sem espaços). Vazio
+// quando desconhecida. Ex.: " kg " → "KG", "Un" → "UN".
+func normalizeUnit(u string) string {
+	return strings.ToUpper(strings.TrimSpace(u))
+}
+
+// normalizeUnitPtr normaliza uma unidade opcional; nil/vazio → nil.
+func normalizeUnitPtr(u *string) *string {
+	if u == nil {
+		return nil
+	}
+	if n := normalizeUnit(*u); n != "" {
+		return &n
+	}
+	return nil
+}
+
 // reaisToCents converte um valor em reais (float) para centavos inteiros,
 // arredondando para o centavo mais próximo.
 func reaisToCents(v *float64) int64 {
@@ -810,7 +829,9 @@ type FiscalItemSuggestion struct {
 	CategoryName  string
 	CategoryGroup string
 	CategoryIsNew bool
-	RawText       string
+	// Unit é a unidade de medida (kg, un, L…) quando disponível.
+	Unit    string
+	RawText string
 }
 
 // FiscalSuggestion é o cupom/nota fiscal estruturado sugerido pela extração.
@@ -838,6 +859,7 @@ type fiscalItem struct {
 	Quantity           *float64 `json:"quantity"`
 	UnitAmount         *float64 `json:"unit_amount"`
 	Amount             *float64 `json:"amount"`
+	Unit               string   `json:"unit"`
 	CategorySuggestion string   `json:"category_suggestion"`
 	CategoryName       string   `json:"category_name"`
 	CategoryGroup      string   `json:"category_group"`
@@ -877,6 +899,7 @@ func (s *FinanceExtractionService) ParseFiscal(doc *dom.FinanceDocument) (*Fisca
 			CategoryName:  it.CategoryName,
 			CategoryGroup: it.CategoryGroup,
 			CategoryIsNew: it.CategoryIsNew,
+			Unit:          normalizeUnit(it.Unit),
 			RawText:       it.RawText,
 		})
 	}

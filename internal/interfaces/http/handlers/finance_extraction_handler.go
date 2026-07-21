@@ -92,6 +92,7 @@ type fiscalItemSuggestionResponse struct {
 	CategoryName  string `json:"category_name,omitempty"`
 	CategoryGroup string `json:"category_group,omitempty"`
 	CategoryIsNew bool   `json:"category_is_new,omitempty"`
+	Unit          string `json:"unit,omitempty"`
 	RawText       string `json:"raw_text,omitempty"`
 }
 
@@ -181,6 +182,7 @@ func mapFiscalSuggestion(f *app.FiscalSuggestion) *fiscalSuggestionResponse {
 			CategoryName:  it.CategoryName,
 			CategoryGroup: it.CategoryGroup,
 			CategoryIsNew: it.CategoryIsNew,
+			Unit:          it.Unit,
 			RawText:       it.RawText,
 		}
 	}

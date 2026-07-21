@@ -36,9 +36,12 @@ type FiscalDashboardCounts struct {
 	ProductsCount int64 // produtos distintos (nome normalizado)
 }
 
-// FiscalProduct é um produto agregado por nome normalizado (LOWER(TRIM(desc))).
+// FiscalProduct é um produto agregado por (nome normalizado, unidade de medida).
+// Separar por unidade evita misturar R$/kg com R$/un no mesmo "produto".
 type FiscalProduct struct {
-	Name          string
+	Name string
+	// Unit é a unidade de medida canônica (KG, UN, L…); "" quando desconhecida.
+	Unit          string
 	Purchases     int64 // nº de compras (linhas de item)
 	QtyMilliTotal int64 // quantidade total em milésimos
 	TotalCents    int64 // gasto total no produto
@@ -65,6 +68,7 @@ type FiscalPurchase struct {
 	UnitCents     int64
 	QuantityMilli int64
 	AmountCents   int64
+	Unit          string // unidade de medida (KG, UN, L…); "" quando desconhecida
 	DocumentID    uuid.UUID
 	DocumentName  string // nome do arquivo de origem (proxy do emissor/loja)
 }
@@ -74,6 +78,7 @@ type FiscalPurchase struct {
 type MonthlyProductPrice struct {
 	Month        string // YYYY-MM
 	Name         string
+	Unit         string // unidade de medida; parte da identidade do produto no índice
 	AvgUnitCents int64
 	SpendCents   int64
 	Purchases    int64
@@ -87,7 +92,7 @@ type FiscalDashboardRepository interface {
 	// TopProducts lista produtos agregados. q filtra por nome (substring, já
 	// normalizada); sort ∈ {frequency,spend,inflation}; limit ≤ 0 = sem limite.
 	TopProducts(ctx context.Context, workspaceID uuid.UUID, q, sortBy string, limit int) ([]FiscalProduct, error)
-	PriceHistory(ctx context.Context, workspaceID uuid.UUID, name string) ([]FiscalPurchase, error)
+	PriceHistory(ctx context.Context, workspaceID uuid.UUID, name, unit string) ([]FiscalPurchase, error)
 	MonthlyProductPrices(ctx context.Context, workspaceID uuid.UUID) ([]MonthlyProductPrice, error)
 }
 
@@ -145,13 +150,14 @@ func (s *FiscalDashboardService) Products(ctx context.Context, workspaceID uuid.
 	return s.repo.TopProducts(ctx, workspaceID, normalizeName(q), sortBy, limit)
 }
 
-// PriceHistory retorna a série de compras de um produto (nome normalizado).
-func (s *FiscalDashboardService) PriceHistory(ctx context.Context, workspaceID uuid.UUID, name string) ([]FiscalPurchase, error) {
+// PriceHistory retorna a série de compras de um produto identificado por
+// (nome normalizado, unidade). unit vazio casa itens sem unidade registrada.
+func (s *FiscalDashboardService) PriceHistory(ctx context.Context, workspaceID uuid.UUID, name, unit string) ([]FiscalPurchase, error) {
 	name = normalizeName(name)
 	if name == "" {
 		return nil, &dom.ValidationError{Msg: "name é obrigatório"}
 	}
-	return s.repo.PriceHistory(ctx, workspaceID, name)
+	return s.repo.PriceHistory(ctx, workspaceID, name, strings.ToUpper(strings.TrimSpace(unit)))
 }
 
 // FiscalInflationPoint é um ponto do índice de inflação pessoal.
@@ -205,7 +211,9 @@ func buildInflation(rows []MonthlyProductPrice) *FiscalInflation {
 			perMonth[row.Month] = m
 			months = append(months, row.Month)
 		}
-		m[row.Name] = pp{unit: row.AvgUnitCents, spend: row.SpendCents}
+		// Identidade do produto no índice = (nome, unidade): R$/kg e R$/un do
+		// mesmo nome são séries distintas e não se misturam.
+		m[row.Name+"\x00"+row.Unit] = pp{unit: row.AvgUnitCents, spend: row.SpendCents}
 	}
 	sort.Strings(months)
 
