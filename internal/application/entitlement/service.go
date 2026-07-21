@@ -58,6 +58,7 @@ type FiscalStatus struct {
 	Quota     int
 	Used      int
 	Remaining int
+	Period    string // AAAA-MM do contador
 }
 
 // FiscalStatus resolve o panorama de cota SEFAZ do workspace.
@@ -75,7 +76,13 @@ func (s *Service) FiscalStatusFor(ctx context.Context, workspaceID uuid.UUID) (*
 	if remaining < 0 {
 		remaining = 0
 	}
-	return &FiscalStatus{Tier: ent.Tier, Quota: quota, Used: used, Remaining: remaining}, nil
+	return &FiscalStatus{
+		Tier:      ent.Tier,
+		Quota:     quota,
+		Used:      used,
+		Remaining: remaining,
+		Period:    time.Now().UTC().Format("2006-01"),
+	}, nil
 }
 
 // ReserveFiscalSEFAZ reserva 1 consulta SEFAZ do mês. Retorna allowed=false

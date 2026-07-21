@@ -84,7 +84,14 @@ type fiscalItemSuggestionResponse struct {
 	QuantityMilli int64  `json:"quantity_milli"`
 	UnitCents     int64  `json:"unit_cents"`
 	AmountCents   int64  `json:"amount_cents"`
+	// Category é o slug sugerido (validado contra o catálogo da tenant).
+	// CategoryGroup é o grupo global. CategoryIsNew=true sinaliza sugestão de
+	// categoria que ainda não existe na tenant (a UI evidencia "nova sugerida"
+	// e, ao salvar, ela é auto-cadastrada). CategoryName é o nome de exibição.
 	Category      string `json:"category,omitempty"`
+	CategoryName  string `json:"category_name,omitempty"`
+	CategoryGroup string `json:"category_group,omitempty"`
+	CategoryIsNew bool   `json:"category_is_new,omitempty"`
 	RawText       string `json:"raw_text,omitempty"`
 }
 
@@ -171,6 +178,9 @@ func mapFiscalSuggestion(f *app.FiscalSuggestion) *fiscalSuggestionResponse {
 			UnitCents:     it.UnitCents,
 			AmountCents:   it.AmountCents,
 			Category:      it.Category,
+			CategoryName:  it.CategoryName,
+			CategoryGroup: it.CategoryGroup,
+			CategoryIsNew: it.CategoryIsNew,
 			RawText:       it.RawText,
 		}
 	}

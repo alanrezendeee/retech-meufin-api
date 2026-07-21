@@ -28,6 +28,10 @@ type fiscalItemJSON struct {
 	UnitCents     int64   `json:"unit_cents"`
 	AmountCents   int64   `json:"amount_cents" binding:"required"`
 	Category      *string `json:"category"`
+	// CategoryName/CategoryGroup acompanham categorias NOVAS (category_is_new)
+	// para o auto-cadastro no save.
+	CategoryName  *string `json:"category_name"`
+	CategoryGroup *string `json:"category_group"`
 }
 
 type fiscalNewEntryJSON struct {
@@ -104,19 +108,38 @@ func (h *FinanceFiscalHandler) Confirm(c *gin.Context) {
 			UnitCents:     it.UnitCents,
 			AmountCents:   it.AmountCents,
 			Category:      it.Category,
+			CategoryName:  it.CategoryName,
+			CategoryGroup: it.CategoryGroup,
 		})
 	}
 
-	entry, items, err := h.svc.Confirm(c.Request.Context(), in)
+	entry, items, createdCats, err := h.svc.Confirm(c.Request.Context(), in)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{
-		"entry":       mapFinancialEntry(entry),
-		"items":       mapFiscalItems(items),
-		"items_total": len(items),
+		"entry":              mapFinancialEntry(entry),
+		"items":              mapFiscalItems(items),
+		"items_total":        len(items),
+		"created_categories": mapCreatedCategories(createdCats),
 	})
+}
+
+type createdCategoryResponse struct {
+	Slug  string `json:"slug"`
+	Name  string `json:"name"`
+	Group string `json:"group"`
+}
+
+// mapCreatedCategories informa quais categorias foram auto-cadastradas neste
+// save (para a UI avisar o usuário). Sempre não-nil (lista vazia em vez de null).
+func mapCreatedCategories(cats []dom.ExpenseCategory) []createdCategoryResponse {
+	out := make([]createdCategoryResponse, 0, len(cats))
+	for _, c := range cats {
+		out = append(out, createdCategoryResponse{Slug: c.Slug, Name: c.Name, Group: c.GroupSlug})
+	}
+	return out
 }
 
 // ListByEntry responde GET /entries/:id/fiscal-items.

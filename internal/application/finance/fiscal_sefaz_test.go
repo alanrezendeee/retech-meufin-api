@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"encoding/json"
 	"testing"
 
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
@@ -23,9 +24,9 @@ func TestFiscalJSONFromNFCe_RoundTrip(t *testing.T) {
 		},
 	}
 
-	js, err := fiscalJSONFromNFCe(r)
+	js, err := json.Marshal(storedFiscalFromNFCe(r))
 	if err != nil {
-		t.Fatalf("fiscalJSONFromNFCe: %v", err)
+		t.Fatalf("marshal storedFiscalFromNFCe: %v", err)
 	}
 
 	svc := &FinanceExtractionService{}

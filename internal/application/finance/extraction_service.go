@@ -33,14 +33,15 @@ type FinanceExtractionService struct {
 	jobs         dom.FinanceExtractionJobRepository
 	docs         dom.FinanceDocumentRepository
 	extractor    extraction.Extractor
-	infosimples  nfceConsulter   // opcional (nil = sem SEFAZ)
-	entitlements *appent.Service // opcional (nil = sem cota)
-	cache        *cache.Cache    // opcional (nil = sem cache por chave)
+	infosimples  nfceConsulter      // opcional (nil = sem SEFAZ)
+	entitlements *appent.Service    // opcional (nil = sem cota)
+	cache        *cache.Cache       // opcional (nil = sem cache por chave)
+	categorizer  *FiscalCategorizer // opcional (nil = itens sem categoria)
 }
 
 // NewFinanceExtractionService constrói o serviço de extração.
-// infosimples/entitlements/cache são opcionais (podem ser nil): sem eles, a
-// ingestão fiscal opera só pelo caminho IA.
+// infosimples/entitlements/cache/categorizer são opcionais (podem ser nil):
+// sem eles, a ingestão fiscal opera só pelo caminho IA e/ou sem categoria.
 func NewFinanceExtractionService(
 	jobs dom.FinanceExtractionJobRepository,
 	docs dom.FinanceDocumentRepository,
@@ -48,6 +49,7 @@ func NewFinanceExtractionService(
 	nfce nfceConsulter,
 	entitlements *appent.Service,
 	c *cache.Cache,
+	categorizer *FiscalCategorizer,
 ) *FinanceExtractionService {
 	return &FinanceExtractionService{
 		jobs:         jobs,
@@ -56,6 +58,7 @@ func NewFinanceExtractionService(
 		infosimples:  nfce,
 		entitlements: entitlements,
 		cache:        c,
+		categorizer:  categorizer,
 	}
 }
 
@@ -359,7 +362,13 @@ func (s *FinanceExtractionService) runFiscal(
 	job.Provider = s.extractor.Provider()
 	job.Status = dom.JobCompleted
 	_ = s.jobs.Update(ctx, job)
-	s.updateDocumentFiscalResult(ctx, workspaceID, documentID, []byte(res.StructuredJSON), dom.FiscalSourceOCRLLM)
+	// Categoriza tenant-aware (ignora a category_suggestion crua do LLM de
+	// extração, que não conhece as categorias reais da tenant).
+	structured := []byte(res.StructuredJSON)
+	if sf, ok := storedFiscalFromLLM(structured); ok {
+		structured = s.categorizeAndMarshal(ctx, workspaceID, sf)
+	}
+	s.updateDocumentFiscalResult(ctx, workspaceID, documentID, structured, dom.FiscalSourceOCRLLM)
 	slog.Info("✅ ingestão fiscal via IA (fallback) concluída",
 		slog.String("document_id", documentID.String()),
 		slog.Duration("duration", finished.Sub(started)),
@@ -395,8 +404,9 @@ func (s *FinanceExtractionService) trySEFAZ(ctx context.Context, workspaceID uui
 		return nil, false
 	}
 
-	structured, err := fiscalJSONFromNFCe(res)
-	if err != nil {
+	sf := storedFiscalFromNFCe(res)
+	structured := s.categorizeAndMarshal(ctx, workspaceID, sf)
+	if len(structured) == 0 {
 		if s.entitlements != nil {
 			s.entitlements.RefundFiscalSEFAZ(ctx, workspaceID)
 		}
@@ -451,45 +461,110 @@ func (s *FinanceExtractionService) updateDocumentFiscalResult(
 	_ = s.docs.UpdateExtraction(ctx, doc)
 }
 
-// fiscalJSONFromNFCe converte o resultado da SEFAZ para o schema fiscal-extract-v1
-// (o mesmo produzido pelo LLM), de modo que ParseFiscal e o restante do fluxo de
-// confirmação funcionem sem alteração, independentemente da procedência.
-func fiscalJSONFromNFCe(r *infosimples.NFCeResult) ([]byte, error) {
-	type outItem struct {
-		Description        string  `json:"description"`
-		Quantity           float64 `json:"quantity"`
-		UnitAmount         float64 `json:"unit_amount"`
-		Amount             float64 `json:"amount"`
-		CategorySuggestion string  `json:"category_suggestion"`
-		RawText            string  `json:"raw_text"`
-	}
-	type out struct {
-		Merchant    string    `json:"merchant"`
-		CNPJ        string    `json:"cnpj"`
-		Date        string    `json:"date"`
-		TotalAmount float64   `json:"total_amount"`
-		Items       []outItem `json:"items"`
-		Warnings    []string  `json:"warnings"`
-	}
-	o := out{
+// storedFiscalItem/storedFiscal são o schema fiscal-extract-v1 gravado no
+// documento (o mesmo lido por ParseFiscal), agora com os campos de categoria
+// preenchidos pela categorização tenant-aware.
+type storedFiscalItem struct {
+	Description        string  `json:"description"`
+	Quantity           float64 `json:"quantity"`
+	UnitAmount         float64 `json:"unit_amount"`
+	Amount             float64 `json:"amount"`
+	CategorySuggestion string  `json:"category_suggestion,omitempty"`
+	CategoryName       string  `json:"category_name,omitempty"`
+	CategoryGroup      string  `json:"category_group,omitempty"`
+	CategoryIsNew      bool    `json:"category_is_new,omitempty"`
+	RawText            string  `json:"raw_text,omitempty"`
+}
+
+type storedFiscal struct {
+	Merchant    string             `json:"merchant"`
+	CNPJ        string             `json:"cnpj"`
+	Date        string             `json:"date"`
+	TotalAmount float64            `json:"total_amount"`
+	Items       []storedFiscalItem `json:"items"`
+	Warnings    []string           `json:"warnings"`
+}
+
+// storedFiscalFromNFCe monta o cupom (sem categoria) a partir do resultado SEFAZ.
+func storedFiscalFromNFCe(r *infosimples.NFCeResult) storedFiscal {
+	sf := storedFiscal{
 		Merchant:    r.EmitenteNome,
 		CNPJ:        r.EmitenteCNPJ,
 		Date:        r.DataEmissao,
 		TotalAmount: float64(r.ValorTotalCents) / 100.0,
-		Items:       make([]outItem, 0, len(r.Produtos)),
+		Items:       make([]storedFiscalItem, 0, len(r.Produtos)),
 		Warnings:    r.Warnings,
 	}
 	for _, p := range r.Produtos {
-		o.Items = append(o.Items, outItem{
-			Description:        p.Descricao,
-			Quantity:           float64(p.QuantityMilli) / 1000.0,
-			UnitAmount:         float64(p.UnitCents) / 100.0,
-			Amount:             float64(p.AmountCents) / 100.0,
-			CategorySuggestion: "",
-			RawText:            p.Codigo,
+		sf.Items = append(sf.Items, storedFiscalItem{
+			Description: p.Descricao,
+			Quantity:    float64(p.QuantityMilli) / 1000.0,
+			UnitAmount:  float64(p.UnitCents) / 100.0,
+			Amount:      float64(p.AmountCents) / 100.0,
+			RawText:     p.Codigo,
 		})
 	}
-	return json.Marshal(o)
+	return sf
+}
+
+// storedFiscalFromLLM reconstrói o cupom a partir do JSON do LLM de extração.
+// Ignora a category_suggestion crua (será substituída pela categorização
+// tenant-aware). ok=false quando o JSON não é parseável.
+func storedFiscalFromLLM(raw []byte) (storedFiscal, bool) {
+	var f fiscalExtraction
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return storedFiscal{}, false
+	}
+	sf := storedFiscal{
+		Merchant: strings.TrimSpace(f.Merchant),
+		CNPJ:     strings.TrimSpace(f.CNPJ),
+		Date:     f.Date,
+		Warnings: f.Warnings,
+		Items:    make([]storedFiscalItem, 0, len(f.Items)),
+	}
+	if f.TotalAmount != nil {
+		sf.TotalAmount = *f.TotalAmount
+	}
+	for _, it := range f.Items {
+		sfi := storedFiscalItem{Description: it.Description, RawText: it.RawText, Quantity: 1}
+		if it.Quantity != nil {
+			sfi.Quantity = *it.Quantity
+		}
+		if it.UnitAmount != nil {
+			sfi.UnitAmount = *it.UnitAmount
+		}
+		if it.Amount != nil {
+			sfi.Amount = *it.Amount
+		}
+		sf.Items = append(sf.Items, sfi)
+	}
+	return sf, true
+}
+
+// categorizeAndMarshal preenche as categorias (tenant-aware, validadas) dos
+// itens e serializa o cupom no schema fiscal-extract-v1. Sem categorizador,
+// serializa sem categoria. Retorna nil só em erro de marshal.
+func (s *FinanceExtractionService) categorizeAndMarshal(ctx context.Context, workspaceID uuid.UUID, sf storedFiscal) []byte {
+	if s.categorizer != nil && s.categorizer.Enabled() && len(sf.Items) > 0 {
+		descs := make([]string, len(sf.Items))
+		for i := range sf.Items {
+			descs[i] = sf.Items[i].Description
+		}
+		cats := s.categorizer.Categorize(ctx, workspaceID, descs)
+		for i := range sf.Items {
+			if i < len(cats) && cats[i].Slug != "" {
+				sf.Items[i].CategorySuggestion = cats[i].Slug
+				sf.Items[i].CategoryGroup = cats[i].Group
+				sf.Items[i].CategoryName = cats[i].Name
+				sf.Items[i].CategoryIsNew = cats[i].IsNew
+			}
+		}
+	}
+	b, err := json.Marshal(sf)
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // PurchaseSuggestion é uma compra sugerida a partir da extração da fatura.
@@ -624,7 +699,14 @@ type FiscalItemSuggestion struct {
 	QuantityMilli int64
 	UnitCents     int64
 	AmountCents   int64
+	// Category é o slug da categoria sugerida (validada contra o catálogo da
+	// tenant). CategoryGroup é o grupo global. CategoryIsNew indica que a
+	// categoria ainda não existe na tenant (sugestão a confirmar). CategoryName
+	// é o nome de exibição (usado no auto-cadastro de categorias novas).
 	Category      string
+	CategoryName  string
+	CategoryGroup string
+	CategoryIsNew bool
 	RawText       string
 }
 
@@ -654,6 +736,9 @@ type fiscalItem struct {
 	UnitAmount         *float64 `json:"unit_amount"`
 	Amount             *float64 `json:"amount"`
 	CategorySuggestion string   `json:"category_suggestion"`
+	CategoryName       string   `json:"category_name"`
+	CategoryGroup      string   `json:"category_group"`
+	CategoryIsNew      bool     `json:"category_is_new"`
 	RawText            string   `json:"raw_text"`
 }
 
@@ -686,6 +771,9 @@ func (s *FinanceExtractionService) ParseFiscal(doc *dom.FinanceDocument) (*Fisca
 			UnitCents:     reaisToCents(it.UnitAmount),
 			AmountCents:   reaisToCents(it.Amount),
 			Category:      it.CategorySuggestion,
+			CategoryName:  it.CategoryName,
+			CategoryGroup: it.CategoryGroup,
+			CategoryIsNew: it.CategoryIsNew,
 			RawText:       it.RawText,
 		})
 	}
