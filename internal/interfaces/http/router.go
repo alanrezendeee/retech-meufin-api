@@ -67,6 +67,7 @@ type RouterDeps struct {
 	PasswordResetService          *appacc.PasswordResetService
 	HealthAppointmentService      *apph.AppointmentService
 	HealthPlanService             *apph.PlanService
+	HealthPlanDocumentService     *apph.PlanDocumentService
 	ProfileService                *appacc.ProfileService
 }
 
@@ -192,6 +193,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.PUT("/plans/:id", planH.Update)
 			health.DELETE("/plans/:id", planH.Delete)
 			health.PUT("/plans/:id/members", planH.ReplaceMembers)
+
+			// Documentos do plano (contrato/apólice, carteirinha, boletos…).
+			planDocH := handlers.NewHealthPlanDocumentHandler(d.HealthPlanDocumentService)
+			health.POST("/plans/:id/documents", planDocH.Upload)
+			health.GET("/plans/:id/documents", planDocH.List)
+			health.GET("/plans/:id/documents/:docId/download-url", planDocH.DownloadURL)
+			health.DELETE("/plans/:id/documents/:docId", planDocH.Delete)
 
 			// Consultas & agenda (rotas estáticas ANTES de /appointments/:id)
 			apptH := handlers.NewHealthAppointmentHandler(d.HealthAppointmentService)

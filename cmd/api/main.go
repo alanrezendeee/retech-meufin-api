@@ -315,6 +315,7 @@ func main() {
 	healthApptSvc := apph.NewAppointmentService(healthApptRepo)
 	healthPlanRepo := persistence.NewHealthPlanRepository(db)
 	healthPlanSvc := apph.NewPlanService(healthPlanRepo)
+	healthPlanDocSvc := apph.NewPlanDocumentService(persistence.NewHealthPlanDocumentRepository(db), healthPlanRepo, objStorage, storageCfg.MaxUploadMB)
 
 	userProfileRepo := persistence.NewUserProfileRepository(db)
 	profileSvc := appacc.NewProfileService(userProfileRepo, objStorage)
@@ -374,6 +375,7 @@ func main() {
 		PasswordResetService:          passwordResetSvc,
 		HealthAppointmentService:      healthApptSvc,
 		HealthPlanService:             healthPlanSvc,
+		HealthPlanDocumentService:     healthPlanDocSvc,
 		ProfileService:                profileSvc,
 	})
 
