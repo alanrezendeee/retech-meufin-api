@@ -250,7 +250,8 @@ func main() {
 	examResSvc := apph.NewExamResultService(examResRepo)
 	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
-	extractionSvc := apph.NewExtractionService(extJobRepo, extractor)
+	extractionSvc := apph.NewExtractionService(extJobRepo, docRepo, extractor)
+	examImportSvc := apph.NewExamImportService(docRepo, markerSvc, labSvc, examResSvc)
 	supplierSvc := appf.NewSupplierService(supplierRepo)
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo)
@@ -349,6 +350,7 @@ func main() {
 		DashboardService:         dashboardSvc,
 		DocumentService:          docSvc,
 		ExtractionService:        extractionSvc,
+		ExamImportService:        examImportSvc,
 		IncomeSourceService:      incomeSourceSvc,
 		FinancialEntryService:    financialEntrySvc,
 		CreditCardService:        creditCardSvc,

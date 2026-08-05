@@ -95,5 +95,8 @@ type DocumentRepository interface {
 	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]Document, int64, error)
 	// UpdateExtraction atualiza extraction_status/extracted_text/extracted_json.
 	UpdateExtraction(ctx context.Context, d *Document) error
+	// LinkExamResult vincula o documento ao resultado criado a partir dele
+	// (exam_result_id) e completa family_member_id/lab_id quando ausentes.
+	LinkExamResult(ctx context.Context, d *Document) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
 }

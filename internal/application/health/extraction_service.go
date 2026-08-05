@@ -2,7 +2,9 @@ package health
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,12 +16,13 @@ import (
 // extração OCR/LLM de documentos de saúde.
 type ExtractionService struct {
 	jobs      dom.ExtractionJobRepository
+	docs      dom.DocumentRepository
 	extractor extraction.Extractor
 }
 
 // NewExtractionService constrói o serviço de extração.
-func NewExtractionService(jobs dom.ExtractionJobRepository, extractor extraction.Extractor) *ExtractionService {
-	return &ExtractionService{jobs: jobs, extractor: extractor}
+func NewExtractionService(jobs dom.ExtractionJobRepository, docs dom.DocumentRepository, extractor extraction.Extractor) *ExtractionService {
+	return &ExtractionService{jobs: jobs, docs: docs, extractor: extractor}
 }
 
 // StartExtraction cria um job (status=pending) e dispara a extração em
@@ -30,8 +33,8 @@ func NewExtractionService(jobs dom.ExtractionJobRepository, extractor extraction
 // erro claro e o próprio erro é retornado ao chamador.
 //
 // Quando habilitado, uma goroutine roda extractor.Extract usando
-// context.Background() (não o ctx da requisição) e atualiza o job
-// (processing -> completed/failed, started_at/finished_at, raw_response).
+// context.Background() (não o ctx da requisição) e atualiza job e documento
+// (processing -> completed/failed; extracted_text/extracted_json no documento).
 func (s *ExtractionService) StartExtraction(
 	ctx context.Context,
 	workspaceID, documentID uuid.UUID,
@@ -72,15 +75,15 @@ func (s *ExtractionService) StartExtraction(
 	buf := make([]byte, len(content))
 	copy(buf, content)
 
-	go s.runExtraction(job.ID, workspaceID, dom.ExtractionInputType(inputType), mimeType, buf)
+	go s.runExtraction(job.ID, workspaceID, documentID, dom.ExtractionInputType(inputType), mimeType, buf)
 
 	return job, nil
 }
 
-// runExtraction executa a extração e atualiza o job. Usa context.Background()
-// pois o ciclo de vida é independente da requisição original.
+// runExtraction executa a extração e atualiza job + documento. Usa
+// context.Background() pois o ciclo de vida é independente da requisição.
 func (s *ExtractionService) runExtraction(
-	jobID, workspaceID uuid.UUID,
+	jobID, workspaceID, documentID uuid.UUID,
 	inputType dom.ExtractionInputType,
 	mimeType string,
 	content []byte,
@@ -99,11 +102,14 @@ func (s *ExtractionService) runExtraction(
 	if err := s.jobs.Update(ctx, job); err != nil {
 		return
 	}
+	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionProcessing, nil, nil)
 
+	profile := extraction.LabExamProfile()
 	res, extErr := s.extractor.Extract(ctx, extraction.ExtractInput{
 		InputType: string(inputType),
 		MimeType:  mimeType,
 		Content:   content,
+		Profile:   &profile,
 	})
 
 	finished := time.Now().UTC()
@@ -122,26 +128,72 @@ func (s *ExtractionService) runExtraction(
 	}
 
 	if extErr != nil {
+		extErr = friendlyHealthExtractionErr(extErr)
 		msg := extErr.Error()
 		job.Status = dom.ExtractionFailed
 		job.ErrorMessage = &msg
+		_ = s.jobs.Update(ctx, job)
+		s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionFailed, nil, nil)
 		// Além do error_message no job (que o front mostra), o servidor precisa
 		// registrar a falha — crédito esgotado/rate limit têm que aparecer no log.
 		slog.Error("❌ extração LLM de exame falhou",
 			slog.String("error", msg),
-			slog.String("document_id", job.DocumentID.String()),
-			slog.String("workspace_id", job.WorkspaceID.String()),
+			slog.String("document_id", documentID.String()),
+			slog.String("workspace_id", workspaceID.String()),
 			slog.Duration("duration", finished.Sub(started)),
 		)
-	} else {
-		job.Status = dom.ExtractionCompleted
-		slog.Info("✅ extração LLM de exame concluída",
-			slog.String("document_id", job.DocumentID.String()),
-			slog.Duration("duration", finished.Sub(started)),
-		)
+		return
 	}
 
+	job.Status = dom.ExtractionCompleted
 	_ = s.jobs.Update(ctx, job)
+	slog.Info("✅ extração LLM de exame concluída",
+		slog.String("document_id", documentID.String()),
+		slog.Duration("duration", finished.Sub(started)),
+	)
+
+	var text *string
+	if res.Text != "" {
+		t := res.Text
+		text = &t
+	}
+	var structured []byte
+	if len(res.StructuredJSON) > 0 {
+		structured = []byte(res.StructuredJSON)
+	}
+	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionExtracted, text, structured)
+}
+
+func (s *ExtractionService) updateDocumentStatus(
+	ctx context.Context,
+	workspaceID, documentID uuid.UUID,
+	status dom.ExtractionStatus,
+	text *string,
+	structured []byte,
+) {
+	doc, err := s.docs.GetByID(ctx, workspaceID, documentID)
+	if err != nil {
+		return
+	}
+	doc.ExtractionStatus = status
+	if text != nil {
+		doc.ExtractedText = text
+	}
+	if len(structured) > 0 {
+		doc.ExtractedJSON = structured
+	}
+	doc.UpdatedAt = time.Now().UTC()
+	_ = s.docs.UpdateExtraction(ctx, doc)
+}
+
+// friendlyHealthExtractionErr traduz erros técnicos do provider para mensagens
+// acionáveis pelo usuário final.
+func friendlyHealthExtractionErr(err error) error {
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "password protected") || strings.Contains(msg, "password-protected") {
+		return errors.New("Este PDF é protegido por senha — informe a senha do arquivo e tente novamente.")
+	}
+	return err
 }
 
 // GetStatus retorna o job de extração mais recente do documento.
