@@ -116,11 +116,15 @@ func (s *ExamImportService) Suggest(ctx context.Context, workspaceID uuid.UUID, 
 		return nil, &dom.ValidationError{Msg: "extracted_json inválido"}
 	}
 
+	collection := normalizeExamDate(raw.CollectionDate)
+	release := normalizeExamDate(raw.ReleaseDate)
 	out := &ExamSuggestion{
-		PatientName:    strings.TrimSpace(raw.PatientName),
-		ExamDate:       normalizeExamDate(raw.ExamDate),
-		CollectionDate: normalizeExamDate(raw.CollectionDate),
-		ReleaseDate:    normalizeExamDate(raw.ReleaseDate),
+		PatientName: strings.TrimSpace(raw.PatientName),
+		// Muitos laudos só trazem a data de coleta; sem esse fallback a tela
+		// abriria com a data de hoje e o usuário teria que corrigir sempre.
+		ExamDate:       firstNonEmpty(normalizeExamDate(raw.ExamDate), collection, release),
+		CollectionDate: collection,
+		ReleaseDate:    release,
 		LaboratoryName: strings.TrimSpace(raw.LaboratoryName),
 		DoctorName:     strings.TrimSpace(raw.DoctorName),
 		Summary:        strings.TrimSpace(raw.Summary),
@@ -377,16 +381,34 @@ func (s *ExamImportService) findLabByName(ctx context.Context, workspaceID uuid.
 }
 
 // normalizeExamDate converte datas do laudo para YYYY-MM-DD. O prompt pede ISO,
-// mas laudos brasileiros imprimem DD/MM/YYYY e o LLM pode transcrever
-// literalmente. Retorna "" quando não consegue interpretar.
+// mas laudos brasileiros imprimem DD/MM/YYYY — muitas vezes com hora e fuso
+// colados ("28/01/2026 12:19 BRT", "17/01/26 11:39") — e o LLM transcreve
+// literalmente. Retorna "" quando não consegue interpretar (melhor sem data do
+// que com data errada; a UI deixa o usuário preencher).
 func normalizeExamDate(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
-	for _, layout := range []string{"2006-01-02", "02/01/2006", "02-01-2006", "02.01.2006", "02/01/06"} {
+	// Descarta hora/fuso: só a primeira palavra é a data.
+	if i := strings.IndexAny(raw, " \t"); i > 0 {
+		raw = raw[:i]
+	}
+	for _, layout := range []string{"2006-01-02", "02/01/2006", "02-01-2006", "02.01.2006", "02/01/06", "02-01-06"} {
 		if t, err := time.Parse(layout, raw); err == nil {
 			return t.Format("2006-01-02")
+		}
+	}
+	return ""
+}
+
+// firstNonEmpty devolve o primeiro valor preenchido. Usado no fallback da data
+// do exame: laudos frequentemente imprimem só a data de coleta ou de liberação,
+// e o modelo deixa exam_date vazio — sem o fallback o usuário redigita à mão.
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
 		}
 	}
 	return ""

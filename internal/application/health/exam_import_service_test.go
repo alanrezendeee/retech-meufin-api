@@ -16,11 +16,24 @@ func TestNormalizeExamDate(t *testing.T) {
 		{"", ""},
 		{"ilegível", ""},
 		{"07/2026", ""},
+		// Laudos reais colam hora e fuso na data.
+		{"28/01/2026 12:19 BRT", "2026-01-28"},
+		{"17/01/26 11:39", "2026-01-17"},
+		{"2026-01-14 08:34", "2026-01-14"},
 	}
 	for _, c := range cases {
 		if got := normalizeExamDate(c.in); got != c.want {
 			t.Errorf("normalizeExamDate(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+func TestFirstNonEmpty(t *testing.T) {
+	if got := firstNonEmpty("", "2026-01-05", "2026-01-06"); got != "2026-01-05" {
+		t.Errorf("esperava a coleta como fallback, veio %q", got)
+	}
+	if got := firstNonEmpty("", "", ""); got != "" {
+		t.Errorf("tudo vazio deve devolver vazio, veio %q", got)
 	}
 }
 
