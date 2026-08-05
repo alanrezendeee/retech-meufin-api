@@ -70,6 +70,24 @@ func (r *HealthDocumentRepository) UpdateExtraction(ctx context.Context, d *dom.
 	return nil
 }
 
+func (r *HealthDocumentRepository) LinkExamResult(ctx context.Context, d *dom.Document) error {
+	res := r.db.WithContext(ctx).Model(&HealthDocumentModel{}).
+		Where("id = ? AND workspace_id = ?", d.ID, d.WorkspaceID).
+		Updates(map[string]any{
+			"exam_result_id":   d.ExamResultID,
+			"family_member_id": d.FamilyMemberID,
+			"lab_id":           d.LabID,
+			"updated_at":       d.UpdatedAt,
+		})
+	if res.Error != nil {
+		return mapHealthErr(res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return dom.ErrNotFound
+	}
+	return nil
+}
+
 func (r *HealthDocumentRepository) SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error {
 	res := r.db.WithContext(ctx).
 		Where("id = ? AND workspace_id = ?", id, workspaceID).

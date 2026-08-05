@@ -27,11 +27,13 @@ import (
 //
 //	GET /documents/:id/extraction-status -> job (status, provider, model, error, timestamps)
 type HealthExtractionHandler struct {
-	svc *app.ExtractionService
+	svc  *app.ExtractionService
+	docs *app.DocumentService
+	imp  *app.ExamImportService
 }
 
-func NewHealthExtractionHandler(svc *app.ExtractionService) *HealthExtractionHandler {
-	return &HealthExtractionHandler{svc: svc}
+func NewHealthExtractionHandler(svc *app.ExtractionService, docs *app.DocumentService, imp *app.ExamImportService) *HealthExtractionHandler {
+	return &HealthExtractionHandler{svc: svc, docs: docs, imp: imp}
 }
 
 type extractionStatusResponse struct {
@@ -47,6 +49,93 @@ type extractionStatusResponse struct {
 	FinishedAt    *string   `json:"finished_at,omitempty"`
 	CreatedAt     string    `json:"created_at"`
 	UpdatedAt     string    `json:"updated_at"`
+	// Exam: sugestões derivadas do extracted_json quando a extração concluiu.
+	Exam *examSuggestionResponse `json:"exam,omitempty"`
+}
+
+type markerCandidateResponse struct {
+	MarkerID      uuid.UUID `json:"marker_id"`
+	CanonicalName string    `json:"canonical_name"`
+	CanonicalUnit *string   `json:"canonical_unit,omitempty"`
+	Similarity    float64   `json:"similarity"`
+}
+
+type examItemSuggestionResponse struct {
+	RawName        string                    `json:"raw_name"`
+	ResultValue    string                    `json:"result_value"`
+	ResultNumeric  *float64                  `json:"result_numeric,omitempty"`
+	Unit           *string                   `json:"unit,omitempty"`
+	ReferenceMin   *float64                  `json:"reference_min,omitempty"`
+	ReferenceMax   *float64                  `json:"reference_max,omitempty"`
+	ReferenceText  *string                   `json:"reference_text,omitempty"`
+	Material       *string                   `json:"material,omitempty"`
+	Method         *string                   `json:"method,omitempty"`
+	Interpretation *string                   `json:"interpretation,omitempty"`
+	RawText        *string                   `json:"raw_text,omitempty"`
+	MarkerStatus   string                    `json:"marker_status"` // matched|ambiguous|unresolved
+	MarkerID       *uuid.UUID                `json:"marker_id,omitempty"`
+	MarkerName     *string                   `json:"marker_name,omitempty"`
+	Candidates     []markerCandidateResponse `json:"candidates,omitempty"`
+	MarkerIsNew    bool                      `json:"marker_is_new,omitempty"`
+}
+
+type examSuggestionResponse struct {
+	PatientName    string                       `json:"patient_name,omitempty"`
+	ExamDate       string                       `json:"exam_date,omitempty"`
+	CollectionDate string                       `json:"collection_date,omitempty"`
+	ReleaseDate    string                       `json:"release_date,omitempty"`
+	LaboratoryName string                       `json:"laboratory_name,omitempty"`
+	DoctorName     string                       `json:"doctor_name,omitempty"`
+	Summary        string                       `json:"summary,omitempty"`
+	Warnings       []string                     `json:"warnings,omitempty"`
+	Items          []examItemSuggestionResponse `json:"items"`
+	LabID          *uuid.UUID                   `json:"lab_id,omitempty"`
+	LabIsNew       bool                         `json:"lab_is_new,omitempty"`
+}
+
+func mapExamSuggestion(s *app.ExamSuggestion) *examSuggestionResponse {
+	out := &examSuggestionResponse{
+		PatientName:    s.PatientName,
+		ExamDate:       s.ExamDate,
+		CollectionDate: s.CollectionDate,
+		ReleaseDate:    s.ReleaseDate,
+		LaboratoryName: s.LaboratoryName,
+		DoctorName:     s.DoctorName,
+		Summary:        s.Summary,
+		Warnings:       s.Warnings,
+		LabID:          s.LabID,
+		LabIsNew:       s.LabIsNew,
+		Items:          make([]examItemSuggestionResponse, 0, len(s.Items)),
+	}
+	for _, it := range s.Items {
+		r := examItemSuggestionResponse{
+			RawName:        it.RawName,
+			ResultValue:    it.ResultValue,
+			ResultNumeric:  it.ResultNumeric,
+			Unit:           it.Unit,
+			ReferenceMin:   it.ReferenceMin,
+			ReferenceMax:   it.ReferenceMax,
+			ReferenceText:  it.ReferenceText,
+			Material:       it.Material,
+			Method:         it.Method,
+			Interpretation: it.Interpretation,
+			RawText:        it.RawText,
+			MarkerStatus:   it.MarkerStatus,
+			MarkerID:       it.MarkerID,
+			MarkerName:     it.MarkerName,
+			MarkerIsNew:    it.MarkerIsNew,
+		}
+		for _, c := range it.Candidates {
+			r.Candidates = append(r.Candidates, markerCandidateResponse{
+				MarkerID:      c.MarkerID,
+				CanonicalName: c.CanonicalName,
+				CanonicalUnit: c.CanonicalUnit,
+				Similarity:    c.Similarity,
+			})
+		}
+		out.Items = append(out.Items, r)
+	}
+	return out
 }
 
 func mapExtractionStatus(j *dom.ExtractionJob) extractionStatusResponse {
@@ -91,5 +180,16 @@ func (h *HealthExtractionHandler) Status(c *gin.Context) {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, mapExtractionStatus(job))
+	resp := mapExtractionStatus(job)
+
+	// Extração concluída: anexa as sugestões derivadas do extracted_json
+	// (itens com resolução de marcador + match de laboratório).
+	if doc, derr := h.docs.Get(c.Request.Context(), ws, documentID); derr == nil &&
+		doc.ExtractionStatus == dom.ExtractionExtracted && len(doc.ExtractedJSON) > 0 {
+		if sug, serr := h.imp.Suggest(c.Request.Context(), ws, doc); serr == nil {
+			resp.Exam = mapExamSuggestion(sug)
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }

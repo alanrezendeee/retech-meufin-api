@@ -40,6 +40,7 @@ type RouterDeps struct {
 	DashboardService         *apph.DashboardService
 	DocumentService          *apph.DocumentService
 	ExtractionService        *apph.ExtractionService
+	ExamImportService        *apph.ExamImportService
 	IncomeSourceService      *appf.IncomeSourceService
 	FinancialEntryService    *appf.FinancialEntryService
 	CreditCardService        *appf.CreditCardService
@@ -138,8 +139,9 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		resH := handlers.NewHealthExamResultHandler(d.ExamResultService)
 		dashH := handlers.NewHealthDashboardHandler(d.DashboardService)
 		docH := handlers.NewHealthDocumentHandler(d.DocumentService)
-		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService)
+		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService, d.DocumentService, d.ExamImportService)
 		extTrigH := handlers.NewHealthExtractTriggerHandler(d.DocumentService, d.ExtractionService)
+		examConfirmH := handlers.NewHealthExamConfirmHandler(d.ExamImportService)
 		health := v1.Group("/health", middleware.RequireModule("health", d.PermsEnforcement))
 		{
 			health.GET("/markers", mkH.List)
@@ -228,6 +230,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.GET("/documents/:id/download-url", docH.DownloadURL)
 			health.POST("/documents/:id/extract", extTrigH.Extract)
 			health.GET("/documents/:id/extraction-status", extStatusH.Status)
+			health.POST("/documents/:id/confirm", examConfirmH.Confirm)
 		}
 	}
 
