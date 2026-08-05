@@ -13,10 +13,18 @@ import (
 
 // PromptVersion identifica a versão do prompt de extração (para auditoria e
 // reprocessamento). Incremente ao alterar o prompt/schema.
-const PromptVersion = "exam-extract-v1"
+// v2: itens só com resultado mensurado (não extrair achados descritivos de
+// laudo de imagem nem seções do documento); exam_date com fallback para a data
+// de coleta/liberação e sem hora/fuso.
+const PromptVersion = "exam-extract-v2"
 
 const anthropicVersion = "2023-06-01"
 const extractionToolName = "registrar_exame"
+
+// maxOutputTokens limita a saída do modelo. Laudos/faturas grandes geram
+// milhares de tokens de tool input; 8192 truncava silenciosamente (o modelo
+// devolvia só o cabeçalho, stop_reason=max_tokens, e itens eram perdidos).
+const maxOutputTokens = 32000
 
 // extractionSystemPrompt orienta o modelo. Reforça: apenas EXTRAÇÃO, sem
 // diagnóstico ou interpretação clínica.
@@ -29,6 +37,14 @@ REGRAS OBRIGATÓRIAS:
 - Se um campo não estiver presente, deixe-o vazio/nulo. Não preencha por dedução clínica.
 - Preserve os valores exatamente como aparecem (incluindo unidades e faixas de referência).
 - Quando houver valor numérico, também preencha numeric_value com o número correspondente.
+- Em "exams" registre APENAS itens com resultado mensurado ou laudado (valor numérico
+  ou qualitativo como "não reagente", "ausente"). NÃO crie itens para achados
+  descritivos de laudos de imagem (ex.: "Fígado: dimensões normais"), nem para
+  seções do documento ("Conclusão", "Observações", "Técnica"). Em laudo de imagem,
+  extraia como item somente medidas objetivas com unidade (ex.: "Rim direito" = 10,5 cm).
+- exam_date é a data de realização/coleta do exame. Se o laudo imprimir apenas a
+  data de coleta ou de liberação, use essa data em exam_date também. Informe as
+  datas em YYYY-MM-DD, sem hora nem fuso.
 - Registre no campo warnings qualquer ambiguidade, ilegibilidade ou dado faltante relevante.
 
 Use SEMPRE a ferramenta ` + extractionToolName + ` para retornar o resultado estruturado.`
@@ -48,8 +64,11 @@ func NewAnthropicExtractor(cfg Config) *AnthropicExtractor {
 		cfg.BaseURL = DefaultBaseURL
 	}
 	return &AnthropicExtractor{
-		cfg:    cfg,
-		client: &http.Client{Timeout: 120 * time.Second},
+		cfg: cfg,
+		// Laudos grandes geram dezenas de milhares de tokens de saída; com o
+		// teto de 32k a geração pode passar de 2min. A extração roda em
+		// goroutine (assíncrona), então o timeout longo não segura requisição.
+		client: &http.Client{Timeout: 300 * time.Second},
 	}
 }
 
@@ -174,7 +193,7 @@ func (a *AnthropicExtractor) Extract(ctx context.Context, in ExtractInput) (Extr
 
 	reqBody := anthropicRequest{
 		Model:     a.cfg.Model,
-		MaxTokens: 8192,
+		MaxTokens: maxOutputTokens,
 		System:    profile.SystemPrompt,
 		Tools: []anthropicTool{{
 			Name:        profile.ToolName,
@@ -255,6 +274,11 @@ func (a *AnthropicExtractor) Extract(ctx context.Context, in ExtractInput) (Extr
 
 	if len(result.StructuredJSON) == 0 {
 		return result, fmt.Errorf("resposta sem dados estruturados (stop_reason=%s)", parsed.StopReason)
+	}
+	// Saída cortada por limite de tokens: o JSON pode parsear e ainda assim
+	// estar incompleto (itens silenciosamente perdidos). Melhor falhar claro.
+	if parsed.StopReason == "max_tokens" {
+		return result, fmt.Errorf("documento muito extenso — a leitura foi truncada antes do fim (max_tokens). Divida o arquivo em partes menores e tente novamente")
 	}
 	return result, nil
 }
