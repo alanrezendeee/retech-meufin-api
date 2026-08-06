@@ -302,6 +302,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.PUT("/installments/:groupId", entH.RenameInstallmentGroup)
 		finance.GET("/installments/:groupId/renegotiation-preview", renegH.Preview)
 		finance.GET("/entries/:id/renegotiation-preview", renegH.PreviewByEntry)
+		finance.GET("/entries/:id/events", entH.Events)
 		finance.POST("/renegotiations", renegH.Create)
 		finance.GET("/renegotiations", renegH.List)
 		finance.GET("/renegotiations/:id", renegH.Get)

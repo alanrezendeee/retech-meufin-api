@@ -616,6 +616,61 @@ func (h *FinancialEntryHandler) DiscountReasons(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
 
+// Events responde GET /finance/entries/:id/events — a trilha imutável do
+// ciclo de vida do lançamento (liquidações, reaberturas, cancelamentos,
+// mudanças de vencimento), com data, valores e autor.
+func (h *FinancialEntryHandler) Events(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	events, err := h.svc.ListEvents(c.Request.Context(), ws, id)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	items := make([]gin.H, 0, len(events))
+	for _, ev := range events {
+		item := gin.H{
+			"id":         ev.ID,
+			"event":      string(ev.Event),
+			"created_at": ev.CreatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if ev.FromStatus != nil {
+			item["from_status"] = string(*ev.FromStatus)
+		}
+		if ev.ToStatus != nil {
+			item["to_status"] = string(*ev.ToStatus)
+		}
+		if ev.PaidAt != nil {
+			item["paid_at"] = ev.PaidAt.UTC().Format(time.RFC3339Nano)
+		}
+		if ev.PaidAmountCents != nil {
+			item["paid_amount_cents"] = *ev.PaidAmountCents
+		}
+		if ev.CancelReason != nil {
+			item["cancel_reason"] = *ev.CancelReason
+		}
+		if ev.OldDueDate != nil {
+			item["old_due_date"] = ev.OldDueDate.Format("2006-01-02")
+		}
+		if ev.NewDueDate != nil {
+			item["new_due_date"] = ev.NewDueDate.Format("2006-01-02")
+		}
+		if ev.ActorUserID != nil {
+			item["actor_user_id"] = *ev.ActorUserID
+		}
+		items = append(items, item)
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
+}
+
 // CancelReasons lista o catálogo global de motivos de cancelamento.
 func (h *FinancialEntryHandler) CancelReasons(c *gin.Context) {
 	items := make([]gin.H, len(dom.CancelReasons))
