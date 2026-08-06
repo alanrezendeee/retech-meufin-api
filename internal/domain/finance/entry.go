@@ -176,6 +176,12 @@ func (e *FinancialEntry) Validate() error {
 	return nil
 }
 
+// ResidualPrefix nomeia o lançamento gerado por um pagamento parcial. Fica no
+// domínio porque o rename de um parcelamento precisa reconstruir esse nome:
+// renomear a dívida sem renomear os residuais deixaria "Residual de <nome
+// antigo>" pendurado na tela.
+const ResidualPrefix = "Residual de "
+
 // FinancialEntryFilter filtra a listagem de lançamentos.
 type FinancialEntryFilter struct {
 	Query          string // busca na descrição (case-insensitive)
@@ -232,4 +238,8 @@ type FinancialEntryRepository interface {
 	ListGroup(ctx context.Context, workspaceID, groupID uuid.UUID) ([]FinancialEntry, error)
 	// ListResidualsOf devolve os residuais de várias origens de uma vez.
 	ListResidualsOf(ctx context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]FinancialEntry, error)
+	// RenameGroup troca a descrição de TODAS as parcelas do grupo, inclusive
+	// as já pagas, e dos residuais cujo nome deriva da descrição antiga.
+	// Descrição é rótulo, não valor: renomear não reescreve história financeira.
+	RenameGroup(ctx context.Context, workspaceID, groupID uuid.UUID, oldDesc, newDesc string) (entries, residuals int, err error)
 }

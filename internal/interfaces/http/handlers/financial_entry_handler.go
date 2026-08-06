@@ -574,6 +574,39 @@ func (h *FinancialEntryHandler) Installments(c *gin.Context) {
 	})
 }
 
+type renameInstallmentGroupRequest struct {
+	Description string `json:"description" binding:"required"`
+}
+
+// RenameInstallmentGroup responde PATCH /finance/installments/:groupId.
+func (h *FinancialEntryHandler) RenameInstallmentGroup(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "group_id inválido")
+		return
+	}
+	var body renameInstallmentGroupRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	res, err := h.svc.RenameInstallmentGroup(c.Request.Context(), ws, groupID, body.Description)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"description":       res.Description,
+		"entries_updated":   res.Entries,
+		"residuals_updated": res.Residuals,
+	})
+}
+
 // DiscountReasons lista o catálogo global de motivos de desconto.
 func (h *FinancialEntryHandler) DiscountReasons(c *gin.Context) {
 	items := make([]gin.H, len(dom.DiscountReasons))
