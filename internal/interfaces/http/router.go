@@ -280,6 +280,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.DELETE("/expense-categories/:id", catFinH.Delete)
 
 		finance.GET("/discount-reasons", entH.DiscountReasons)
+		finance.GET("/cancel-reasons", entH.CancelReasons)
 		finance.GET("/installments", entH.Installments)
 		finance.GET("/entries", entH.List)
 		finance.POST("/entries", entH.Create)
@@ -290,6 +291,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/entries/:id/confirm", entH.Confirm)
 		finance.POST("/entries/:id/reopen", entH.Reopen)
 		finance.POST("/entries/:id/cancel", entH.Cancel)
+		finance.POST("/entries/:id/waive", entH.Waive)
 		finance.POST("/entries/:id/settle", entH.Settle)
 		finance.POST("/entries/:id/resize-installments", entH.ResizeInstallments)
 

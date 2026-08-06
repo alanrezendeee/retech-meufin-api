@@ -84,6 +84,7 @@ type FinancialEntryModel struct {
 	PaymentCardID     *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
 	DiscountCents     *int64     `gorm:"column:discount_cents"`
 	DiscountReason    *string    `gorm:"column:discount_reason;size:40"`
+	CancelReason      *string    `gorm:"column:cancel_reason;size:30"`
 	ResidualOfID      *uuid.UUID `gorm:"column:residual_of_id;type:uuid"`
 	PurchaseDate      *time.Time `gorm:"column:purchase_date;type:date"`
 	FiscalDocumentID  *uuid.UUID `gorm:"column:fiscal_document_id;type:uuid"`

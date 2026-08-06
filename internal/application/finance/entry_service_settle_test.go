@@ -64,8 +64,25 @@ func (f *fakeEntryRepo) List(_ context.Context, _ uuid.UUID, _ dom.FinancialEntr
 	return nil, 0, nil
 }
 
+// ListRecurrenceFrontiers reproduz o DISTINCT ON do repositório real: a
+// ocorrência de maior vencimento de cada grupo recorrente.
 func (f *fakeEntryRepo) ListRecurrenceFrontiers(_ context.Context) ([]dom.FinancialEntry, error) {
-	return nil, nil
+	frontier := map[uuid.UUID]dom.FinancialEntry{}
+	for _, e := range f.entries {
+		if e.Recurrence == dom.RecurrenceNone || e.RecurrenceGroupID == nil {
+			continue
+		}
+		cur, ok := frontier[*e.RecurrenceGroupID]
+		if !ok || e.DueDate.After(cur.DueDate) {
+			frontier[*e.RecurrenceGroupID] = *e
+		}
+	}
+	out := make([]dom.FinancialEntry, 0, len(frontier))
+	for _, e := range frontier {
+		out = append(out, e)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DueDate.Before(out[j].DueDate) })
+	return out, nil
 }
 
 func (f *fakeEntryRepo) ListInvoiceInstallments(_ context.Context, workspaceID uuid.UUID) ([]dom.FinancialEntry, error) {
@@ -304,7 +321,9 @@ func TestConfirmDiscountValidation(t *testing.T) {
 	}{
 		{"desconto sem motivo", 1_000, ""},
 		{"motivo fora do catálogo", 1_000, "achei_bonito"},
-		{"desconto >= valor", 10_000, "pagamento_antecipado"},
+		// Desconto IGUAL ao valor é isenção total e passou a ser válido —
+		// ver TestWaiveZerosPaidKeepsExpected. Só acima do valor é erro.
+		{"desconto > valor", 10_001, "pagamento_antecipado"},
 		{"desconto negativo", -100, "pagamento_antecipado"},
 	}
 	for _, tc := range cases {
@@ -613,7 +632,7 @@ func TestConfirmAndCancelCascade(t *testing.T) {
 	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{WorkspaceID: e.WorkspaceID, ID: e.ID}); err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}
-	if _, err := svc.Cancel(context.Background(), e.WorkspaceID, e.ID); err != nil {
+	if _, err := svc.Cancel(context.Background(), e.WorkspaceID, e.ID, nil); err != nil {
 		t.Fatalf("Cancel: %v", err)
 	}
 	if len(repo.cascadeCalls) != 2 {

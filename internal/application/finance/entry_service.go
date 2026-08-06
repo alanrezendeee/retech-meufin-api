@@ -628,7 +628,10 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 	if in.PaidAmountCents != nil {
 		paid = *in.PaidAmountCents
 	}
-	if paid <= 0 {
+	// Pago zero só é aceito quando o desconto cobriu o valor inteiro (isenção
+	// total: bônus, cortesia, ressarcimento). Fora disso, zero seria um
+	// lançamento marcado como pago sem pagamento — e geraria residual cheio.
+	if paid < 0 || (paid == 0 && expected > 0) {
 		return nil, &dom.ValidationError{Msg: "valor pago deve ser maior que zero"}
 	}
 	residual := expected - paid
@@ -692,9 +695,66 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 	return e, nil
 }
 
-// Cancel marca o lançamento como cancelado.
-func (s *FinancialEntryService) Cancel(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {
-	return s.setStatus(ctx, workspaceID, id, dom.StatusCancelada)
+// Cancel marca o lançamento como cancelado. O motivo (slug do catálogo
+// CancelReasons, opcional) define se a série recorrente é encerrada ou
+// continua nos próximos meses — ver ExtendRecurrences.
+func (s *FinancialEntryService) Cancel(ctx context.Context, workspaceID, id uuid.UUID, reason *string) (*dom.FinancialEntry, error) {
+	if reason != nil && *reason != "" && !dom.ValidCancelReason(*reason) {
+		return nil, &dom.ValidationError{Msg: "motivo de cancelamento fora do catálogo"}
+	}
+	e, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	e.Status = dom.StatusCancelada
+	if reason != nil && *reason != "" {
+		e.CancelReason = reason
+	}
+	e.UpdatedAt = time.Now().UTC()
+	if err := e.Validate(); err != nil {
+		return nil, err
+	}
+	if err := s.repo.Update(ctx, e); err != nil {
+		return nil, err
+	}
+	// Fatura pai/filho: o cancelamento propaga para os itens da fatura.
+	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, dom.StatusCancelada, e.PaidAt); err != nil {
+		return nil, err
+	}
+	return e, nil
+}
+
+// Waive registra que a cobrança do período não foi devida: o lançamento é
+// liquidado com desconto integral e valor pago zero. O previsto continua
+// valendo o valor cheio (a mensalidade não mudou) e o realizado fica zero.
+//
+// É o caminho para bônus, cortesia e ressarcimento que zerou a cobrança —
+// preserva o rastro do motivo, ao contrário do cancelamento, e não interfere
+// na série recorrente.
+func (s *FinancialEntryService) Waive(ctx context.Context, workspaceID, id uuid.UUID, reason string, paidAt *time.Time) (*dom.FinancialEntry, error) {
+	if reason == "" {
+		return nil, &dom.ValidationError{Msg: "informe o motivo da isenção"}
+	}
+	e, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if e.Status == dom.StatusCancelada {
+		return nil, &dom.ValidationError{Msg: "lançamento cancelado não pode ser isentado"}
+	}
+	if e.Status == dom.StatusRealizada {
+		return nil, &dom.ValidationError{Msg: "lançamento já liquidado; desfaça o pagamento antes de registrar a isenção"}
+	}
+	full := e.AmountCents
+	zero := int64(0)
+	return s.Confirm(ctx, ConfirmEntryInput{
+		WorkspaceID:     workspaceID,
+		ID:              id,
+		DiscountCents:   &full,
+		DiscountReason:  &reason,
+		PaidAmountCents: &zero,
+		PaidAt:          paidAt,
+	})
 }
 
 // Reopen desfaz a liquidação: lançamento realizado volta a previsto e os
@@ -735,6 +795,7 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 	e.PaymentCardID = nil
 	e.DiscountCents = nil
 	e.DiscountReason = nil
+	e.CancelReason = nil
 	e.UpdatedAt = time.Now().UTC()
 	if err := e.Validate(); err != nil {
 		return nil, err
@@ -782,7 +843,11 @@ func (s *FinancialEntryService) ExtendRecurrences(ctx context.Context) (int, err
 	created := 0
 	for i := range frontiers {
 		f := frontiers[i]
-		if f.Status == dom.StatusCancelada {
+		// Ocorrência mais futura cancelada só encerra a série quando o motivo
+		// diz isso. Cancelar o mês mais distante por "não houve cobrança"
+		// costumava matar a recorrência em silêncio — a série parava de
+		// crescer e o usuário só descobria quando os meses acabavam.
+		if f.Status == dom.StatusCancelada && dom.CancelReasonEndsRecurrence(f.CancelReason) {
 			continue // recorrência encerrada pelo usuário
 		}
 		if !f.DueDate.Before(horizon.AddDate(0, -1, 0)) {
@@ -847,11 +912,14 @@ func (s *FinancialEntryService) Settle(ctx context.Context, in SettleEntryInput)
 		paidAt = in.PaidAt.UTC()
 	}
 	paid := e.AmountCents
+	expected := e.AmountCents
 	if in.DiscountCents != nil {
-		paid = e.AmountCents - *in.DiscountCents
+		expected = e.AmountCents - *in.DiscountCents
+		paid = expected
 	}
 	if in.PaidAmountCents != nil {
-		if *in.PaidAmountCents == 0 {
+		// Zero só quando o desconto zerou o devido (isenção total).
+		if *in.PaidAmountCents == 0 && expected > 0 {
 			return nil, &dom.ValidationError{Msg: "paid_amount_cents não pode ser zero"}
 		}
 		paid = *in.PaidAmountCents

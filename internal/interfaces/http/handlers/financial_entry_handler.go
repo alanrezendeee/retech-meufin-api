@@ -49,6 +49,7 @@ type financialEntryResponse struct {
 	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
 	DiscountCents     *int64     `json:"discount_cents"`
 	DiscountReason    *string    `json:"discount_reason"`
+	CancelReason      *string    `json:"cancel_reason"`
 	ResidualOfID      *uuid.UUID `json:"residual_of_id"`
 	PurchaseDate      *string    `json:"purchase_date"`
 	FiscalDocumentID  *uuid.UUID `json:"fiscal_document_id"`
@@ -98,6 +99,7 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		PaymentCardID:     e.PaymentCardID,
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
+		CancelReason:      e.CancelReason,
 		ResidualOfID:      e.ResidualOfID,
 		PurchaseDate:      purchaseDate,
 		FiscalDocumentID:  e.FiscalDocumentID,
@@ -580,6 +582,18 @@ func (h *FinancialEntryHandler) DiscountReasons(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
 }
 
+// CancelReasons lista o catálogo global de motivos de cancelamento.
+func (h *FinancialEntryHandler) CancelReasons(c *gin.Context) {
+	items := make([]gin.H, len(dom.CancelReasons))
+	for i, r := range dom.CancelReasons {
+		items[i] = gin.H{
+			"slug": r.Slug, "name": r.Name, "description": r.Description,
+			"ends_recurrence": r.EndsRecurrence,
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"items": items, "total": len(items)})
+}
+
 // Reopen desfaz a liquidação: realizada volta a prevista, pagamento limpo.
 func (h *FinancialEntryHandler) Reopen(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
@@ -663,7 +677,64 @@ func (h *FinancialEntryHandler) Cancel(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
 		return
 	}
-	e, err := h.svc.Cancel(c.Request.Context(), ws, id)
+	var body financialEntryCancelJSON
+	if c.Request.ContentLength > 0 {
+		if err := c.ShouldBindJSON(&body); err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+			return
+		}
+	}
+	e, err := h.svc.Cancel(c.Request.Context(), ws, id, body.Reason)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapFinancialEntry(e))
+}
+
+// financialEntryCancelJSON é o body opcional do cancelamento.
+type financialEntryCancelJSON struct {
+	// Reason: slug do catálogo /finance/cancel-reasons. Define se a série
+	// recorrente é encerrada ou continua.
+	Reason *string `json:"reason"`
+}
+
+// financialEntryWaiveJSON é o body da isenção (cobrança não devida no período).
+type financialEntryWaiveJSON struct {
+	// Reason: slug do catálogo /finance/discount-reasons (ex.: bonus,
+	// cortesia, ressarcimento, cobranca_indevida).
+	Reason string  `json:"reason"`
+	PaidAt *string `json:"paid_at"` // YYYY-MM-DD; ausente = hoje
+}
+
+// Waive registra que a cobrança do período não foi devida: liquida com
+// desconto integral e valor pago zero, preservando o previsto e o motivo.
+func (h *FinancialEntryHandler) Waive(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	var body financialEntryWaiveJSON
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	var paidAt *time.Time
+	if body.PaidAt != nil && *body.PaidAt != "" {
+		t, perr := time.Parse("2006-01-02", *body.PaidAt)
+		if perr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "paid_at inválida (use YYYY-MM-DD)")
+			return
+		}
+		paidAt = &t
+	}
+	e, err := h.svc.Waive(c.Request.Context(), ws, id, body.Reason, paidAt)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
