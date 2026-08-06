@@ -23,13 +23,18 @@ func NewRenegotiationHandler(svc *app.RenegotiationService) *RenegotiationHandle
 }
 
 type openChargeResponse struct {
-	ID                uuid.UUID `json:"id"`
-	Kind              string    `json:"kind"` // installment | residual
-	Description       string    `json:"description"`
-	AmountCents       int64     `json:"amount_cents"`
-	DueDate           string    `json:"due_date"`
-	InstallmentNumber *int      `json:"installment_number,omitempty"`
-	OriginDescription *string   `json:"origin_description,omitempty"`
+	ID   uuid.UUID `json:"id"`
+	Kind string    `json:"kind"` // installment | residual
+	// Status: paid | partially_paid | overdue | upcoming
+	Status          string `json:"status"`
+	Description     string `json:"description"`
+	AmountCents     int64  `json:"amount_cents"`
+	PaidAmountCents *int64 `json:"paid_amount_cents,omitempty"`
+	DueDate         string `json:"due_date"`
+	// Included indica que a cobrança compõe o saldo renegociado.
+	Included          bool    `json:"included"`
+	InstallmentNumber *int    `json:"installment_number,omitempty"`
+	OriginDescription *string `json:"origin_description,omitempty"`
 }
 
 type renegotiationPreviewResponse struct {
@@ -44,6 +49,8 @@ type renegotiationPreviewResponse struct {
 	ResidualCount    int                  `json:"residual_count"`
 	ResidualCents    int64                `json:"residual_cents"`
 	OpenTotalCents   int64                `json:"open_total_cents"`
+	OverdueCount     int                  `json:"overdue_count"`
+	OverdueCents     int64                `json:"overdue_cents"`
 	NextDueDate      *string              `json:"next_due_date,omitempty"`
 	SuggestedDueDate string               `json:"suggested_due_date"`
 	TypicalAmount    int64                `json:"typical_amount_cents"`
@@ -61,6 +68,8 @@ func mapPreview(p *app.RenegotiationPreview) renegotiationPreviewResponse {
 		ResidualCount:    p.ResidualCount,
 		ResidualCents:    p.ResidualCents,
 		OpenTotalCents:   p.OpenTotalCents,
+		OverdueCount:     p.OverdueCount,
+		OverdueCents:     p.OverdueCents,
 		SuggestedDueDate: p.SuggestedDueDate.Format("2006-01-02"),
 		TypicalAmount:    p.TypicalAmountCent,
 		Charges:          make([]openChargeResponse, 0, len(p.Charges)),
@@ -73,6 +82,9 @@ func mapPreview(p *app.RenegotiationPreview) renegotiationPreviewResponse {
 		out.Charges = append(out.Charges, openChargeResponse{
 			ID:                c.ID,
 			Kind:              string(c.Kind),
+			Status:            string(c.Status),
+			PaidAmountCents:   c.PaidAmountCents,
+			Included:          c.Included,
 			Description:       c.Description,
 			AmountCents:       c.AmountCents,
 			DueDate:           c.DueDate.Format("2006-01-02"),
