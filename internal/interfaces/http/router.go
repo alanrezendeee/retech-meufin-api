@@ -317,6 +317,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finDashH := handlers.NewFinanceDashboardHandler(d.FinanceDashboardService)
 		finance.GET("/dashboard", finDashH.Summary)
 		finance.GET("/dashboard/monthly", finDashH.Monthly)
+		finance.GET("/dashboard/categories/:slug/entries", finDashH.CategoryEntries)
 
 		finance.POST("/documents", finDocH.Upload)
 		finance.GET("/documents", finDocH.List)

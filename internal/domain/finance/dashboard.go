@@ -58,4 +58,8 @@ type MonthlyPoint struct {
 type FinanceDashboardRepository interface {
 	Summary(ctx context.Context, workspaceID uuid.UUID, year, month int, familyMemberID *uuid.UUID) (*DashboardSummary, error)
 	MonthlySeries(ctx context.Context, workspaceID uuid.UUID, year int, familyMemberID *uuid.UUID) ([]MonthlyPoint, error)
+	// CategoryEntries devolve TODOS os lançamentos que compõem a barra de uma
+	// categoria no mês (drill-down) — mesma cláusula da agregação do Summary,
+	// sem paginação: o recorte mês × categoria é o limite natural.
+	CategoryEntries(ctx context.Context, workspaceID uuid.UUID, category string, year, month int, familyMemberID *uuid.UUID) ([]FinancialEntry, error)
 }

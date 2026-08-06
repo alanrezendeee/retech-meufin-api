@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -111,6 +112,62 @@ func (h *FinanceDashboardHandler) Summary(c *gin.Context) {
 		resp.FutureInstallments.LastDueDate = &v
 	}
 	c.JSON(http.StatusOK, resp)
+}
+
+// CategoryEntries responde GET /finance/dashboard/categories/:slug/entries —
+// o drill-down de uma barra do "Pra onde foi o dinheiro". Sem paginação: o
+// recorte mês × categoria é o limite natural, e a lista precisa ser completa
+// para o total bater com a barra.
+func (h *FinanceDashboardHandler) CategoryEntries(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	category := strings.TrimSpace(c.Param("slug"))
+	if category == "" {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "categoria inválida")
+		return
+	}
+	now := time.Now().UTC()
+	year, month := now.Year(), int(now.Month())
+	var err error
+	if v := c.Query("year"); v != "" {
+		if year, err = strconv.Atoi(v); err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "year inválido")
+			return
+		}
+	}
+	if v := c.Query("month"); v != "" {
+		if month, err = strconv.Atoi(v); err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "month inválido")
+			return
+		}
+	}
+	var familyMemberID *uuid.UUID
+	if v := c.Query("family_member_id"); v != "" {
+		id, perr := uuid.Parse(v)
+		if perr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "family_member_id inválido")
+			return
+		}
+		familyMemberID = &id
+	}
+
+	res, err := h.svc.CategoryEntries(c.Request.Context(), ws, category, year, month, familyMemberID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	items := make([]financialEntryResponse, 0, len(res.Items))
+	for i := range res.Items {
+		items = append(items, mapFinancialEntry(&res.Items[i]))
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"items":       items,
+		"total":       len(items),
+		"total_cents": res.TotalCents,
+	})
 }
 
 type dashboardMonthJSON struct {
