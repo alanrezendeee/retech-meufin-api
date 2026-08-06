@@ -73,3 +73,29 @@ func (s *FinanceDashboardService) CategoryEntries(ctx context.Context, workspace
 	}
 	return out, nil
 }
+
+// CashFlow monta a DFC do ano: saldo inicial + entradas pagas − saídas pagas
+// = saldo final, mês a mês. Os 12 meses saem preenchidos (zeros onde não
+// houve movimento) para a série do gráfico não ter buracos.
+func (s *FinanceDashboardService) CashFlow(ctx context.Context, workspaceID uuid.UUID, year int, familyMemberID *uuid.UUID) (*dom.CashFlow, error) {
+	opening, raw, err := s.repo.CashFlowRaw(ctx, workspaceID, year, familyMemberID)
+	if err != nil {
+		return nil, err
+	}
+	byMonth := map[int]dom.CashFlowMonth{}
+	for _, m := range raw {
+		byMonth[m.Month] = m
+	}
+	out := &dom.CashFlow{Year: year, OpeningBalanceCents: opening}
+	balance := opening
+	for m := 1; m <= 12; m++ {
+		cm := byMonth[m]
+		cm.Month = m
+		cm.NetCents = cm.InflowCents - cm.OutflowCents
+		balance += cm.NetCents
+		cm.BalanceCents = balance
+		out.Months = append(out.Months, cm)
+	}
+	out.ClosingBalanceCents = balance
+	return out, nil
+}

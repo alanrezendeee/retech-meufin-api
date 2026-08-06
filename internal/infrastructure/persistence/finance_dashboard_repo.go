@@ -259,3 +259,61 @@ func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspac
 	}
 	return out, nil
 }
+
+// CashFlowRaw agrega os fluxos realizados no eixo caixa.
+//
+// Abertura = líquido (créditos − débitos) de tudo que foi pago antes de 1º de
+// janeiro do ano — o caixa que o histórico registrado construiu até ali.
+// Mesmas exclusões do resto do dashboard: topo apenas (fatura conta pelo pai)
+// e soft-deleted fora. Realizada é o único status que move caixa.
+func (r *FinanceDashboardRepository) CashFlowRaw(ctx context.Context, workspaceID uuid.UUID, year int, familyMemberID *uuid.UUID) (int64, []dom.CashFlowMonth, error) {
+	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(1, 0, 0)
+
+	var opening struct{ Net int64 }
+	oq := r.db.WithContext(ctx).
+		Table("financial_entries").
+		Select(`COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents)
+		                          ELSE -COALESCE(paid_amount_cents, amount_cents) END), 0) AS net`).
+		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where("COALESCE(DATE(paid_at), due_date) < ?", start)
+	if familyMemberID != nil {
+		oq = oq.Where("family_member_id = ?", *familyMemberID)
+	}
+	if err := oq.Scan(&opening).Error; err != nil {
+		return 0, nil, mapFinanceErr(err)
+	}
+
+	type row struct {
+		Month   int
+		Inflow  int64
+		Outflow int64
+	}
+	var rows []row
+	mq := r.db.WithContext(ctx).
+		Table("financial_entries").
+		Select(`
+			EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))::int AS month,
+			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS inflow,
+			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS outflow`).
+		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end).
+		Group("EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))").
+		Order("month ASC")
+	if familyMemberID != nil {
+		mq = mq.Where("family_member_id = ?", *familyMemberID)
+	}
+	if err := mq.Scan(&rows).Error; err != nil {
+		return 0, nil, mapFinanceErr(err)
+	}
+
+	out := make([]dom.CashFlowMonth, len(rows))
+	for i := range rows {
+		out[i] = dom.CashFlowMonth{
+			Month:        rows[i].Month,
+			InflowCents:  rows[i].Inflow,
+			OutflowCents: rows[i].Outflow,
+		}
+	}
+	return opening.Net, out, nil
+}
