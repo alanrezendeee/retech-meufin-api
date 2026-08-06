@@ -9,6 +9,14 @@ import (
 
 // DashboardSummary agrega os números do mês selecionado.
 //
+// EIXOS TEMPORAIS — um fato, dois eixos, cada medida declara o seu:
+//   - Previsto, a pagar e a receber: eixo COMPETÊNCIA (due_date) — a
+//     obrigação pertence ao mês em que vence, paga ou não.
+//   - Realizado: eixo CAIXA (paid_at, fallback due_date quando a liquidação
+//     antiga não gravou a data) — o dinheiro saiu quando saiu. Parcela de
+//     dezembro antecipada em agosto conta no realizado de agosto; a atrasada
+//     de junho paga em julho conta no realizado de julho.
+//
 // Regras (fatura pai/filho NÃO pode duplicar):
 //   - Totais consideram só lançamentos de topo (parent_id IS NULL).
 //   - Categorias consideram só folhas (exclui pai que tem filhos), senão
@@ -17,7 +25,7 @@ import (
 //   - Cancelados e soft-deleted ficam sempre de fora.
 //   - Realizado usa paid_amount_cents quando existir (liquidação com
 //     juros/multa/desconto), senão amount_cents.
-//   - Previsto = prevista + realizada (total esperado do mês).
+//   - Previsto = prevista + realizada (total esperado do mês, por vencimento).
 type DashboardSummary struct {
 	// Cards do mês.
 	IncomeRealizedCents  int64

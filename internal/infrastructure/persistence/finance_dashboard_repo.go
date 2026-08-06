@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -23,22 +24,19 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(0, 1, 0)
 
-	type totalsRow struct {
-		IncomeRealized  int64
+	// Eixo COMPETÊNCIA (due_date): previsto e pendências — a obrigação
+	// pertence ao mês em que vence, paga ou não.
+	type expectedRow struct {
 		IncomeExpected  int64
-		ExpenseRealized int64
 		ExpenseExpected int64
 		Receivable      int64
 		Payable         int64
 	}
-	var totals totalsRow
-
+	var expected expectedRow
 	q := r.db.WithContext(ctx).
 		Table("financial_entries").
 		Select(`
-			COALESCE(SUM(CASE WHEN kind = 'credit' AND status = 'realizada' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN amount_cents ELSE 0 END), 0) AS income_expected,
-			COALESCE(SUM(CASE WHEN kind = 'debit' AND status = 'realizada' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN amount_cents ELSE 0 END), 0) AS expense_expected,
 			COALESCE(SUM(CASE WHEN kind = 'credit' AND status = 'prevista' THEN amount_cents ELSE 0 END), 0) AS receivable,
 			COALESCE(SUM(CASE WHEN kind = 'debit' AND status = 'prevista' THEN amount_cents ELSE 0 END), 0) AS payable`).
@@ -47,7 +45,29 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 	if familyMemberID != nil {
 		q = q.Where("family_member_id = ?", *familyMemberID)
 	}
-	if err := q.Scan(&totals).Error; err != nil {
+	if err := q.Scan(&expected).Error; err != nil {
+		return nil, mapFinanceErr(err)
+	}
+
+	// Eixo CAIXA (paid_at, fallback due_date para liquidações antigas sem a
+	// data): realizado — o dinheiro saiu quando saiu. É o que faz a parcela
+	// antecipada aparecer no mês do pagamento, não no do boleto.
+	type realizedRow struct {
+		IncomeRealized  int64
+		ExpenseRealized int64
+	}
+	var realized realizedRow
+	rq := r.db.WithContext(ctx).
+		Table("financial_entries").
+		Select(`
+			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
+			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized`).
+		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end)
+	if familyMemberID != nil {
+		rq = rq.Where("family_member_id = ?", *familyMemberID)
+	}
+	if err := rq.Scan(&realized).Error; err != nil {
 		return nil, mapFinanceErr(err)
 	}
 
@@ -63,7 +83,11 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 		Select(`COALESCE(e.type, 'outros') AS category,
 			COALESCE(SUM(CASE WHEN e.status = 'realizada' THEN COALESCE(e.paid_amount_cents, e.amount_cents) ELSE e.amount_cents END), 0) AS total`).
 		Where("e.workspace_id = ? AND e.deleted_at IS NULL AND e.kind = 'debit' AND e.status <> 'cancelada'", workspaceID).
-		Where("e.due_date >= ? AND e.due_date < ?", start, end).
+		// Cada status no seu eixo: prevista por vencimento (competência),
+		// realizada por pagamento (caixa, fallback vencimento).
+		Where(`((e.status = 'prevista' AND e.due_date >= ? AND e.due_date < ?)
+		    OR (e.status = 'realizada' AND COALESCE(DATE(e.paid_at), e.due_date) >= ? AND COALESCE(DATE(e.paid_at), e.due_date) < ?))`,
+			start, end, start, end).
 		Where("NOT EXISTS (SELECT 1 FROM financial_entries c WHERE c.parent_id = e.id AND c.deleted_at IS NULL)").
 		Group("COALESCE(e.type, 'outros')").
 		Order("total DESC")
@@ -95,12 +119,12 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 	}
 
 	out := &dom.DashboardSummary{
-		IncomeRealizedCents:  totals.IncomeRealized,
-		IncomeExpectedCents:  totals.IncomeExpected,
-		ExpenseRealizedCents: totals.ExpenseRealized,
-		ExpenseExpectedCents: totals.ExpenseExpected,
-		ReceivableCents:      totals.Receivable,
-		PayableCents:         totals.Payable,
+		IncomeRealizedCents:  realized.IncomeRealized,
+		IncomeExpectedCents:  expected.IncomeExpected,
+		ExpenseRealizedCents: realized.ExpenseRealized,
+		ExpenseExpectedCents: expected.ExpenseExpected,
+		ReceivableCents:      expected.Receivable,
+		PayableCents:         expected.Payable,
 		Categories:           make([]dom.CategoryTotal, len(cats)),
 		FutureInstallments: dom.FutureInstallments{
 			TotalCents:  inst.Total,
@@ -129,7 +153,11 @@ func (r *FinanceDashboardRepository) CategoryEntries(ctx context.Context, worksp
 		Table("financial_entries e").
 		Select("e.*").
 		Where("e.workspace_id = ? AND e.deleted_at IS NULL AND e.kind = 'debit' AND e.status <> 'cancelada'", workspaceID).
-		Where("e.due_date >= ? AND e.due_date < ?", start, end).
+		// Espelho exato da agregação: prevista por vencimento, realizada por
+		// pagamento — senão o modal não bate com a barra.
+		Where(`((e.status = 'prevista' AND e.due_date >= ? AND e.due_date < ?)
+		    OR (e.status = 'realizada' AND COALESCE(DATE(e.paid_at), e.due_date) >= ? AND COALESCE(DATE(e.paid_at), e.due_date) < ?))`,
+			start, end, start, end).
 		Where("NOT EXISTS (SELECT 1 FROM financial_entries c WHERE c.parent_id = e.id AND c.deleted_at IS NULL)").
 		Where("COALESCE(e.type, 'outros') = ?", category).
 		Order("e.due_date ASC, e.created_at ASC")
@@ -152,43 +180,82 @@ func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspac
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(1, 0, 0)
 
-	type row struct {
+	// Um lançamento pode contribuir para MESES DIFERENTES nas duas medidas:
+	// a parcela de dezembro antecipada em agosto soma no previsto de dezembro
+	// (competência) e no realizado de agosto (caixa). Por isso são dois
+	// GROUP BY — um por eixo — mesclados em memória.
+	byMonth := map[int]*dom.MonthlyPoint{}
+	point := func(m int) *dom.MonthlyPoint {
+		if p, ok := byMonth[m]; ok {
+			return p
+		}
+		p := &dom.MonthlyPoint{Month: m}
+		byMonth[m] = p
+		return p
+	}
+
+	type expRow struct {
 		Month           int
-		IncomeRealized  int64
 		IncomeExpected  int64
-		ExpenseRealized int64
 		ExpenseExpected int64
 	}
-	var rows []row
-
+	var expRows []expRow
 	q := r.db.WithContext(ctx).
 		Table("financial_entries").
 		Select(`
 			EXTRACT(MONTH FROM due_date)::int AS month,
-			COALESCE(SUM(CASE WHEN kind = 'credit' AND status = 'realizada' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN amount_cents ELSE 0 END), 0) AS income_expected,
-			COALESCE(SUM(CASE WHEN kind = 'debit' AND status = 'realizada' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN amount_cents ELSE 0 END), 0) AS expense_expected`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status <> 'cancelada'", workspaceID).
 		Where("due_date >= ? AND due_date < ?", start, end).
-		Group("EXTRACT(MONTH FROM due_date)").
-		Order("month ASC")
+		Group("EXTRACT(MONTH FROM due_date)")
 	if familyMemberID != nil {
 		q = q.Where("family_member_id = ?", *familyMemberID)
 	}
-	if err := q.Scan(&rows).Error; err != nil {
+	if err := q.Scan(&expRows).Error; err != nil {
 		return nil, mapFinanceErr(err)
 	}
+	for i := range expRows {
+		p := point(expRows[i].Month)
+		p.IncomeExpectedCents = expRows[i].IncomeExpected
+		p.ExpenseExpectedCents = expRows[i].ExpenseExpected
+	}
 
-	out := make([]dom.MonthlyPoint, len(rows))
-	for i := range rows {
-		out[i] = dom.MonthlyPoint{
-			Month:                rows[i].Month,
-			IncomeRealizedCents:  rows[i].IncomeRealized,
-			IncomeExpectedCents:  rows[i].IncomeExpected,
-			ExpenseRealizedCents: rows[i].ExpenseRealized,
-			ExpenseExpectedCents: rows[i].ExpenseExpected,
-		}
+	type realRow struct {
+		Month           int
+		IncomeRealized  int64
+		ExpenseRealized int64
+	}
+	var realRows []realRow
+	rq := r.db.WithContext(ctx).
+		Table("financial_entries").
+		Select(`
+			EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))::int AS month,
+			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
+			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized`).
+		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end).
+		Group("EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))")
+	if familyMemberID != nil {
+		rq = rq.Where("family_member_id = ?", *familyMemberID)
+	}
+	if err := rq.Scan(&realRows).Error; err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	for i := range realRows {
+		p := point(realRows[i].Month)
+		p.IncomeRealizedCents = realRows[i].IncomeRealized
+		p.ExpenseRealizedCents = realRows[i].ExpenseRealized
+	}
+
+	months := make([]int, 0, len(byMonth))
+	for m := range byMonth {
+		months = append(months, m)
+	}
+	sort.Ints(months)
+	out := make([]dom.MonthlyPoint, 0, len(months))
+	for _, m := range months {
+		out = append(out, *byMonth[m])
 	}
 	return out, nil
 }
