@@ -300,6 +300,43 @@ func (r *FinancialEntryRepository) ListGroup(ctx context.Context, workspaceID, g
 	return out, nil
 }
 
+// RenameGroup troca a descrição de todas as parcelas do grupo e dos residuais
+// derivados, numa única transação.
+//
+// Os residuais só são reescritos quando o nome ainda é o derivado
+// ("Residual de <descrição antiga>"): se o usuário renomeou o residual à mão,
+// aquele texto é escolha dele e não deve ser sobrescrito.
+func (r *FinancialEntryRepository) RenameGroup(ctx context.Context, workspaceID, groupID uuid.UUID, oldDesc, newDesc string) (int, int, error) {
+	var entries, residuals int
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now().UTC()
+
+		res := tx.Model(&FinancialEntryModel{}).
+			Where("workspace_id = ? AND recurrence_group_id = ?", workspaceID, groupID).
+			Updates(map[string]any{"description": newDesc, "updated_at": now})
+		if res.Error != nil {
+			return mapFinanceErr(res.Error)
+		}
+		entries = int(res.RowsAffected)
+
+		resRes := tx.Model(&FinancialEntryModel{}).
+			Where(`workspace_id = ? AND description = ? AND residual_of_id IN (
+			           SELECT id FROM financial_entries
+			           WHERE workspace_id = ? AND recurrence_group_id = ?)`,
+				workspaceID, dom.ResidualPrefix+oldDesc, workspaceID, groupID).
+			Updates(map[string]any{"description": dom.ResidualPrefix + newDesc, "updated_at": now})
+		if resRes.Error != nil {
+			return mapFinanceErr(resRes.Error)
+		}
+		residuals = int(resRes.RowsAffected)
+		return nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return entries, residuals, nil
+}
+
 func (r *FinancialEntryRepository) ListResidualsOf(ctx context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]dom.FinancialEntry, error) {
 	if len(originIDs) == 0 {
 		return nil, nil

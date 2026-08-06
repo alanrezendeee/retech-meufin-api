@@ -299,6 +299,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		// Renegociação (novação): encerra as cobranças em aberto e cria a
 		// série nova, vinculando os dois lados ao mesmo evento.
 		renegH := handlers.NewRenegotiationHandler(d.RenegotiationService)
+		finance.PATCH("/installments/:groupId", entH.RenameInstallmentGroup)
 		finance.GET("/installments/:groupId/renegotiation-preview", renegH.Preview)
 		finance.GET("/entries/:id/renegotiation-preview", renegH.PreviewByEntry)
 		finance.POST("/renegotiations", renegH.Create)

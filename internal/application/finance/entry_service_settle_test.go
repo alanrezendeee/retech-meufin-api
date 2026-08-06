@@ -75,6 +75,30 @@ func (f *fakeEntryRepo) ListGroup(_ context.Context, workspaceID, groupID uuid.U
 	return out, nil
 }
 
+func (f *fakeEntryRepo) RenameGroup(_ context.Context, workspaceID, groupID uuid.UUID, oldDesc, newDesc string) (int, int, error) {
+	inGroup := map[uuid.UUID]bool{}
+	entries := 0
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.RecurrenceGroupID != nil && *e.RecurrenceGroupID == groupID {
+			e.Description = newDesc
+			inGroup[e.ID] = true
+			entries++
+		}
+	}
+	residuals := 0
+	for _, e := range f.entries {
+		if e.WorkspaceID != workspaceID || e.ResidualOfID == nil || !inGroup[*e.ResidualOfID] {
+			continue
+		}
+		// Só o nome derivado é reescrito; renome manual do usuário fica.
+		if e.Description == dom.ResidualPrefix+oldDesc {
+			e.Description = dom.ResidualPrefix + newDesc
+			residuals++
+		}
+	}
+	return entries, residuals, nil
+}
+
 func (f *fakeEntryRepo) ListResidualsOf(_ context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]dom.FinancialEntry, error) {
 	want := map[uuid.UUID]bool{}
 	for _, id := range originIDs {

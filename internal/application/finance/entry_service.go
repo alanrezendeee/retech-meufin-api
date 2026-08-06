@@ -466,6 +466,50 @@ func (s *FinancialEntryService) YearBounds(ctx context.Context, workspaceID uuid
 	return s.repo.YearBounds(ctx, workspaceID)
 }
 
+// RenameGroupResult conta o que foi renomeado.
+type RenameGroupResult struct {
+	Description string
+	Entries     int // parcelas renomeadas (todas do grupo, inclusive pagas)
+	Residuals   int // residuais derivados que acompanharam o novo nome
+}
+
+// RenameInstallmentGroup troca a descrição de um parcelamento inteiro.
+//
+// Diferente da edição por lançamento (que só propaga para previstas futuras,
+// porque valor de parcela paga é fato histórico), aqui a mudança alcança
+// também as parcelas já liquidadas: descrição é rótulo da dívida, não valor.
+// Renomear pela metade deixaria a mesma dívida escrita de duas formas no
+// histórico — que é exatamente o problema que esta operação resolve.
+func (s *FinancialEntryService) RenameInstallmentGroup(ctx context.Context, workspaceID, groupID uuid.UUID, description string) (*RenameGroupResult, error) {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return nil, &dom.ValidationError{Msg: "informe a nova descrição"}
+	}
+	if len([]rune(description)) > 255 {
+		return nil, &dom.ValidationError{Msg: "descrição excede o tamanho máximo"}
+	}
+
+	series, err := s.repo.ListGroup(ctx, workspaceID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, dom.ErrNotFound
+	}
+	// A descrição antiga é o que permite achar os residuais derivados; usa a
+	// da parcela mais recente, que é a exibida como nome do parcelamento.
+	oldDesc := series[len(series)-1].Description
+	if oldDesc == description {
+		return &RenameGroupResult{Description: description}, nil
+	}
+
+	entries, residuals, err := s.repo.RenameGroup(ctx, workspaceID, groupID, oldDesc, description)
+	if err != nil {
+		return nil, err
+	}
+	return &RenameGroupResult{Description: description, Entries: entries, Residuals: residuals}, nil
+}
+
 // ResizeInstallmentsResult resume o redimensionamento de um parcelamento.
 type ResizeInstallmentsResult struct {
 	NewTotal int
@@ -678,7 +722,7 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 			FamilyMemberID: e.FamilyMemberID,
 			SourceID:       e.SourceID,
 			Type:           e.Type,
-			Description:    "Residual de " + e.Description,
+			Description:    dom.ResidualPrefix + e.Description,
 			Recurrence:     dom.RecurrenceNone,
 			SupplierID:     e.SupplierID,
 			ResidualOfID:   &e.ID,
