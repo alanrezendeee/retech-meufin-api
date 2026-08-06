@@ -197,7 +197,7 @@ type RenegotiateInput struct {
 	FirstDueDate     time.Time
 	// Description opcional para as parcelas novas (default: a da dívida).
 	Description string
-	Notes        *string
+	Notes       *string
 }
 
 type RenegotiateResult struct {
