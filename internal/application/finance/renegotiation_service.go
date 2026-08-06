@@ -31,14 +31,36 @@ const (
 	ChargeResidual OpenChargeKind = "residual"
 )
 
-// OpenCharge é uma cobrança em aberto que entra na renegociação.
+// ChargeStatus é a situação da cobrança na data da apuração.
+type ChargeStatus string
+
+const (
+	// ChargePaid: quitada integralmente. Não entra na renegociação.
+	ChargePaid ChargeStatus = "paid"
+	// ChargePartiallyPaid: paga em parte. Não entra pelo valor cheio — o que
+	// faltou existe como residual próprio, que entra no lugar.
+	ChargePartiallyPaid ChargeStatus = "partially_paid"
+	// ChargeOverdue: em aberto e vencida.
+	ChargeOverdue ChargeStatus = "overdue"
+	// ChargeUpcoming: em aberto, ainda a vencer.
+	ChargeUpcoming ChargeStatus = "upcoming"
+)
+
+// OpenCharge é uma cobrança do parcelamento. A apuração devolve a série
+// inteira — inclusive o que já foi pago — para dar contexto na tela; o campo
+// Included é o que distingue o que efetivamente entra na renegociação.
 type OpenCharge struct {
 	ID          uuid.UUID
 	Kind        OpenChargeKind
+	Status      ChargeStatus
 	Description string
 	AmountCents int64
-	DueDate     time.Time
-	// InstallmentNumber é o número da parcela (nulo em residual).
+	// PaidAmountCents: quanto foi pago (em quitadas e parcialmente pagas).
+	PaidAmountCents *int64
+	DueDate         time.Time
+	// Included indica se a cobrança compõe o saldo renegociado.
+	Included bool
+	// InstallmentNumber é o número da parcela; em residual, o da parcela de origem.
 	InstallmentNumber *int
 	// OriginDescription: em residual, a parcela que o originou.
 	OriginDescription *string
@@ -61,6 +83,8 @@ type RenegotiationPreview struct {
 	ResidualCount     int
 	ResidualCents     int64
 	OpenTotalCents    int64
+	OverdueCount      int
+	OverdueCents      int64
 	NextDueDate       *time.Time
 	SuggestedDueDate  time.Time
 	TypicalAmountCent int64
@@ -102,8 +126,13 @@ func (s *RenegotiationService) previewGroup(ctx context.Context, workspaceID, gr
 		out.InstallmentTotal = *series[0].InstallmentTotal
 	}
 
-	// Parcelas previstas entram pelo valor cheio; realizadas só contam para o
-	// histórico (e são a origem possível de residuais).
+	// Hoje, normalizado por data: parcela que vence hoje não está atrasada.
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	// A série inteira vai para a resposta (contexto na tela); só as previstas
+	// entram no saldo. Realizadas contam para o histórico e são a origem
+	// possível de residuais.
 	originIDs := make([]uuid.UUID, 0, len(series))
 	for i := range series {
 		e := &series[i]
@@ -113,9 +142,11 @@ func (s *RenegotiationService) previewGroup(ctx context.Context, workspaceID, gr
 			out.Charges = append(out.Charges, OpenCharge{
 				ID:                e.ID,
 				Kind:              ChargeInstallment,
+				Status:            chargeStatusFor(e.DueDate, today),
 				Description:       e.Description,
 				AmountCents:       e.AmountCents,
 				DueDate:           e.DueDate,
+				Included:          true,
 				InstallmentNumber: e.InstallmentNumber,
 			})
 			out.InstallmentCount++
@@ -125,11 +156,29 @@ func (s *RenegotiationService) previewGroup(ctx context.Context, workspaceID, gr
 			}
 		case dom.StatusRealizada:
 			out.PaidCount++
+			paid := e.AmountCents
 			if e.PaidAmountCents != nil {
-				out.PaidCents += *e.PaidAmountCents
-			} else {
-				out.PaidCents += e.AmountCents
+				paid = *e.PaidAmountCents
 			}
+			out.PaidCents += paid
+			paidCopy := paid
+			// Pago a menor sinaliza liquidação parcial: o saldo dela está num
+			// residual próprio, e é ele que entra na renegociação.
+			status := ChargePaid
+			if paid < e.AmountCents {
+				status = ChargePartiallyPaid
+			}
+			out.Charges = append(out.Charges, OpenCharge{
+				ID:                e.ID,
+				Kind:              ChargeInstallment,
+				Status:            status,
+				Description:       e.Description,
+				AmountCents:       e.AmountCents,
+				PaidAmountCents:   &paidCopy,
+				DueDate:           e.DueDate,
+				Included:          false,
+				InstallmentNumber: e.InstallmentNumber,
+			})
 		}
 	}
 
@@ -150,9 +199,11 @@ func (s *RenegotiationService) previewGroup(ctx context.Context, workspaceID, gr
 		charge := OpenCharge{
 			ID:          r.ID,
 			Kind:        ChargeResidual,
+			Status:      chargeStatusFor(r.DueDate, today),
 			Description: r.Description,
 			AmountCents: r.AmountCents,
 			DueDate:     r.DueDate,
+			Included:    true,
 		}
 		if r.ResidualOfID != nil {
 			if origin, ok := byID[*r.ResidualOfID]; ok {
@@ -168,14 +219,20 @@ func (s *RenegotiationService) previewGroup(ctx context.Context, workspaceID, gr
 
 	out.OpenTotalCents = out.InstallmentCents + out.ResidualCents
 	for i := range out.Charges {
+		if !out.Charges[i].Included {
+			continue
+		}
 		d := out.Charges[i].DueDate
 		if out.NextDueDate == nil || d.Before(*out.NextDueDate) {
 			out.NextDueDate = &d
 		}
+		if out.Charges[i].Status == ChargeOverdue {
+			out.OverdueCount++
+			out.OverdueCents += out.Charges[i].AmountCents
+		}
 	}
 	// Sugestão de primeiro vencimento: o mês seguinte ao atual, no dia da
 	// próxima cobrança em aberto (ou no dia de hoje, se não houver).
-	now := time.Now().UTC()
 	day := now.Day()
 	if out.NextDueDate != nil {
 		day = out.NextDueDate.Day()
@@ -222,13 +279,21 @@ func (s *RenegotiationService) Renegotiate(ctx context.Context, in RenegotiateIn
 	if err != nil {
 		return nil, err
 	}
-	if len(preview.Charges) == 0 {
+	// Charges traz a série inteira (contexto da tela); só as incluídas são
+	// as cobranças em aberto que efetivamente entram no acordo.
+	originIDs := make([]uuid.UUID, 0, len(preview.Charges))
+	for _, c := range preview.Charges {
+		if c.Included {
+			originIDs = append(originIDs, c.ID)
+		}
+	}
+	if len(originIDs) == 0 {
 		return nil, &dom.ValidationError{Msg: "não há cobranças em aberto para renegociar neste parcelamento"}
 	}
 
 	// Modelo da nova série: herda categoria, membro e fornecedor de uma
 	// cobrança em aberto, para o lançamento novo nascer classificado.
-	template, err := s.entries.GetByID(ctx, in.WorkspaceID, preview.Charges[0].ID)
+	template, err := s.entries.GetByID(ctx, in.WorkspaceID, originIDs[0])
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +314,7 @@ func (s *RenegotiationService) Renegotiate(ctx context.Context, in RenegotiateIn
 		Description:        description,
 		SettledAmountCents: preview.OpenTotalCents,
 		NewAmountCents:     in.InstallmentCents * int64(in.InstallmentCount),
-		OriginCount:        len(preview.Charges),
+		OriginCount:        len(originIDs),
 		NewCount:           in.InstallmentCount,
 		Notes:              in.Notes,
 		CreatedAt:          date,
@@ -272,11 +337,6 @@ func (s *RenegotiationService) Renegotiate(ctx context.Context, in RenegotiateIn
 		SupplierID:     template.SupplierID,
 	}
 	occurrences := dom.GenerateInstallments(base, in.InstallmentCount)
-
-	originIDs := make([]uuid.UUID, 0, len(preview.Charges))
-	for _, c := range preview.Charges {
-		originIDs = append(originIDs, c.ID)
-	}
 
 	now := time.Now().UTC()
 	batch := make([]*dom.FinancialEntry, len(occurrences))
@@ -333,4 +393,13 @@ func (s *RenegotiationService) List(ctx context.Context, workspaceID uuid.UUID, 
 		return nil, err
 	}
 	return &ListRenegotiationsResult{Items: items, Total: total}, nil
+}
+
+// chargeStatusFor classifica uma cobrança em aberto pelo vencimento.
+func chargeStatusFor(due, today time.Time) ChargeStatus {
+	d := time.Date(due.Year(), due.Month(), due.Day(), 0, 0, 0, 0, time.UTC)
+	if d.Before(today) {
+		return ChargeOverdue
+	}
+	return ChargeUpcoming
 }

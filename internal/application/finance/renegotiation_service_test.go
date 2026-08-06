@@ -160,8 +160,85 @@ func TestPreviewApuraSaldoComResiduais(t *testing.T) {
 	if p.PaidCents != wantPaid {
 		t.Errorf("pago = %d, quer %d", p.PaidCents, wantPaid)
 	}
-	if len(p.Charges) != 71 {
-		t.Errorf("cobranças = %d, quer 71", len(p.Charges))
+	// A apuração devolve a série INTEIRA (contexto da tela): 100 parcelas +
+	// 10 residuais. Só as marcadas como Included compõem o saldo.
+	if len(p.Charges) != 110 {
+		t.Errorf("cobranças devolvidas = %d, quer 110 (série inteira)", len(p.Charges))
+	}
+	included := 0
+	for _, c := range p.Charges {
+		if c.Included {
+			included++
+		}
+	}
+	if included != 71 {
+		t.Errorf("cobranças incluídas = %d, quer 71", included)
+	}
+}
+
+// Status por cobrança: quitada, parcialmente paga, atrasada e a vencer.
+func TestPreviewClassificaStatusDasCobrancas(t *testing.T) {
+	repo := newFakeEntryRepo()
+	ws, groupID := seedInstallmentDebt(repo, 100, 39, 10, 50_000)
+	svc := NewRenegotiationService(repo, newFakeRenegRepo(repo))
+
+	p, err := svc.PreviewGroup(context.Background(), ws, groupID)
+	if err != nil {
+		t.Fatalf("PreviewGroup: %v", err)
+	}
+
+	counts := map[ChargeStatus]int{}
+	for _, c := range p.Charges {
+		counts[c.Status]++
+		// Nada quitado ou parcialmente pago pode entrar no saldo.
+		if c.Status == ChargePaid || c.Status == ChargePartiallyPaid {
+			if c.Included {
+				t.Fatalf("parcela %v (%s) não pode entrar no saldo", c.InstallmentNumber, c.Status)
+			}
+		}
+	}
+	if counts[ChargePaid] != 29 {
+		t.Errorf("quitadas = %d, quer 29", counts[ChargePaid])
+	}
+	if counts[ChargePartiallyPaid] != 10 {
+		t.Errorf("parcialmente pagas = %d, quer 10", counts[ChargePartiallyPaid])
+	}
+	// O seed começa em 2023, então tudo vencido até hoje está atrasado.
+	if counts[ChargeOverdue]+counts[ChargeUpcoming] != 71 {
+		t.Errorf("atrasadas + a vencer = %d, quer 71",
+			counts[ChargeOverdue]+counts[ChargeUpcoming])
+	}
+	if p.OverdueCount != counts[ChargeOverdue] {
+		t.Errorf("OverdueCount = %d, quer %d", p.OverdueCount, counts[ChargeOverdue])
+	}
+}
+
+// Parcela paga a menor precisa ser identificável como tal na tela — é o que
+// explica por que o saldo dela aparece separado, como residual.
+func TestPreviewMarcaParcelaParcialComoParcialmentePaga(t *testing.T) {
+	repo := newFakeEntryRepo()
+	ws, groupID := seedInstallmentDebt(repo, 12, 5, 3, 50_000)
+	svc := NewRenegotiationService(repo, newFakeRenegRepo(repo))
+
+	p, err := svc.PreviewGroup(context.Background(), ws, groupID)
+	if err != nil {
+		t.Fatalf("PreviewGroup: %v", err)
+	}
+	parciais := 0
+	for _, c := range p.Charges {
+		if c.Status != ChargePartiallyPaid {
+			continue
+		}
+		parciais++
+		if c.PaidAmountCents == nil || *c.PaidAmountCents != 25_000 {
+			t.Errorf("valor pago = %v, quer 25000", c.PaidAmountCents)
+		}
+		if c.AmountCents != 50_000 {
+			t.Errorf("valor da parcela = %d, quer 50000", c.AmountCents)
+		}
+	}
+	if parciais != 3 {
+		t.Errorf("parcialmente pagas = %d, quer 3", parciais)
 	}
 }
 
