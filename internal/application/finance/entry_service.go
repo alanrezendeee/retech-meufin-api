@@ -652,9 +652,10 @@ type ConfirmEntryInput struct {
 // motivo fica registrado como indicador. Com valor pago menor que o devido,
 // o saldo não pago vira um novo lançamento previsto ligado à origem.
 func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInput) (*dom.FinancialEntry, error) {
-	if in.DiscountCents == nil && in.PaidAmountCents == nil && in.PaidAt == nil {
-		return s.setStatus(ctx, in.WorkspaceID, in.ID, dom.StatusRealizada)
-	}
+	// Não existe mais atalho sem carimbo: TODA liquidação grava paid_at
+	// (default: agora) e paid_amount_cents. A data do pagamento é o eixo do
+	// realizado (caixa) — o atalho antigo pulava o carimbo e o lançamento
+	// caía no fallback por vencimento, degradando a DFC em silêncio.
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
 	if err != nil {
 		return nil, err
@@ -854,26 +855,6 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 	}
 	// Fatura pai/filho: reabrir o pai reabre os filhos (um pagamento real = uma ação).
 	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, dom.StatusPrevista, nil); err != nil {
-		return nil, err
-	}
-	return e, nil
-}
-
-func (s *FinancialEntryService) setStatus(ctx context.Context, workspaceID, id uuid.UUID, status dom.Status) (*dom.FinancialEntry, error) {
-	e, err := s.repo.GetByID(ctx, workspaceID, id)
-	if err != nil {
-		return nil, err
-	}
-	e.Status = status
-	e.UpdatedAt = time.Now().UTC()
-	if err := e.Validate(); err != nil {
-		return nil, err
-	}
-	if err := s.repo.Update(ctx, e); err != nil {
-		return nil, err
-	}
-	// Fatura pai/filho: o status propaga para os filhos (um pagamento real = uma ação).
-	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, status, e.PaidAt); err != nil {
 		return nil, err
 	}
 	return e, nil

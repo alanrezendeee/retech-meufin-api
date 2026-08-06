@@ -692,3 +692,46 @@ func TestConfirmAndCancelCascade(t *testing.T) {
 		t.Fatalf("cascatas com status errado: %+v", repo.cascadeCalls)
 	}
 }
+
+// Fase 3 do modelo contábil: NÃO existe liquidação sem carimbo de caixa.
+// O atalho antigo (Confirm sem campos) só mudava o status; o lançamento
+// ficava sem paid_at e caía no eixo de vencimento, degradando a DFC.
+func TestConfirmQuickStampsPaidAt(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusPrevista)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	got, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID,
+	})
+	if err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
+	if got.Status != dom.StatusRealizada {
+		t.Fatalf("status = %s, quer realizada", got.Status)
+	}
+	if got.PaidAt == nil {
+		t.Fatal("liquidação rápida deve gravar paid_at (eixo caixa do realizado)")
+	}
+	if got.PaidAmountCents == nil || *got.PaidAmountCents != e.AmountCents {
+		t.Fatalf("paid_amount_cents = %v, quer %d (pagamento integral)", got.PaidAmountCents, e.AmountCents)
+	}
+	// Cascata para itens de fatura leva a data junto.
+	if len(repo.cascadeCalls) != 1 || repo.cascadeCalls[0].PaidAt == nil {
+		t.Fatalf("cascata deve carregar paid_at, veio %+v", repo.cascadeCalls)
+	}
+}
+
+// O atalho antigo permitia "confirmar" um lançamento cancelado; o caminho
+// único herda a guarda que sempre existiu na liquidação com campos.
+func TestConfirmQuickRejectsCancelada(t *testing.T) {
+	repo := newFakeEntryRepo()
+	e := seedEntry(repo, dom.StatusCancelada)
+	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})
+
+	if _, err := svc.Confirm(context.Background(), ConfirmEntryInput{
+		WorkspaceID: e.WorkspaceID, ID: e.ID,
+	}); err == nil {
+		t.Fatal("confirmar lançamento cancelado deveria ser rejeitado")
+	}
+}
