@@ -115,6 +115,39 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 }
 
 // MonthlySeries agrega o ano inteiro num scan só, agrupado por mês.
+// CategoryEntries materializa a barra do "Pra onde foi o dinheiro": os
+// lançamentos por trás da agregação de categorias do Summary. A cláusula é
+// deliberadamente IDÊNTICA à do agregado — só folhas (fatura pai com itens
+// fica de fora; os itens contam pela própria categoria), canceladas fora,
+// recorte por due_date no mês. Se as duas divergirem, o modal não bate com a
+// barra e o usuário perde a confiança no número.
+func (r *FinanceDashboardRepository) CategoryEntries(ctx context.Context, workspaceID uuid.UUID, category string, year, month int, familyMemberID *uuid.UUID) ([]dom.FinancialEntry, error) {
+	start := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	end := start.AddDate(0, 1, 0)
+
+	q := r.db.WithContext(ctx).
+		Table("financial_entries e").
+		Select("e.*").
+		Where("e.workspace_id = ? AND e.deleted_at IS NULL AND e.kind = 'debit' AND e.status <> 'cancelada'", workspaceID).
+		Where("e.due_date >= ? AND e.due_date < ?", start, end).
+		Where("NOT EXISTS (SELECT 1 FROM financial_entries c WHERE c.parent_id = e.id AND c.deleted_at IS NULL)").
+		Where("COALESCE(e.type, 'outros') = ?", category).
+		Order("e.due_date ASC, e.created_at ASC")
+	if familyMemberID != nil {
+		q = q.Where("e.family_member_id = ?", *familyMemberID)
+	}
+
+	var rows []FinancialEntryModel
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspaceID uuid.UUID, year int, familyMemberID *uuid.UUID) ([]dom.MonthlyPoint, error) {
 	start := time.Date(year, time.January, 1, 0, 0, 0, 0, time.UTC)
 	end := start.AddDate(1, 0, 0)

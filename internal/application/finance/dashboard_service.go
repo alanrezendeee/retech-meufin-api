@@ -48,3 +48,28 @@ func (s *FinanceDashboardService) MonthlySeries(ctx context.Context, workspaceID
 	}
 	return full, nil
 }
+
+// CategoryEntriesResult é o drill-down de uma barra de categoria.
+type CategoryEntriesResult struct {
+	Items []dom.FinancialEntry
+	// TotalCents soma pelo MESMO critério da barra: realizada pelo valor
+	// pago, prevista pelo valor do lançamento.
+	TotalCents int64
+}
+
+func (s *FinanceDashboardService) CategoryEntries(ctx context.Context, workspaceID uuid.UUID, category string, year, month int, familyMemberID *uuid.UUID) (*CategoryEntriesResult, error) {
+	items, err := s.repo.CategoryEntries(ctx, workspaceID, category, year, month, familyMemberID)
+	if err != nil {
+		return nil, err
+	}
+	out := &CategoryEntriesResult{Items: items}
+	for i := range items {
+		e := &items[i]
+		if e.Status == dom.StatusRealizada && e.PaidAmountCents != nil {
+			out.TotalCents += *e.PaidAmountCents
+		} else {
+			out.TotalCents += e.AmountCents
+		}
+	}
+	return out, nil
+}
