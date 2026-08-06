@@ -75,13 +75,8 @@ func NextOccurrencesAfter(template FinancialEntry, after, horizon time.Time) []F
 	}
 	out := make([]FinancialEntry, 0, RollingMonths)
 	for _, occ := range nextOccurrences(template, after, groupID, false, loc) {
+		// cloneOccurrence já zera status e todo o estado de liquidação.
 		if occ.DueDate.After(after) && !occ.DueDate.After(horizon) {
-			occ.Status = StatusPrevista
-			occ.PaidAt = nil
-			occ.PaidAmountCents = nil
-			occ.PaymentMethod = nil
-			occ.PaymentAccountID = nil
-			occ.PaymentCardID = nil
 			out = append(out, occ)
 		}
 	}
@@ -175,11 +170,26 @@ func GenerateInstallments(base FinancialEntry, total int) []FinancialEntry {
 }
 
 // cloneOccurrence copia o lançamento base ajustando due_date, id, group_id e status.
+//
+// A ocorrência nova nasce SEMPRE prevista, então todo estado de liquidação do
+// template é descartado: pagamento, desconto e motivo de cancelamento
+// pertencem à ocorrência que os originou, não às futuras. Sem isso, estender
+// uma série cuja última ocorrência foi paga com desconto (ou cancelada)
+// contaminava todos os meses seguintes.
 func cloneOccurrence(base FinancialEntry, due time.Time, groupID *uuid.UUID) FinancialEntry {
 	occ := base
 	occ.ID = uuid.New()
 	occ.DueDate = due
 	occ.RecurrenceGroupID = groupID
 	occ.Status = StatusPrevista
+	occ.PaidAt = nil
+	occ.PaidAmountCents = nil
+	occ.PaymentMethod = nil
+	occ.PaymentAccountID = nil
+	occ.PaymentCardID = nil
+	occ.DiscountCents = nil
+	occ.DiscountReason = nil
+	occ.CancelReason = nil
+	occ.ResidualOfID = nil
 	return occ
 }

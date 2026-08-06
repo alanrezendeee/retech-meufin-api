@@ -21,7 +21,10 @@ var DiscountReasons = []DiscountReason{
 	{Slug: "fidelidade", Name: "Fidelidade", Description: "Benefício por tempo de relacionamento ou plano de assinatura"},
 	{Slug: "negociacao", Name: "Negociação/acordo", Description: "Desconto negociado, inclusive renegociação de dívida"},
 	{Slug: "convenio", Name: "Convênio/parceria", Description: "Desconto por convênio de empresa, sindicato ou associação"},
-	{Slug: "cortesia", Name: "Cortesia/isenção", Description: "Abono parcial concedido pelo credor"},
+	{Slug: "cortesia", Name: "Cortesia/isenção", Description: "Abono concedido pelo credor, parcial ou integral"},
+	{Slug: "ressarcimento", Name: "Ressarcimento", Description: "Crédito de cobrança anterior abatido nesta cobrança"},
+	{Slug: "bonus", Name: "Bônus/benefício", Description: "Bônus, crédito promocional ou benefício concedido pelo fornecedor"},
+	{Slug: "cobranca_indevida", Name: "Cobrança indevida", Description: "Cobrança indevida estornada pelo fornecedor"},
 	{Slug: "outros", Name: "Outros", Description: "Motivo de desconto não listado"},
 }
 

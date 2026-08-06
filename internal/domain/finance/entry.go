@@ -86,6 +86,9 @@ type FinancialEntry struct {
 	// DiscountReasons) vira indicador para insights.
 	DiscountCents  *int64
 	DiscountReason *string
+	// CancelReason é o slug do catálogo global CancelReasons, preenchido no
+	// cancelamento. Determina se a série recorrente é encerrada ou continua.
+	CancelReason *string
 	// ResidualOfID aponta para o lançamento de origem quando este lançamento
 	// nasceu de um pagamento parcial (desdobramento do saldo não pago).
 	ResidualOfID *uuid.UUID
@@ -140,8 +143,11 @@ func (e *FinancialEntry) Validate() error {
 		if *e.DiscountCents <= 0 {
 			return &ValidationError{Msg: "discount_cents deve ser maior que zero"}
 		}
-		if *e.DiscountCents >= e.AmountCents {
-			return &ValidationError{Msg: "desconto não pode ser maior ou igual ao valor do lançamento"}
+		// Desconto IGUAL ao valor é válido: representa isenção total (bônus,
+		// cortesia, ressarcimento que zerou a cobrança do mês). O lançamento
+		// continua valendo AmountCents no previsto; o realizado é o valor pago.
+		if *e.DiscountCents > e.AmountCents {
+			return &ValidationError{Msg: "desconto não pode ser maior que o valor do lançamento"}
 		}
 		if e.DiscountReason == nil || *e.DiscountReason == "" {
 			return &ValidationError{Msg: "informe o motivo do desconto"}
@@ -153,6 +159,14 @@ func (e *FinancialEntry) Validate() error {
 		}
 		if e.DiscountCents == nil {
 			return &ValidationError{Msg: "motivo de desconto exige discount_cents"}
+		}
+	}
+	if e.CancelReason != nil && *e.CancelReason != "" {
+		if !ValidCancelReason(*e.CancelReason) {
+			return &ValidationError{Msg: "motivo de cancelamento fora do catálogo"}
+		}
+		if e.Status != StatusCancelada {
+			return &ValidationError{Msg: "motivo de cancelamento só vale em lançamento cancelado"}
 		}
 	}
 	e.Description = strings.TrimSpace(e.Description)
