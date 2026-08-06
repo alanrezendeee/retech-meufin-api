@@ -578,7 +578,7 @@ type renameInstallmentGroupRequest struct {
 	Description string `json:"description" binding:"required"`
 }
 
-// RenameInstallmentGroup responde PATCH /finance/installments/:groupId.
+// RenameInstallmentGroup responde PUT /finance/installments/:groupId.
 func (h *FinancialEntryHandler) RenameInstallmentGroup(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
