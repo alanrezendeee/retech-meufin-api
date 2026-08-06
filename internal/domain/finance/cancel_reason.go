@@ -18,11 +18,16 @@ type CancelReason struct {
 	EndsRecurrence bool
 }
 
+// CancelReasonRenegotiation é o motivo aplicado às cobranças encerradas por
+// uma renegociação. Constante porque a repactuação o grava sem passar pela UI.
+const CancelReasonRenegotiation = "renegociacao"
+
 // CancelReasons é a lista curada, na ordem de exibição na UI.
 var CancelReasons = []CancelReason{
 	{Slug: "encerramento", Name: "Encerrei este compromisso", Description: "Assinatura, contrato ou serviço encerrado — não haverá novas cobranças", EndsRecurrence: true},
 	{Slug: "sem_cobranca_no_mes", Name: "Não houve cobrança neste mês", Description: "Cobrança pontualmente ausente; o compromisso continua nos próximos meses"},
 	{Slug: "cobranca_indevida", Name: "Cobrança indevida", Description: "Cobrança que não deveria ter existido"},
+	{Slug: "renegociacao", Name: "Renegociação da dívida", Description: "Cobrança encerrada e substituída por um novo acordo de parcelamento"},
 	{Slug: "duplicidade", Name: "Lançamento duplicado", Description: "Já existe outro lançamento para esta mesma cobrança"},
 	{Slug: "erro_lancamento", Name: "Erro no lançamento", Description: "Lançamento criado por engano ou com dados incorretos"},
 	{Slug: "outros", Name: "Outros", Description: "Motivo de cancelamento não listado"},

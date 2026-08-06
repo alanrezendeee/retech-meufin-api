@@ -551,6 +551,7 @@ func (h *FinancialEntryHandler) Installments(c *gin.Context) {
 		groups[i] = gin.H{
 			"description":       g.Description,
 			"source":            string(g.Source),
+			"group_id":          g.GroupID,
 			"card_id":           g.CardID,
 			"category":          g.Category,
 			"installment_cents": g.InstallmentCents,

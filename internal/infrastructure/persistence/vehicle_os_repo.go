@@ -77,7 +77,7 @@ func (r *VehicleRepository) RecalcMaintenanceTotals(ctx context.Context, workspa
 	err := r.db.WithContext(ctx).
 		Model(&MaintenanceItemModel{}).
 		Select(
-			"COALESCE(SUM(CASE WHEN item_type = 'product' THEN total_price_cents ELSE 0 END), 0) AS products_cents, " +
+			"COALESCE(SUM(CASE WHEN item_type = 'product' THEN total_price_cents ELSE 0 END), 0) AS products_cents, "+
 				"COALESCE(SUM(CASE WHEN item_type = 'service' THEN total_price_cents ELSE 0 END), 0) AS services_cents",
 		).
 		Where("maintenance_id = ? AND workspace_id = ?", maintenanceID.String(), workspaceID.String()).
@@ -246,9 +246,9 @@ func (r *VehicleRepository) GetAnalytics(ctx context.Context, workspaceID, vehic
 	if err := r.db.WithContext(ctx).
 		Model(&VehicleMaintenanceModel{}).
 		Select(
-			"COALESCE(SUM(total_cents),0) AS total_cents," +
-				"COALESCE(SUM(total_products_cents),0) AS products_cents," +
-				"COALESCE(SUM(total_services_cents),0) AS services_cents," +
+			"COALESCE(SUM(total_cents),0) AS total_cents,"+
+				"COALESCE(SUM(total_products_cents),0) AS products_cents,"+
+				"COALESCE(SUM(total_services_cents),0) AS services_cents,"+
 				"COUNT(*) FILTER (WHERE status = 'realizado') AS total_count",
 		).
 		Where("workspace_id = ? AND vehicle_id = ? AND status != 'cancelado' AND service_date >= ?", wsID, vID, since).

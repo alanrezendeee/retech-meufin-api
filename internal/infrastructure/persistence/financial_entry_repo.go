@@ -66,6 +66,7 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"discount_cents":     model.DiscountCents,
 			"discount_reason":    model.DiscountReason,
 			"cancel_reason":      model.CancelReason,
+			"renegotiation_id":   model.RenegotiationID,
 			"residual_of_id":     model.ResidualOfID,
 			"purchase_date":      model.PurchaseDate,
 			"fiscal_document_id": model.FiscalDocumentID,
@@ -283,6 +284,41 @@ func (r *FinancialEntryRepository) YearBounds(ctx context.Context, workspaceID u
 }
 
 // ListResiduals retorna os lançamentos residuais gerados a partir da origem.
+func (r *FinancialEntryRepository) ListGroup(ctx context.Context, workspaceID, groupID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND recurrence_group_id = ?", workspaceID, groupID).
+		Order("due_date ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
+func (r *FinancialEntryRepository) ListResidualsOf(ctx context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]dom.FinancialEntry, error) {
+	if len(originIDs) == 0 {
+		return nil, nil
+	}
+	var rows []FinancialEntryModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND residual_of_id IN ?", workspaceID, originIDs).
+		Order("due_date ASC").
+		Find(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]dom.FinancialEntry, len(rows))
+	for i := range rows {
+		out[i] = *modelToFinancialEntry(&rows[i])
+	}
+	return out, nil
+}
+
 func (r *FinancialEntryRepository) ListResiduals(ctx context.Context, workspaceID, originID uuid.UUID) ([]dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel
 	err := r.db.WithContext(ctx).
@@ -347,6 +383,7 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		DiscountCents:     e.DiscountCents,
 		DiscountReason:    e.DiscountReason,
 		CancelReason:      e.CancelReason,
+		RenegotiationID:   e.RenegotiationID,
 		ResidualOfID:      e.ResidualOfID,
 		PurchaseDate:      e.PurchaseDate,
 		FiscalDocumentID:  e.FiscalDocumentID,
@@ -399,6 +436,7 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		DiscountCents:     m.DiscountCents,
 		DiscountReason:    m.DiscountReason,
 		CancelReason:      m.CancelReason,
+		RenegotiationID:   m.RenegotiationID,
 		ResidualOfID:      m.ResidualOfID,
 		PurchaseDate:      m.PurchaseDate,
 		FiscalDocumentID:  m.FiscalDocumentID,

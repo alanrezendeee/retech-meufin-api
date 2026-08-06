@@ -64,6 +64,32 @@ func (f *fakeEntryRepo) List(_ context.Context, _ uuid.UUID, _ dom.FinancialEntr
 	return nil, 0, nil
 }
 
+func (f *fakeEntryRepo) ListGroup(_ context.Context, workspaceID, groupID uuid.UUID) ([]dom.FinancialEntry, error) {
+	var out []dom.FinancialEntry
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.RecurrenceGroupID != nil && *e.RecurrenceGroupID == groupID {
+			out = append(out, *e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DueDate.Before(out[j].DueDate) })
+	return out, nil
+}
+
+func (f *fakeEntryRepo) ListResidualsOf(_ context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]dom.FinancialEntry, error) {
+	want := map[uuid.UUID]bool{}
+	for _, id := range originIDs {
+		want[id] = true
+	}
+	var out []dom.FinancialEntry
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.ResidualOfID != nil && want[*e.ResidualOfID] {
+			out = append(out, *e)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].DueDate.Before(out[j].DueDate) })
+	return out, nil
+}
+
 // ListRecurrenceFrontiers reproduz o DISTINCT ON do repositório real: a
 // ocorrência de maior vencimento de cada grupo recorrente.
 func (f *fakeEntryRepo) ListRecurrenceFrontiers(_ context.Context) ([]dom.FinancialEntry, error) {

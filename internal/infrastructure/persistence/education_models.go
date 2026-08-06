@@ -28,14 +28,14 @@ type SchoolEnrollmentModel struct {
 func (SchoolEnrollmentModel) TableName() string { return "school_enrollments" }
 
 type SchoolSupplyListModel struct {
-	ID           string    `gorm:"primaryKey;column:id"`
-	WorkspaceID  string    `gorm:"column:workspace_id"`
-	EnrollmentID string    `gorm:"column:enrollment_id"`
-	Title        string    `gorm:"column:title;size:255"`
-	Status       string    `gorm:"column:status;size:20"`
-	Notes        *string   `gorm:"column:notes"`
-	CreatedAt    time.Time `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
+	ID           string                  `gorm:"primaryKey;column:id"`
+	WorkspaceID  string                  `gorm:"column:workspace_id"`
+	EnrollmentID string                  `gorm:"column:enrollment_id"`
+	Title        string                  `gorm:"column:title;size:255"`
+	Status       string                  `gorm:"column:status;size:20"`
+	Notes        *string                 `gorm:"column:notes"`
+	CreatedAt    time.Time               `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt    time.Time               `gorm:"column:updated_at;autoUpdateTime"`
 	Items        []SchoolSupplyItemModel `gorm:"foreignKey:ListID;references:ID"`
 }
 
