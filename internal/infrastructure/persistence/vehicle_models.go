@@ -21,30 +21,30 @@ type MaintenancePlanTemplateModel struct {
 func (MaintenancePlanTemplateModel) TableName() string { return "maintenance_plan_templates" }
 
 type VehicleModel struct {
-	ID               string     `gorm:"primaryKey;column:id"`
-	WorkspaceID      string     `gorm:"column:workspace_id"`
-	Nickname         *string    `gorm:"column:nickname;size:100"`
-	Make             string     `gorm:"column:make;size:80"`
-	Model            string     `gorm:"column:model;size:120"`
-	YearManufacture  int        `gorm:"column:year_manufacture"`
-	YearModel        int        `gorm:"column:year_model"`
-	Color            *string    `gorm:"column:color;size:40"`
-	Plate            *string    `gorm:"column:plate;size:10"`
-	FuelType         string     `gorm:"column:fuel_type;size:20"`
-	FipeVehicleType  string     `gorm:"column:fipe_vehicle_type;size:20"`
-	FipeCode         *string    `gorm:"column:fipe_code;size:20"`
-	FipeBrandCode    *string    `gorm:"column:fipe_brand_code;size:20"`
-	FipeModelCode    *string    `gorm:"column:fipe_model_code;size:20"`
-	FipeYearCode     *string    `gorm:"column:fipe_year_code;size:20"`
-	AcquisitionDate  *time.Time `gorm:"column:acquisition_date"`
-	AcquisitionPrice *float64   `gorm:"column:acquisition_price"`
-	CurrentOdometer  int        `gorm:"column:current_odometer"`
-	Status           string     `gorm:"column:status;size:20"`
-	SoldAt           *time.Time `gorm:"column:sold_at"`
-	SoldPrice        *float64   `gorm:"column:sold_price"`
-	Notes            *string    `gorm:"column:notes"`
-	CreatedAt        time.Time  `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt        time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	ID               string               `gorm:"primaryKey;column:id"`
+	WorkspaceID      string               `gorm:"column:workspace_id"`
+	Nickname         *string              `gorm:"column:nickname;size:100"`
+	Make             string               `gorm:"column:make;size:80"`
+	Model            string               `gorm:"column:model;size:120"`
+	YearManufacture  int                  `gorm:"column:year_manufacture"`
+	YearModel        int                  `gorm:"column:year_model"`
+	Color            *string              `gorm:"column:color;size:40"`
+	Plate            *string              `gorm:"column:plate;size:10"`
+	FuelType         string               `gorm:"column:fuel_type;size:20"`
+	FipeVehicleType  string               `gorm:"column:fipe_vehicle_type;size:20"`
+	FipeCode         *string              `gorm:"column:fipe_code;size:20"`
+	FipeBrandCode    *string              `gorm:"column:fipe_brand_code;size:20"`
+	FipeModelCode    *string              `gorm:"column:fipe_model_code;size:20"`
+	FipeYearCode     *string              `gorm:"column:fipe_year_code;size:20"`
+	AcquisitionDate  *time.Time           `gorm:"column:acquisition_date"`
+	AcquisitionPrice *float64             `gorm:"column:acquisition_price"`
+	CurrentOdometer  int                  `gorm:"column:current_odometer"`
+	Status           string               `gorm:"column:status;size:20"`
+	SoldAt           *time.Time           `gorm:"column:sold_at"`
+	SoldPrice        *float64             `gorm:"column:sold_price"`
+	Notes            *string              `gorm:"column:notes"`
+	CreatedAt        time.Time            `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt        time.Time            `gorm:"column:updated_at;autoUpdateTime"`
 	Members          []VehicleMemberModel `gorm:"foreignKey:VehicleID"`
 }
 
@@ -59,43 +59,43 @@ type VehicleMemberModel struct {
 func (VehicleMemberModel) TableName() string { return "vehicle_members" }
 
 type VehicleMaintenancePlanModel struct {
-	ID           string    `gorm:"primaryKey;column:id"`
-	VehicleID    string    `gorm:"column:vehicle_id"`
-	WorkspaceID  string    `gorm:"column:workspace_id"`
-	TemplateID   string    `gorm:"column:template_id"`
-	IntervalKM   *int      `gorm:"column:interval_km"`
-	IntervalDays *int      `gorm:"column:interval_days"`
-	Enabled      bool      `gorm:"column:enabled"`
-	UpdatedAt    time.Time `gorm:"column:updated_at;autoUpdateTime"`
+	ID           string                       `gorm:"primaryKey;column:id"`
+	VehicleID    string                       `gorm:"column:vehicle_id"`
+	WorkspaceID  string                       `gorm:"column:workspace_id"`
+	TemplateID   string                       `gorm:"column:template_id"`
+	IntervalKM   *int                         `gorm:"column:interval_km"`
+	IntervalDays *int                         `gorm:"column:interval_days"`
+	Enabled      bool                         `gorm:"column:enabled"`
+	UpdatedAt    time.Time                    `gorm:"column:updated_at;autoUpdateTime"`
 	Template     MaintenancePlanTemplateModel `gorm:"foreignKey:TemplateID;references:ID"`
 }
 
 func (VehicleMaintenancePlanModel) TableName() string { return "vehicle_maintenance_plans" }
 
 type VehicleMaintenanceModel struct {
-	ID                  string     `gorm:"primaryKey;column:id"`
-	VehicleID           string     `gorm:"column:vehicle_id"`
-	WorkspaceID         string     `gorm:"column:workspace_id"`
-	TemplateID          *string    `gorm:"column:template_id"`
-	Type                string     `gorm:"column:type;size:50"`
-	Title               string     `gorm:"column:title;size:150"`
-	Description         *string    `gorm:"column:description"`
-	OdometerAtService   *int       `gorm:"column:odometer_at_service"`
-	ServiceDate         *time.Time `gorm:"column:service_date"` // nullable — orçamento ainda não tem data
-	Cost                *float64   `gorm:"column:cost"`
-	SupplierID          *string    `gorm:"column:supplier_id"`
-	NextServiceOdometer *int       `gorm:"column:next_service_odometer"`
-	NextServiceDate     *time.Time `gorm:"column:next_service_date"`
-	Notes               *string    `gorm:"column:notes"`
-	Status              string     `gorm:"column:status;size:20"`
-	OSNumber            *string    `gorm:"column:os_number"`
-	Technician          *string    `gorm:"column:technician"`
-	PaymentMethod       *string    `gorm:"column:payment_method"`
-	TotalProductsCents  int64      `gorm:"column:total_products_cents"`
-	TotalServicesCents  int64      `gorm:"column:total_services_cents"`
-	TotalCents          int64      `gorm:"column:total_cents"`
-	CreatedAt           time.Time  `gorm:"column:created_at;autoCreateTime"`
-	UpdatedAt           time.Time  `gorm:"column:updated_at;autoUpdateTime"`
+	ID                  string                 `gorm:"primaryKey;column:id"`
+	VehicleID           string                 `gorm:"column:vehicle_id"`
+	WorkspaceID         string                 `gorm:"column:workspace_id"`
+	TemplateID          *string                `gorm:"column:template_id"`
+	Type                string                 `gorm:"column:type;size:50"`
+	Title               string                 `gorm:"column:title;size:150"`
+	Description         *string                `gorm:"column:description"`
+	OdometerAtService   *int                   `gorm:"column:odometer_at_service"`
+	ServiceDate         *time.Time             `gorm:"column:service_date"` // nullable — orçamento ainda não tem data
+	Cost                *float64               `gorm:"column:cost"`
+	SupplierID          *string                `gorm:"column:supplier_id"`
+	NextServiceOdometer *int                   `gorm:"column:next_service_odometer"`
+	NextServiceDate     *time.Time             `gorm:"column:next_service_date"`
+	Notes               *string                `gorm:"column:notes"`
+	Status              string                 `gorm:"column:status;size:20"`
+	OSNumber            *string                `gorm:"column:os_number"`
+	Technician          *string                `gorm:"column:technician"`
+	PaymentMethod       *string                `gorm:"column:payment_method"`
+	TotalProductsCents  int64                  `gorm:"column:total_products_cents"`
+	TotalServicesCents  int64                  `gorm:"column:total_services_cents"`
+	TotalCents          int64                  `gorm:"column:total_cents"`
+	CreatedAt           time.Time              `gorm:"column:created_at;autoCreateTime"`
+	UpdatedAt           time.Time              `gorm:"column:updated_at;autoUpdateTime"`
 	Items               []MaintenanceItemModel `gorm:"foreignKey:MaintenanceID;references:ID"`
 }
 

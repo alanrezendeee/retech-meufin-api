@@ -256,6 +256,8 @@ func main() {
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo)
 	finCategorySvc := appf.NewExpenseCategoryService(finCategoryRepo)
+	renegRepo := persistence.NewRenegotiationRepository(db)
+	renegSvc := appf.NewRenegotiationService(financialEntryRepo, renegRepo)
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 	entitlementSvc := appent.NewService(entitlementRepo, redisCache)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)
@@ -356,6 +358,7 @@ func main() {
 		CreditCardService:        creditCardSvc,
 		FinanceDocumentService:   finDocSvc,
 		FinanceExtractionService: finExtSvc,
+		RenegotiationService:     renegSvc,
 		FinanceAccountService:    finAccountSvc,
 		FinanceCategoryService:   finCategorySvc,
 		FinanceDashboardService:  finDashSvc,

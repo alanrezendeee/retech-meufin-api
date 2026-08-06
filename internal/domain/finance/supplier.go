@@ -14,7 +14,7 @@ type SupplierCategory string
 const (
 	SupplierCategoryServicosPublicos SupplierCategory = "servicos_publicos"
 	SupplierCategoryTelecom          SupplierCategory = "telecom"
-	SupplierCategoryStreaming         SupplierCategory = "streaming"
+	SupplierCategoryStreaming        SupplierCategory = "streaming"
 	SupplierCategoryVarejo           SupplierCategory = "varejo"
 	SupplierCategoryFarmacia         SupplierCategory = "farmacia"
 	SupplierCategorySaude            SupplierCategory = "saude"

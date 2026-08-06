@@ -89,6 +89,9 @@ type FinancialEntry struct {
 	// CancelReason é o slug do catálogo global CancelReasons, preenchido no
 	// cancelamento. Determina se a série recorrente é encerrada ou continua.
 	CancelReason *string
+	// RenegotiationID vincula o lançamento a um evento de renegociação, tanto
+	// nas cobranças encerradas (origens) quanto nas parcelas novas.
+	RenegotiationID *uuid.UUID
 	// ResidualOfID aponta para o lançamento de origem quando este lançamento
 	// nasceu de um pagamento parcial (desdobramento do saldo não pago).
 	ResidualOfID *uuid.UUID
@@ -224,4 +227,9 @@ type FinancialEntryRepository interface {
 	// ListGroupSiblings retorna os lançamentos não cancelados do grupo de
 	// recorrência/parcelamento, excluindo excludeID — alvo da edição em série.
 	ListGroupSiblings(ctx context.Context, workspaceID, groupID uuid.UUID, excludeID uuid.UUID) ([]FinancialEntry, error)
+	// ListGroup devolve TODAS as ocorrências do grupo, inclusive canceladas —
+	// a apuração da renegociação precisa enxergar a série inteira.
+	ListGroup(ctx context.Context, workspaceID, groupID uuid.UUID) ([]FinancialEntry, error)
+	// ListResidualsOf devolve os residuais de várias origens de uma vez.
+	ListResidualsOf(ctx context.Context, workspaceID uuid.UUID, originIDs []uuid.UUID) ([]FinancialEntry, error)
 }

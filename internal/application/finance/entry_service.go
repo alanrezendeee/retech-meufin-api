@@ -778,6 +778,11 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 		if r.Status == dom.StatusRealizada {
 			return nil, &dom.ValidationError{Msg: "existe residual já pago vinculado; desfaça o pagamento do residual antes de reabrir"}
 		}
+		// Residual que entrou numa renegociação virou parcela do novo acordo:
+		// reabrir a parcela original recriaria uma dívida que já foi repactuada.
+		if r.RenegotiationID != nil {
+			return nil, &dom.ValidationError{Msg: "o residual deste lançamento foi renegociado; desfaça a renegociação antes de reabrir"}
+		}
 	}
 	for i := range residuals {
 		r := residuals[i]

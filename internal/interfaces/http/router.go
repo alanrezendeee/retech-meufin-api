@@ -46,6 +46,7 @@ type RouterDeps struct {
 	CreditCardService        *appf.CreditCardService
 	FinanceDocumentService   *appf.FinanceDocumentService
 	FinanceExtractionService *appf.FinanceExtractionService
+	RenegotiationService     *appf.RenegotiationService
 	FinanceAccountService    *appf.AccountService
 	FinanceCategoryService   *appf.ExpenseCategoryService
 	FinanceDashboardService  *appf.FinanceDashboardService
@@ -294,6 +295,15 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/entries/:id/waive", entH.Waive)
 		finance.POST("/entries/:id/settle", entH.Settle)
 		finance.POST("/entries/:id/resize-installments", entH.ResizeInstallments)
+
+		// Renegociação (novação): encerra as cobranças em aberto e cria a
+		// série nova, vinculando os dois lados ao mesmo evento.
+		renegH := handlers.NewRenegotiationHandler(d.RenegotiationService)
+		finance.GET("/installments/:groupId/renegotiation-preview", renegH.Preview)
+		finance.GET("/entries/:id/renegotiation-preview", renegH.PreviewByEntry)
+		finance.POST("/renegotiations", renegH.Create)
+		finance.GET("/renegotiations", renegH.List)
+		finance.GET("/renegotiations/:id", renegH.Get)
 
 		// Comprovantes de pagamento anexados a lançamentos.
 		receiptH := handlers.NewFinanceReceiptHandler(d.FinanceDocumentService, d.FinancialEntryService)

@@ -38,8 +38,13 @@ const (
 // InstallmentGroup é um parcelamento ativo identificado nas faturas ou nas
 // despesas parceladas diretas.
 type InstallmentGroup struct {
-	Description      string
-	Source           InstallmentSource
+	Description string
+	Source      InstallmentSource
+	// GroupID é o recurrence_group_id das despesas parceladas diretas. Só
+	// existe em SourceExpense: compras em fatura são projeção calculada, sem
+	// lançamentos futuros no banco. É o que ancora ações sobre o grupo
+	// (renegociação, por exemplo).
+	GroupID          *uuid.UUID
 	CardID           *uuid.UUID
 	Category         *string
 	InstallmentCents int64
@@ -228,6 +233,7 @@ func (s *FinancialEntryService) appendStandaloneInstallments(ctx context.Context
 		grp := InstallmentGroup{
 			Description:      latest.Description,
 			Source:           SourceExpense,
+			GroupID:          latest.RecurrenceGroupID,
 			CardID:           latest.CardID,
 			Category:         latest.Type,
 			InstallmentCents: latest.AmountCents,
