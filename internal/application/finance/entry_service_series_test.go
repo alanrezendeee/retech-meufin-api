@@ -37,8 +37,8 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	ws := uuid.New()
 	occs := createMonthlySeries(t, svc, ws, time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC), 100000)
 
-	// Terceira ocorrência realizada — é futura à editada: recebe o novo dia,
-	// mas não o valor (fato histórico/pago).
+	// Terceira ocorrência realizada — fase 4: paga é fato consumado, não
+	// recebe nem o novo dia nem o valor.
 	occs[2].Status = dom.StatusRealizada
 	repo.entries[occs[2].ID].Status = dom.StatusRealizada
 
@@ -55,9 +55,10 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Update: %v", err)
 	}
-	// Dia: todas as 11 irmãs. Valor: 10 previstas futuras (realizada fica fora).
-	if stats.DueDates != 11 || stats.Fields != 10 || stats.Total != 11 {
-		t.Fatalf("stats esperado {11 10 11}, veio %+v", stats)
+	// Dia e valor: 10 previstas futuras — a realizada fica fora de tudo
+	// (imutabilidade da fase 4).
+	if stats.DueDates != 10 || stats.Fields != 10 || stats.Total != 10 {
+		t.Fatalf("stats esperado {10 10 10}, veio %+v", stats)
 	}
 
 	for i, occ := range occs {
@@ -67,9 +68,9 @@ func TestUpdateApplyToFuturePropagatesDayAmount(t *testing.T) {
 			if got.DueDate.Day() != 15 || got.AmountCents != 120000 {
 				t.Fatalf("ocorrência editada não atualizada: %v %d", got.DueDate, got.AmountCents)
 			}
-		case i == 2: // realizada: dia ajustado, valor histórico preservado
-			if got.DueDate.Day() != 15 || got.AmountCents != 100000 {
-				t.Fatalf("realizada: quer dia 15 e valor 100000, veio %v %d", got.DueDate, got.AmountCents)
+		case i == 2: // realizada: intocada — dia E valor preservados (fase 4)
+			if got.DueDate.Day() != 10 || got.AmountCents != 100000 {
+				t.Fatalf("realizada: quer dia 10 e valor 100000 intocados, veio %v %d", got.DueDate, got.AmountCents)
 			}
 		default: // previstas futuras: dia e valor propagados, mês preservado
 			if got.DueDate.Day() != 15 {

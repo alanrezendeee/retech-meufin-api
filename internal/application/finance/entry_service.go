@@ -2,21 +2,50 @@ package finance
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/retechfin/retechfin-api/internal/appctx"
 	dom "github.com/retechfin/retechfin-api/internal/domain/finance"
 )
 
 type FinancialEntryService struct {
 	repo       dom.FinancialEntryRepository
 	categories dom.ExpenseCategoryRepository
+	events     dom.EntryEventRepository
 }
 
-func NewFinancialEntryService(repo dom.FinancialEntryRepository, categories dom.ExpenseCategoryRepository) *FinancialEntryService {
-	return &FinancialEntryService{repo: repo, categories: categories}
+func NewFinancialEntryService(repo dom.FinancialEntryRepository, categories dom.ExpenseCategoryRepository, events ...dom.EntryEventRepository) *FinancialEntryService {
+	s := &FinancialEntryService{repo: repo, categories: categories}
+	if len(events) > 0 {
+		s.events = events[0]
+	}
+	return s
 }
+
+// logEvent grava um evento da trilha do lançamento. Falha de trilha não
+// derruba a operação principal (o lançamento já foi persistido; perder um
+// evento é ruim, reverter um pagamento por causa do log seria pior) — mas
+// fica registrada no log do servidor.
+func (s *FinancialEntryService) logEvent(ctx context.Context, ev dom.EntryEvent) {
+	if s.events == nil {
+		return
+	}
+	ev.ID = uuid.New()
+	ev.ActorUserID = appctx.ActorFromContext(ctx)
+	ev.CreatedAt = time.Now().UTC()
+	if err := s.events.Create(ctx, &ev); err != nil {
+		slog.Error("trilha de eventos: falha ao gravar",
+			slog.String("entry_id", ev.EntryID.String()),
+			slog.String("event", string(ev.Event)),
+			slog.String("error", err.Error()),
+		)
+	}
+}
+
+func statusPtr(st dom.Status) *dom.Status { return &st }
 
 // validateExpenseCategory garante que a categoria da despesa existe no
 // workspace (cadastro gerenciado) e que 'cartao' não é usado pelo usuário.
@@ -323,6 +352,25 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 		return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
 	}
 	orig := *e
+
+	// Lançamento REALIZADO é fato consumado: só rótulos (descrição, notas,
+	// categoria, membro, fornecedor) podem mudar. Valor, vencimento e tipo
+	// exigem desfazer o pagamento antes — editar um fato liquidado
+	// dessincroniza a trilha de eventos e reescreve história financeira.
+	if orig.Status == dom.StatusRealizada {
+		if in.AmountCents != orig.AmountCents {
+			return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "lançamento pago não muda de valor — desfaça o pagamento antes de editar"}
+		}
+		if !in.DueDate.Equal(orig.DueDate) {
+			return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "lançamento pago não muda de vencimento — desfaça o pagamento antes de editar"}
+		}
+		if dom.Kind(in.Kind) != orig.Kind {
+			return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "lançamento pago não muda de natureza (receita/despesa)"}
+		}
+		if in.Status != "" && dom.Status(in.Status) != dom.StatusRealizada {
+			return nil, SeriesUpdateStats{}, &dom.ValidationError{Msg: "use Desfazer pagamento ou Cancelar para mudar a situação de um lançamento pago"}
+		}
+	}
 	e.Kind = dom.Kind(in.Kind)
 	if in.Status != "" {
 		e.Status = dom.Status(in.Status)
@@ -368,6 +416,18 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	if err := s.repo.Update(ctx, e); err != nil {
 		return nil, SeriesUpdateStats{}, err
 	}
+	// Vencimento alterado em previsto: a trilha preserva o original —
+	// é a evidência de prorrogação/antecipação que o modelo não tinha.
+	if !e.DueDate.Equal(orig.DueDate) {
+		oldDue, newDue := orig.DueDate, e.DueDate
+		s.logEvent(ctx, dom.EntryEvent{
+			WorkspaceID: e.WorkspaceID,
+			EntryID:     e.ID,
+			Event:       dom.EventDueDateChanged,
+			OldDueDate:  &oldDue,
+			NewDueDate:  &newDue,
+		})
+	}
 	var stats SeriesUpdateStats
 	if in.ApplyToFuture {
 		st, err := s.propagateToSeries(ctx, &orig, e)
@@ -394,7 +454,8 @@ type SeriesUpdateStats struct {
 // alcance por campo:
 //
 //   - Dia do vencimento: lançamentos da série DESTA edição em diante
-//     (due_date posterior, qualquer status exceto cancelada) — "banco mudou
+//     (due_date posterior, exceto canceladas E realizadas — pagas são fato
+//     consumado, fase 4) — "banco mudou
 //     o dia" vale daqui pra frente; parcelas passadas venceram no dia antigo
 //     de fato. Para corrigir a série inteira, edita-se a primeira parcela.
 //     Cada lançamento mantém seu mês, com clamp de fim de mês. Semanal não
@@ -424,7 +485,9 @@ func (s *FinancialEntryService) propagateToSeries(ctx context.Context, orig, upd
 	for i := range siblings {
 		sib := siblings[i]
 		touched := false
-		if dayChanged && sib.DueDate.After(orig.DueDate) {
+		// Realizada é fato consumado também na série: o dia do vencimento
+		// não propaga para parcelas já pagas (fase 4 — imutabilidade).
+		if dayChanged && sib.Status != dom.StatusRealizada && sib.DueDate.After(orig.DueDate) {
 			sib.DueDate = dom.WithDayClamped(sib.DueDate, updated.DueDate.Day())
 			stats.DueDates++
 			touched = true
@@ -652,9 +715,10 @@ type ConfirmEntryInput struct {
 // motivo fica registrado como indicador. Com valor pago menor que o devido,
 // o saldo não pago vira um novo lançamento previsto ligado à origem.
 func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInput) (*dom.FinancialEntry, error) {
-	if in.DiscountCents == nil && in.PaidAmountCents == nil && in.PaidAt == nil {
-		return s.setStatus(ctx, in.WorkspaceID, in.ID, dom.StatusRealizada)
-	}
+	// Não existe mais atalho sem carimbo: TODA liquidação grava paid_at
+	// (default: agora) e paid_amount_cents. A data do pagamento é o eixo do
+	// realizado (caixa) — o atalho antigo pulava o carimbo e o lançamento
+	// caía no fallback por vencimento, degradando a DFC em silêncio.
 	e, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ID)
 	if err != nil {
 		return nil, err
@@ -736,6 +800,15 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 			return nil, err
 		}
 	}
+	s.logEvent(ctx, dom.EntryEvent{
+		WorkspaceID:     e.WorkspaceID,
+		EntryID:         e.ID,
+		Event:           dom.EventConfirmed,
+		FromStatus:      statusPtr(dom.StatusPrevista),
+		ToStatus:        statusPtr(dom.StatusRealizada),
+		PaidAt:          e.PaidAt,
+		PaidAmountCents: e.PaidAmountCents,
+	})
 	return e, nil
 }
 
@@ -765,6 +838,13 @@ func (s *FinancialEntryService) Cancel(ctx context.Context, workspaceID, id uuid
 	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, dom.StatusCancelada, e.PaidAt); err != nil {
 		return nil, err
 	}
+	s.logEvent(ctx, dom.EntryEvent{
+		WorkspaceID:  e.WorkspaceID,
+		EntryID:      e.ID,
+		Event:        dom.EventCancelled,
+		ToStatus:     statusPtr(dom.StatusCancelada),
+		CancelReason: e.CancelReason,
+	})
 	return e, nil
 }
 
@@ -856,26 +936,13 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, dom.StatusPrevista, nil); err != nil {
 		return nil, err
 	}
-	return e, nil
-}
-
-func (s *FinancialEntryService) setStatus(ctx context.Context, workspaceID, id uuid.UUID, status dom.Status) (*dom.FinancialEntry, error) {
-	e, err := s.repo.GetByID(ctx, workspaceID, id)
-	if err != nil {
-		return nil, err
-	}
-	e.Status = status
-	e.UpdatedAt = time.Now().UTC()
-	if err := e.Validate(); err != nil {
-		return nil, err
-	}
-	if err := s.repo.Update(ctx, e); err != nil {
-		return nil, err
-	}
-	// Fatura pai/filho: o status propaga para os filhos (um pagamento real = uma ação).
-	if err := s.repo.CascadeStatusToChildren(ctx, workspaceID, e.ID, status, e.PaidAt); err != nil {
-		return nil, err
-	}
+	s.logEvent(ctx, dom.EntryEvent{
+		WorkspaceID: e.WorkspaceID,
+		EntryID:     e.ID,
+		Event:       dom.EventReopened,
+		FromStatus:  statusPtr(dom.StatusRealizada),
+		ToStatus:    statusPtr(dom.StatusPrevista),
+	})
 	return e, nil
 }
 
@@ -996,5 +1063,26 @@ func (s *FinancialEntryService) Settle(ctx context.Context, in SettleEntryInput)
 	if err := s.repo.CascadeStatusToChildren(ctx, in.WorkspaceID, e.ID, dom.StatusRealizada, &paidAt); err != nil {
 		return nil, err
 	}
+	s.logEvent(ctx, dom.EntryEvent{
+		WorkspaceID:     e.WorkspaceID,
+		EntryID:         e.ID,
+		Event:           dom.EventSettled,
+		FromStatus:      statusPtr(dom.StatusPrevista),
+		ToStatus:        statusPtr(dom.StatusRealizada),
+		PaidAt:          e.PaidAt,
+		PaidAmountCents: e.PaidAmountCents,
+	})
 	return e, nil
+}
+
+// ListEvents devolve a trilha de eventos do lançamento (append-only).
+func (s *FinancialEntryService) ListEvents(ctx context.Context, workspaceID, entryID uuid.UUID) ([]dom.EntryEvent, error) {
+	if s.events == nil {
+		return nil, nil
+	}
+	// Garante escopo: o lançamento precisa existir no workspace.
+	if _, err := s.repo.GetByID(ctx, workspaceID, entryID); err != nil {
+		return nil, err
+	}
+	return s.events.ListByEntry(ctx, workspaceID, entryID)
 }

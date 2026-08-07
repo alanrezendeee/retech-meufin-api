@@ -114,6 +114,56 @@ func (h *FinanceDashboardHandler) Summary(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+// CashFlow responde GET /finance/dashboard/cashflow — a DFC pessoal do ano
+// (regime caixa): saldo inicial + entradas pagas − saídas pagas = saldo
+// final, mês a mês.
+func (h *FinanceDashboardHandler) CashFlow(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	year := time.Now().UTC().Year()
+	var err error
+	if v := c.Query("year"); v != "" {
+		if year, err = strconv.Atoi(v); err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "year inválido")
+			return
+		}
+	}
+	var familyMemberID *uuid.UUID
+	if v := c.Query("family_member_id"); v != "" {
+		id, perr := uuid.Parse(v)
+		if perr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "family_member_id inválido")
+			return
+		}
+		familyMemberID = &id
+	}
+
+	cf, err := h.svc.CashFlow(c.Request.Context(), ws, year, familyMemberID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	months := make([]gin.H, 0, len(cf.Months))
+	for _, m := range cf.Months {
+		months = append(months, gin.H{
+			"month":         m.Month,
+			"inflow_cents":  m.InflowCents,
+			"outflow_cents": m.OutflowCents,
+			"net_cents":     m.NetCents,
+			"balance_cents": m.BalanceCents,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"year":                  cf.Year,
+		"opening_balance_cents": cf.OpeningBalanceCents,
+		"closing_balance_cents": cf.ClosingBalanceCents,
+		"months":                months,
+	})
+}
+
 // CategoryEntries responde GET /finance/dashboard/categories/:slug/entries —
 // o drill-down de uma barra do "Pra onde foi o dinheiro". Sem paginação: o
 // recorte mês × categoria é o limite natural, e a lista precisa ser completa

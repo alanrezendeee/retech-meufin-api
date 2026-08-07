@@ -8,6 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/retechfin/retechfin-api/internal/appctx"
 
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/errrespond"
 )
@@ -84,6 +85,12 @@ func RequireAuth(jwks *keyfunc.JWKS, applicationID string) gin.HandlerFunc {
 		c.Set(CtxEmail, claims.Email)
 		c.Set(CtxRoles, claims.Roles)
 		c.Set(CtxPerms, claims.Perms)
+		// O ator também vai no context da REQUISIÇÃO (não só no do gin) para a
+		// camada de aplicação registrar quem fez a ação (trilha de eventos)
+		// sem precisar plumbar o user_id por todas as assinaturas de serviço.
+		if id, err := uuid.Parse(strings.TrimSpace(claims.UserID)); err == nil {
+			c.Request = c.Request.WithContext(appctx.WithActor(c.Request.Context(), id))
+		}
 		c.Next()
 	}
 }
