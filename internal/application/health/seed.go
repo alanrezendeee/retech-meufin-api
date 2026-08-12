@@ -125,6 +125,19 @@ func systemMarkerSeeds() []seedMarker {
 		{"Eosinófilos", "hematologia", "/mm³", std, nil},
 		{"Basófilos", "hematologia", "/mm³", std, nil},
 
+		// --- hematologia: série branca, escala percentual ---
+		// O diferencial do hemograma imprime % e absoluto; são marcadores
+		// distintos (unidade e faixa próprias). "(percentual)" no nome porque
+		// "%" é descartado pelo Normalize e colidiria com o absoluto.
+		{"Neutrófilos (percentual)", "hematologia", "%", std, []string{
+			"Segmentados percentual", "Percentual de neutrófilos",
+		}},
+		{"Bastonetes (percentual)", "hematologia", "%", std, []string{"Bastões percentual"}},
+		{"Linfócitos (percentual)", "hematologia", "%", std, []string{"Percentual de linfócitos"}},
+		{"Monócitos (percentual)", "hematologia", "%", std, []string{"Percentual de monócitos"}},
+		{"Eosinófilos (percentual)", "hematologia", "%", std, []string{"Percentual de eosinófilos"}},
+		{"Basófilos (percentual)", "hematologia", "%", std, []string{"Percentual de basófilos"}},
+
 		// --- hematologia: plaquetas ---
 		{"Plaquetas", "hematologia", "/mm³", std, []string{"PLT", "Contagem de plaquetas"}},
 		{"Volume plaquetário médio", "hematologia", "fL", std, []string{"VPM", "VMP", "MPV", "M.P.V.", "VMP (Volume plaquetário médio)"}},

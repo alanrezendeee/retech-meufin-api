@@ -200,6 +200,26 @@ func TestResolve_VariantsAndTokenOverlap(t *testing.T) {
 	}
 }
 
+func TestResolve_PercentualVsAbsoluto(t *testing.T) {
+	svc, ws := seededService(t)
+	res, err := svc.Resolve(context.Background(), ws, []ResolveItemInput{
+		{RawName: percentualName("Segmentados %")}, // escala percentual
+		{RawName: "Segmentados"},                   // escala absoluta
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if res[0].Status != ResolveMatched || res[0].Matched == nil || res[0].Matched.CanonicalName != "Neutrófilos (percentual)" {
+		t.Errorf("Segmentados %% deveria casar com Neutrófilos (percentual), veio %s", res[0].Status)
+	}
+	if res[1].Status != ResolveMatched || res[1].Matched == nil || res[1].Matched.CanonicalName != "Neutrófilos" {
+		t.Errorf("Segmentados deveria casar com Neutrófilos, veio %s", res[1].Status)
+	}
+	if res[0].Matched != nil && res[1].Matched != nil && res[0].Matched.ID == res[1].Matched.ID {
+		t.Error("percentual e absoluto não podem resolver para o mesmo marcador")
+	}
+}
+
 func TestUpdate_SystemMarkerImmutable(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := NewMarkerService(repo)
