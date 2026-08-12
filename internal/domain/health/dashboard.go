@@ -31,7 +31,26 @@ type DashboardCounts struct {
 
 type DashboardRepository interface {
 	MarkerEvolution(ctx context.Context, workspaceID, markerID uuid.UUID, familyMemberID *uuid.UUID, from, to *time.Time) ([]EvolutionPoint, error)
+	// EvolutionAll retorna, em UMA query, o histórico de todos os marcadores
+	// com resultado numérico (opcionalmente de um membro), keyed por marker_id
+	// e ordenado por data — base da visão de painéis.
+	EvolutionAll(ctx context.Context, workspaceID uuid.UUID, familyMemberID *uuid.UUID) (map[uuid.UUID][]EvolutionPoint, error)
 	Counts(ctx context.Context, workspaceID uuid.UUID) (DashboardCounts, error)
+}
+
+// PanelMarker é um marcador com histórico dentro de um painel.
+type PanelMarker struct {
+	Marker      Marker
+	DefaultMode string // "absolute" | "normalized"
+	Points      []EvolutionPoint
+}
+
+// Panel agrupa os marcadores de uma categoria do catálogo: os com resultado
+// (Markers, com histórico) e os que nunca tiveram resultado (Missing).
+type Panel struct {
+	Category string
+	Markers  []PanelMarker
+	Missing  []Marker
 }
 
 // NormalizeToReference mapeia o valor para −1..+1 dentro da referência.

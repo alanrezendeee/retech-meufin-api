@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	dom "github.com/retechfin/retechfin-api/internal/domain/health"
@@ -242,6 +243,77 @@ func TestApplyItemDerived_CatalogDefaultRefFallback(t *testing.T) {
 	}
 	if item.ReferenceMin != nil || item.ReferenceMax != nil {
 		t.Error("faixa do item deve permanecer nula (fidelidade ao laudo); só a interpretação usa a curadoria")
+	}
+}
+
+// fakeDashboardRepo devolve histórico fixo para testar a montagem dos painéis.
+type fakeDashboardRepo struct {
+	history map[uuid.UUID][]dom.EvolutionPoint
+}
+
+func (r *fakeDashboardRepo) MarkerEvolution(_ context.Context, _, markerID uuid.UUID, _ *uuid.UUID, _, _ *time.Time) ([]dom.EvolutionPoint, error) {
+	return r.history[markerID], nil
+}
+func (r *fakeDashboardRepo) EvolutionAll(_ context.Context, _ uuid.UUID, _ *uuid.UUID) (map[uuid.UUID][]dom.EvolutionPoint, error) {
+	return r.history, nil
+}
+func (r *fakeDashboardRepo) Counts(_ context.Context, _ uuid.UUID) (dom.DashboardCounts, error) {
+	return dom.DashboardCounts{}, nil
+}
+
+func TestDashboardPanels(t *testing.T) {
+	repo := &fakeRepo{}
+	msvc := NewMarkerService(repo)
+	if _, err := msvc.SeedSystem(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ws := uuid.New()
+	res, err := msvc.Resolve(context.Background(), ws, []ResolveItemInput{{RawName: "VLDL"}, {RawName: "Glicose"}})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	vldl, glicose := res[0].Matched.ID, res[1].Matched.ID
+
+	v := func(f float64) *float64 { return &f }
+	dash := &fakeDashboardRepo{history: map[uuid.UUID][]dom.EvolutionPoint{
+		vldl:    {{ExamDate: time.Now(), Value: v(14)}}, // sem faixa -> curadoria (<30)
+		glicose: {{ExamDate: time.Now(), Value: v(92), RefMin: v(70), RefMax: v(99)}},
+	}}
+	svc := NewDashboardService(dash, repo)
+	panels, err := svc.Panels(context.Background(), ws, nil)
+	if err != nil {
+		t.Fatalf("panels: %v", err)
+	}
+
+	var lipidico, bioquimica *dom.Panel
+	for i := range panels {
+		switch panels[i].Category {
+		case "lipidico":
+			lipidico = &panels[i]
+		case "bioquimica":
+			bioquimica = &panels[i]
+		}
+	}
+	if lipidico == nil || len(lipidico.Markers) != 1 || lipidico.Markers[0].Marker.ID != vldl {
+		t.Fatal("painel lipídico deveria ter só o VLDL com dados")
+	}
+	if len(lipidico.Missing) == 0 {
+		t.Error("painel lipídico deveria listar os demais marcadores como missing")
+	}
+	// Curadoria aplicada: VLDL 14 herda default_ref_max=30 (normalizado fica
+	// nil — faixa de teto único não tem meio para normalizar).
+	if p := lipidico.Markers[0].Points[0]; p.RefMax == nil || *p.RefMax != 30 {
+		t.Error("ponto do VLDL deveria herdar a curadoria (<30)")
+	}
+	if bioquimica == nil || len(bioquimica.Markers) != 1 {
+		t.Fatal("painel bioquímica deveria ter só a Glicose com dados")
+	}
+	if p := bioquimica.Markers[0].Points[0]; p.Normalized == nil {
+		t.Error("Glicose com faixa completa deveria ter normalizado")
+	}
+	// Ordem clínica: hematologia (só missing) vem antes de lipidico.
+	if panels[0].Category != "hematologia" {
+		t.Errorf("primeiro painel deveria ser hematologia, veio %s", panels[0].Category)
 	}
 }
 

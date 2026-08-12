@@ -187,6 +187,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 			health.GET("/dashboard", dashH.Counts)
 			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
+			health.GET("/dashboard/panels", dashH.Panels)
 
 			// Planos de saúde
 			planH := handlers.NewHealthPlanHandler(d.HealthPlanService)

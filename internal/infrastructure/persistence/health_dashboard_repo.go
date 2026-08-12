@@ -69,6 +69,54 @@ func (r *HealthDashboardRepository) MarkerEvolution(ctx context.Context, workspa
 	return out, nil
 }
 
+// EvolutionAll carrega o histórico de todos os marcadores em uma query.
+func (r *HealthDashboardRepository) EvolutionAll(ctx context.Context, workspaceID uuid.UUID, familyMemberID *uuid.UUID) (map[uuid.UUID][]dom.EvolutionPoint, error) {
+	type row struct {
+		MarkerID               uuid.UUID
+		ExamDate               time.Time
+		ResultNumeric          *float64
+		Unit                   *string
+		ReferenceMin           *float64
+		ReferenceMax           *float64
+		ReferenceText          *string
+		LabID                  *uuid.UUID
+		Interpretation         *string
+		InterpretationComputed *string
+	}
+	q := r.db.WithContext(ctx).
+		Table("health_exam_result_items ri").
+		Select("ri.marker_id, r.exam_date, ri.result_numeric, ri.unit, ri.reference_min, ri.reference_max, ri.reference_text, r.lab_id, ri.interpretation, ri.interpretation_computed").
+		Joins("JOIN health_exam_results r ON r.id = ri.exam_result_id").
+		Where("ri.workspace_id = ? AND ri.marker_id IS NOT NULL AND ri.result_numeric IS NOT NULL AND ri.deleted_at IS NULL AND r.deleted_at IS NULL", workspaceID)
+	if familyMemberID != nil {
+		q = q.Where("r.family_member_id = ?", *familyMemberID)
+	}
+	q = q.Order("r.exam_date ASC")
+
+	var rows []row
+	if err := q.Scan(&rows).Error; err != nil {
+		return nil, mapHealthErr(err)
+	}
+	out := make(map[uuid.UUID][]dom.EvolutionPoint)
+	for i := range rows {
+		interp := rows[i].Interpretation
+		if interp == nil {
+			interp = rows[i].InterpretationComputed
+		}
+		out[rows[i].MarkerID] = append(out[rows[i].MarkerID], dom.EvolutionPoint{
+			ExamDate:       rows[i].ExamDate,
+			Value:          rows[i].ResultNumeric,
+			Unit:           rows[i].Unit,
+			RefMin:         rows[i].ReferenceMin,
+			RefMax:         rows[i].ReferenceMax,
+			RefText:        rows[i].ReferenceText,
+			LabID:          rows[i].LabID,
+			Interpretation: interp,
+		})
+	}
+	return out, nil
+}
+
 func (r *HealthDashboardRepository) Counts(ctx context.Context, workspaceID uuid.UUID) (dom.DashboardCounts, error) {
 	var c dom.DashboardCounts
 	db := r.db.WithContext(ctx)
