@@ -252,6 +252,8 @@ func main() {
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
 	extractionSvc := apph.NewExtractionService(extJobRepo, docRepo, familyRepo, extractor)
 	examImportSvc := apph.NewExamImportService(docRepo, markerSvc, labSvc, examResSvc)
+	shareLinkRepo := persistence.NewHealthShareLinkRepository(db)
+	shareLinkSvc := apph.NewShareLinkService(shareLinkRepo, familyRepo)
 	supplierSvc := appf.NewSupplierService(supplierRepo)
 	incomeSourceSvc := appf.NewIncomeSourceService(incomeSourceRepo)
 	entryEventRepo := persistence.NewFinanceEntryEventRepository(db)
@@ -380,6 +382,7 @@ func main() {
 		HomeSafetyService:             homeSafetySvc,
 		PasswordResetService:          passwordResetSvc,
 		HealthAppointmentService:      healthApptSvc,
+		HealthShareLinkService:        shareLinkSvc,
 		HealthPlanService:             healthPlanSvc,
 		HealthPlanDocumentService:     healthPlanDocSvc,
 		ProfileService:                profileSvc,
