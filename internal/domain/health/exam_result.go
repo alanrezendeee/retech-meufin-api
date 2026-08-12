@@ -189,10 +189,11 @@ func ParseResultNumeric(s string) *float64 {
 }
 
 // ComputeInterpretation classifica um valor frente à faixa [min,max].
-// Retorna "low" (<min), "high" (>max) ou "normal". Retorna nil se não há valor.
+// Retorna "low" (<min), "high" (>max) ou "normal". Retorna nil se não há valor
+// ou se não há faixa alguma — sem referência, "normal" seria enganoso.
 // NÃO é diagnóstico, só posição na faixa.
 func ComputeInterpretation(value *float64, min, max *float64) *string {
-	if value == nil {
+	if value == nil || (min == nil && max == nil) {
 		return nil
 	}
 	var res string

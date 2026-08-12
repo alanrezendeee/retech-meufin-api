@@ -24,45 +24,48 @@ func NewHealthFamilyMemberHandler(svc *app.FamilyMemberService) *HealthFamilyMem
 }
 
 type familyMemberCreateJSON struct {
-	FullName     string   `json:"full_name" binding:"required"`
-	Relationship string   `json:"relationship" binding:"required"`
-	BirthDate    *string  `json:"birth_date"`
-	Gender       *string  `json:"gender"`
-	Document     *string  `json:"document"`
-	Notes        *string  `json:"notes"`
-	HeightCm     *float64 `json:"height_cm"`
-	WeightKg     *float64 `json:"weight_kg"`
-	Active       *bool    `json:"active"`
+	FullName           string   `json:"full_name" binding:"required"`
+	Relationship       string   `json:"relationship" binding:"required"`
+	BirthDate          *string  `json:"birth_date"`
+	Gender             *string  `json:"gender"`
+	Document           *string  `json:"document"`
+	Notes              *string  `json:"notes"`
+	HeightCm           *float64 `json:"height_cm"`
+	WeightKg           *float64 `json:"weight_kg"`
+	CardiovascularRisk *string  `json:"cardiovascular_risk"`
+	Active             *bool    `json:"active"`
 }
 
 type familyMemberUpdateJSON struct {
-	FullName     string   `json:"full_name" binding:"required"`
-	Relationship string   `json:"relationship" binding:"required"`
-	BirthDate    *string  `json:"birth_date"`
-	Gender       *string  `json:"gender"`
-	Document     *string  `json:"document"`
-	Notes        *string  `json:"notes"`
-	HeightCm     *float64 `json:"height_cm"`
-	WeightKg     *float64 `json:"weight_kg"`
-	Active       *bool    `json:"active"`
+	FullName           string   `json:"full_name" binding:"required"`
+	Relationship       string   `json:"relationship" binding:"required"`
+	BirthDate          *string  `json:"birth_date"`
+	Gender             *string  `json:"gender"`
+	Document           *string  `json:"document"`
+	Notes              *string  `json:"notes"`
+	HeightCm           *float64 `json:"height_cm"`
+	WeightKg           *float64 `json:"weight_kg"`
+	CardiovascularRisk *string  `json:"cardiovascular_risk"`
+	Active             *bool    `json:"active"`
 }
 
 type familyMemberResponse struct {
-	ID           uuid.UUID `json:"id"`
-	WorkspaceID  uuid.UUID `json:"workspace_id"`
-	FullName     string    `json:"full_name"`
-	Relationship string    `json:"relationship"`
-	BirthDate    *string   `json:"birth_date"`
-	Gender       *string   `json:"gender"`
-	Document     *string   `json:"document"`
-	Notes        *string   `json:"notes"`
-	HeightCm     *float64  `json:"height_cm"`
-	WeightKg     *float64  `json:"weight_kg"`
-	Age          *int      `json:"age"`
-	Active       bool      `json:"active"`
-	AvatarURL    *string   `json:"avatar_url"`
-	CreatedAt    string    `json:"created_at"`
-	UpdatedAt    string    `json:"updated_at"`
+	ID                 uuid.UUID `json:"id"`
+	WorkspaceID        uuid.UUID `json:"workspace_id"`
+	FullName           string    `json:"full_name"`
+	Relationship       string    `json:"relationship"`
+	BirthDate          *string   `json:"birth_date"`
+	Gender             *string   `json:"gender"`
+	Document           *string   `json:"document"`
+	Notes              *string   `json:"notes"`
+	HeightCm           *float64  `json:"height_cm"`
+	WeightKg           *float64  `json:"weight_kg"`
+	CardiovascularRisk *string   `json:"cardiovascular_risk"`
+	Age                *int      `json:"age"`
+	Active             bool      `json:"active"`
+	AvatarURL          *string   `json:"avatar_url"`
+	CreatedAt          string    `json:"created_at"`
+	UpdatedAt          string    `json:"updated_at"`
 }
 
 // mapFamilyMember converte o domínio para a resposta, incluindo a URL presignada
@@ -74,21 +77,22 @@ func (h *HealthFamilyMemberHandler) mapFamilyMember(c *gin.Context, f *dom.Famil
 		birth = &s
 	}
 	return familyMemberResponse{
-		ID:           f.ID,
-		WorkspaceID:  f.WorkspaceID,
-		FullName:     f.FullName,
-		Relationship: f.Relationship,
-		BirthDate:    birth,
-		Gender:       f.Gender,
-		Document:     f.Document,
-		Notes:        f.Notes,
-		HeightCm:     f.HeightCm,
-		WeightKg:     f.WeightKg,
-		Age:          f.Age(),
-		Active:       f.Active,
-		AvatarURL:    h.svc.AvatarURL(c.Request.Context(), f.AvatarObjectKey),
-		CreatedAt:    f.CreatedAt.UTC().Format(time.RFC3339Nano),
-		UpdatedAt:    f.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ID:                 f.ID,
+		WorkspaceID:        f.WorkspaceID,
+		FullName:           f.FullName,
+		Relationship:       f.Relationship,
+		BirthDate:          birth,
+		Gender:             f.Gender,
+		Document:           f.Document,
+		Notes:              f.Notes,
+		HeightCm:           f.HeightCm,
+		WeightKg:           f.WeightKg,
+		CardiovascularRisk: f.CardiovascularRisk,
+		Age:                f.Age(),
+		Active:             f.Active,
+		AvatarURL:          h.svc.AvatarURL(c.Request.Context(), f.AvatarObjectKey),
+		CreatedAt:          f.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:          f.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -150,16 +154,17 @@ func (h *HealthFamilyMemberHandler) Create(c *gin.Context) {
 		return
 	}
 	f, err := h.svc.Create(c.Request.Context(), app.CreateFamilyMemberInput{
-		WorkspaceID:  ws,
-		FullName:     body.FullName,
-		Relationship: body.Relationship,
-		BirthDate:    birth,
-		Gender:       body.Gender,
-		Document:     body.Document,
-		Notes:        body.Notes,
-		HeightCm:     body.HeightCm,
-		WeightKg:     body.WeightKg,
-		Active:       body.Active,
+		WorkspaceID:        ws,
+		FullName:           body.FullName,
+		Relationship:       body.Relationship,
+		BirthDate:          birth,
+		Gender:             body.Gender,
+		Document:           body.Document,
+		Notes:              body.Notes,
+		HeightCm:           body.HeightCm,
+		WeightKg:           body.WeightKg,
+		CardiovascularRisk: body.CardiovascularRisk,
+		Active:             body.Active,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -208,17 +213,18 @@ func (h *HealthFamilyMemberHandler) Update(c *gin.Context) {
 		return
 	}
 	f, err := h.svc.Update(c.Request.Context(), app.UpdateFamilyMemberInput{
-		WorkspaceID:  ws,
-		ID:           id,
-		FullName:     body.FullName,
-		Relationship: body.Relationship,
-		BirthDate:    birth,
-		Gender:       body.Gender,
-		Document:     body.Document,
-		Notes:        body.Notes,
-		HeightCm:     body.HeightCm,
-		WeightKg:     body.WeightKg,
-		Active:       body.Active,
+		WorkspaceID:        ws,
+		ID:                 id,
+		FullName:           body.FullName,
+		Relationship:       body.Relationship,
+		BirthDate:          birth,
+		Gender:             body.Gender,
+		Document:           body.Document,
+		Notes:              body.Notes,
+		HeightCm:           body.HeightCm,
+		WeightKg:           body.WeightKg,
+		CardiovascularRisk: body.CardiovascularRisk,
+		Active:             body.Active,
 	})
 	if err != nil {
 		errrespond.Write(c, err)

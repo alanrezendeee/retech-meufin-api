@@ -6,10 +6,10 @@ ALTER TABLE health_markers ADD COLUMN IF NOT EXISTS default_ref_tiers JSONB NULL
 
 UPDATE health_markers
 SET default_ref_tiers = '[
-  {"label": "Risco baixo", "max": 130},
-  {"label": "Risco intermediário", "max": 100},
-  {"label": "Risco alto", "max": 70},
-  {"label": "Risco muito alto", "max": 50}
+  {"key": "baixo", "label": "Risco baixo", "max": 130},
+  {"key": "intermediario", "label": "Risco intermediário", "max": 100},
+  {"key": "alto", "label": "Risco alto", "max": 70},
+  {"key": "muito_alto", "label": "Risco muito alto", "max": 50}
 ]'::jsonb,
     default_ref_text = COALESCE(default_ref_text,
       'Metas por categoria de risco cardiovascular estimada pelo médico (diretriz SBC); crianças e adolescentes: inferior a 110 mg/dL')

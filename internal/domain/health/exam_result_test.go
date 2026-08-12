@@ -51,7 +51,8 @@ func TestComputeInterpretation(t *testing.T) {
 		{"abaixo do minimo -> low", ptrF(3), ptrF(5), ptrF(10), strp("low")},
 		{"dentro da faixa -> normal", ptrF(7), ptrF(5), ptrF(10), strp("normal")},
 		{"acima do maximo -> high", ptrF(12), ptrF(5), ptrF(10), strp("high")},
-		{"sem referencia -> normal", ptrF(7), nil, nil, strp("normal")},
+		// Sem faixa alguma não há como posicionar o valor — "normal" enganaria.
+		{"sem referencia -> nil", ptrF(7), nil, nil, nil},
 		{"apenas min, abaixo -> low", ptrF(2), ptrF(5), nil, strp("low")},
 		{"apenas max, acima -> high", ptrF(20), nil, ptrF(10), strp("high")},
 		{"sem valor -> nil", nil, ptrF(5), ptrF(10), nil},

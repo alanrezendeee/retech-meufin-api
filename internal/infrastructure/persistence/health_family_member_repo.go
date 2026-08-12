@@ -43,10 +43,11 @@ func (r *HealthFamilyMemberRepository) Update(ctx context.Context, f *dom.Family
 			"gender":       f.Gender,
 			"document":     f.Document,
 			"notes":        f.Notes,
-			"height_cm":    f.HeightCm,
-			"weight_kg":    f.WeightKg,
-			"active":       f.Active,
-			"updated_at":   f.UpdatedAt,
+			"height_cm":           f.HeightCm,
+			"weight_kg":           f.WeightKg,
+			"cardiovascular_risk": f.CardiovascularRisk,
+			"active":               f.Active,
+			"updated_at":           f.UpdatedAt,
 		})
 	if res.Error != nil {
 		return mapHealthErr(res.Error)
@@ -142,12 +143,13 @@ func familyMemberToModel(f *dom.FamilyMember) HealthFamilyMemberModel {
 		Gender:          f.Gender,
 		Document:        f.Document,
 		Notes:           f.Notes,
-		HeightCm:        f.HeightCm,
-		WeightKg:        f.WeightKg,
-		Active:          f.Active,
-		AvatarObjectKey: f.AvatarObjectKey,
-		CreatedAt:       f.CreatedAt,
-		UpdatedAt:       f.UpdatedAt,
+		HeightCm:           f.HeightCm,
+		WeightKg:           f.WeightKg,
+		CardiovascularRisk: f.CardiovascularRisk,
+		Active:             f.Active,
+		AvatarObjectKey:    f.AvatarObjectKey,
+		CreatedAt:          f.CreatedAt,
+		UpdatedAt:          f.UpdatedAt,
 	}
 }
 
@@ -161,11 +163,12 @@ func modelToFamilyMember(m *HealthFamilyMemberModel) *dom.FamilyMember {
 		Gender:          m.Gender,
 		Document:        m.Document,
 		Notes:           m.Notes,
-		HeightCm:        m.HeightCm,
-		WeightKg:        m.WeightKg,
-		Active:          m.Active,
-		AvatarObjectKey: m.AvatarObjectKey,
-		CreatedAt:       m.CreatedAt,
-		UpdatedAt:       m.UpdatedAt,
+		HeightCm:           m.HeightCm,
+		WeightKg:           m.WeightKg,
+		CardiovascularRisk: m.CardiovascularRisk,
+		Active:             m.Active,
+		AvatarObjectKey:    m.AvatarObjectKey,
+		CreatedAt:          m.CreatedAt,
+		UpdatedAt:          m.UpdatedAt,
 	}
 }

@@ -57,10 +57,31 @@ type Marker struct {
 }
 
 // RefTier é uma meta condicional de referência do catálogo (curadoria).
+// Key liga o tier a uma condição do membro (ex.: cardiovascular_risk) para
+// interpretação automática; sem key o tier é apenas informativo.
 type RefTier struct {
+	Key   string   `json:"key,omitempty"`
 	Label string   `json:"label"`
 	Min   *float64 `json:"min,omitempty"`
 	Max   *float64 `json:"max,omitempty"`
+}
+
+// Categorias de risco cardiovascular (estratificação clínica, diretriz SBC).
+const (
+	RiskLow          = "baixo"
+	RiskIntermediate = "intermediario"
+	RiskHigh         = "alto"
+	RiskVeryHigh     = "muito_alto"
+)
+
+// TierForKey devolve o tier cuja key casa com a condição informada.
+func TierForKey(tiers []RefTier, key string) *RefTier {
+	for i := range tiers {
+		if tiers[i].Key == key {
+			return &tiers[i]
+		}
+	}
+	return nil
 }
 
 // MarkerAlias mapeia sinônimos/abreviações para o marcador canônico (TGO->AST etc.).

@@ -233,9 +233,9 @@ func TestApplyItemDerived_CatalogDefaultRefFallback(t *testing.T) {
 	}
 	vldlID := res[0].Matched.ID
 
-	svc := NewExamResultService(nil, repo)
+	svc := NewExamResultService(nil, repo, nil)
 	item := &dom.ExamResultItem{WorkspaceID: ws, ResultValue: "14 mg/dL", MarkerID: &vldlID}
-	svc.applyItemDerived(context.Background(), ws, item)
+	svc.applyItemDerived(context.Background(), ws, "", item)
 
 	if item.InterpretationComputed == nil || *item.InterpretationComputed != "normal" {
 		t.Errorf("VLDL 14 deveria interpretar 'normal' pela curadoria (<30), veio %v", item.InterpretationComputed)
@@ -244,6 +244,42 @@ func TestApplyItemDerived_CatalogDefaultRefFallback(t *testing.T) {
 		t.Error("faixa do item deve permanecer nula (fidelidade ao laudo); só a interpretação usa a curadoria")
 	}
 }
+
+func TestApplyItemDerived_RiskTierInterpretation(t *testing.T) {
+	repo := &fakeRepo{}
+	msvc := NewMarkerService(repo)
+	if _, err := msvc.SeedSystem(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ws := uuid.New()
+	res, err := msvc.Resolve(context.Background(), ws, []ResolveItemInput{{RawName: "LDL"}})
+	if err != nil || res[0].Status != ResolveMatched {
+		t.Fatalf("resolver LDL: %v (%v)", err, res[0].Status)
+	}
+	ldlID := res[0].Matched.ID
+	svc := NewExamResultService(nil, repo, nil)
+
+	cases := []struct {
+		risk string
+		want *string
+	}{
+		{"baixo", ptr("normal")}, // 78 < 130
+		{"alto", ptr("high")},    // 78 > 70
+		{"", nil},                // sem risco cadastrado: tiers não interpretam
+	}
+	for _, c := range cases {
+		item := &dom.ExamResultItem{WorkspaceID: ws, ResultValue: "78 mg/dL", MarkerID: &ldlID}
+		svc.applyItemDerived(context.Background(), ws, c.risk, item)
+		switch {
+		case c.want == nil && item.InterpretationComputed != nil:
+			t.Errorf("risco %q: esperava sem interpretação, veio %q", c.risk, *item.InterpretationComputed)
+		case c.want != nil && (item.InterpretationComputed == nil || *item.InterpretationComputed != *c.want):
+			t.Errorf("risco %q: esperava %q, veio %v", c.risk, *c.want, item.InterpretationComputed)
+		}
+	}
+}
+
+func ptr(s string) *string { return &s }
 
 func TestUpdate_SystemMarkerImmutable(t *testing.T) {
 	repo := &fakeRepo{}
