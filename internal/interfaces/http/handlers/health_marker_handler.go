@@ -36,10 +36,11 @@ type markerResponse struct {
 	Category       string                `json:"category"`
 	Comparability  string                `json:"comparability_class"`
 	CanonicalUnit  *string               `json:"canonical_unit"`
-	DefaultRefMin  *float64              `json:"default_ref_min"`
-	DefaultRefMax  *float64              `json:"default_ref_max"`
-	DefaultRefText *string               `json:"default_ref_text"`
-	Active         bool                  `json:"active"`
+	DefaultRefMin   *float64              `json:"default_ref_min"`
+	DefaultRefMax   *float64              `json:"default_ref_max"`
+	DefaultRefText  *string               `json:"default_ref_text"`
+	DefaultRefTiers []dom.RefTier         `json:"default_ref_tiers,omitempty"`
+	Active          bool                  `json:"active"`
 	Aliases        []markerAliasResponse `json:"aliases"`
 	CreatedAt      string                `json:"created_at"`
 	UpdatedAt      string                `json:"updated_at"`
@@ -55,6 +56,7 @@ func mapMarker(m *dom.Marker) markerResponse {
 		CanonicalName: m.CanonicalName, NormalizedKey: m.NormalizedKey, LoincCode: m.LoincCode,
 		Category: m.Category, Comparability: string(m.Comparability), CanonicalUnit: m.CanonicalUnit,
 		DefaultRefMin: m.DefaultRefMin, DefaultRefMax: m.DefaultRefMax, DefaultRefText: m.DefaultRefText,
+		DefaultRefTiers: m.DefaultRefTiers,
 		Active: m.Active, Aliases: aliases,
 		CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt: m.UpdatedAt.UTC().Format(time.RFC3339Nano),

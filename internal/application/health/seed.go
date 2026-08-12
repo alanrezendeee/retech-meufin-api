@@ -21,9 +21,10 @@ type seedMarker struct {
 // VLDL) e serve de fallback de interpretação quando o item do laudo não traz
 // faixa própria — nunca substitui a faixa impressa no laudo.
 type seedDefaultRef struct {
-	min  *float64
-	max  *float64
-	text string
+	min   *float64
+	max   *float64
+	text  string
+	tiers []dom.RefTier
 }
 
 func systemMarkerDefaultRefs() map[string]seedDefaultRef {
@@ -32,6 +33,18 @@ func systemMarkerDefaultRefs() map[string]seedDefaultRef {
 		"Colesterol VLDL": {
 			max:  f(30),
 			text: "Desejável: inferior a 30 mg/dL (valor de literatura; laboratórios geralmente não informam faixa)",
+		},
+		// LDL não tem faixa única: metas por risco cardiovascular (diretriz
+		// SBC), estimado pelo médico — tiers informativos, sem interpretação
+		// automática.
+		"Colesterol LDL": {
+			text: "Metas por categoria de risco cardiovascular estimada pelo médico (diretriz SBC); crianças e adolescentes: inferior a 110 mg/dL",
+			tiers: []dom.RefTier{
+				{Label: "Risco baixo", Max: f(130)},
+				{Label: "Risco intermediário", Max: f(100)},
+				{Label: "Risco alto", Max: f(70)},
+				{Label: "Risco muito alto", Max: f(50)},
+			},
 		},
 	}
 }
@@ -302,6 +315,7 @@ func (s *MarkerService) SeedSystem(ctx context.Context) (int, error) {
 		if ref, ok := defaults[sd.name]; ok {
 			m.DefaultRefMin = ref.min
 			m.DefaultRefMax = ref.max
+			m.DefaultRefTiers = ref.tiers
 			if ref.text != "" {
 				t := ref.text
 				m.DefaultRefText = &t

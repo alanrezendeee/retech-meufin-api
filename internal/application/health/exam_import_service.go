@@ -86,6 +86,10 @@ type ExamItemSuggestion struct {
 	Candidates   []MarkerCandidateSuggestion
 	// MarkerIsNew: sem match exato — a UI oferece criar o marcador.
 	MarkerIsNew bool
+	// Curadoria do marcador casado (texto e metas condicionais, ex.: LDL por
+	// risco) — a UI usa para tooltip e enquadramento informativo.
+	MarkerRefText  *string
+	MarkerRefTiers []dom.RefTier
 }
 
 // ExamSuggestion é o laudo estruturado pronto para revisão na UI.
@@ -177,6 +181,8 @@ func (s *ExamImportService) Suggest(ctx context.Context, workspaceID uuid.UUID, 
 				it.MarkerID = &id
 				it.MarkerName = &name
 				it.MarkerIsNew = false
+				it.MarkerRefText = r.Matched.DefaultRefText
+				it.MarkerRefTiers = r.Matched.DefaultRefTiers
 			case ResolveAmbiguous:
 				for _, c := range r.Candidates {
 					it.Candidates = append(it.Candidates, MarkerCandidateSuggestion{

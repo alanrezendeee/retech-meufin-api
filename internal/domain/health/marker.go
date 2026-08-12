@@ -45,10 +45,22 @@ type Marker struct {
 	DefaultRefMin  *float64
 	DefaultRefMax  *float64
 	DefaultRefText *string
-	Active         bool
-	Aliases        []MarkerAlias
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// DefaultRefTiers: metas condicionais de curadoria quando não existe faixa
+	// única (ex.: LDL por categoria de risco cardiovascular). Informativo — a
+	// interpretação computada NÃO escolhe tier sozinha (a condição, como o
+	// risco do paciente, não é inferível do laudo).
+	DefaultRefTiers []RefTier
+	Active          bool
+	Aliases         []MarkerAlias
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// RefTier é uma meta condicional de referência do catálogo (curadoria).
+type RefTier struct {
+	Label string   `json:"label"`
+	Min   *float64 `json:"min,omitempty"`
+	Max   *float64 `json:"max,omitempty"`
 }
 
 // MarkerAlias mapeia sinônimos/abreviações para o marcador canônico (TGO->AST etc.).
