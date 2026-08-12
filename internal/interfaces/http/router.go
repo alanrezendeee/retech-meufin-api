@@ -2,6 +2,7 @@ package http
 
 import (
 	"log/slog"
+	"time"
 
 	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
@@ -68,6 +69,7 @@ type RouterDeps struct {
 	HomeSafetyService             *apphs.Service
 	PasswordResetService          *appacc.PasswordResetService
 	HealthAppointmentService      *apph.AppointmentService
+	HealthShareLinkService        *apph.ShareLinkService
 	HealthPlanService             *apph.PlanService
 	HealthPlanDocumentService     *apph.PlanDocumentService
 	ProfileService                *appacc.ProfileService
@@ -85,10 +87,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	// Rotas públicas (usuário deslogado) — fluxo "esqueci a senha"
 	resetH := handlers.NewPasswordResetHandler(d.PasswordResetService)
+	shareH := handlers.NewHealthShareLinkHandler(d.HealthShareLinkService, d.DashboardService)
 	public := r.Group("/api/v1/public")
 	{
 		public.POST("/password-reset/request", resetH.Request)
 		public.POST("/password-reset/confirm", resetH.Confirm)
+		// Link compartilhado com o médico: sem login; rate limit por IP (spec).
+		public.GET("/health/:token", middleware.RateLimitPerIP(30, time.Minute), shareH.PublicPanels)
 	}
 
 	accH := handlers.NewAccountHandler(d.AccountService)
@@ -188,6 +193,10 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.GET("/dashboard", dashH.Counts)
 			health.GET("/dashboard/markers/:markerId/evolution", dashH.MarkerEvolution)
 			health.GET("/dashboard/panels", dashH.Panels)
+
+			health.POST("/share-links", shareH.Create)
+			health.GET("/share-links", shareH.List)
+			health.DELETE("/share-links/:id", shareH.Revoke)
 
 			// Planos de saúde
 			planH := handlers.NewHealthPlanHandler(d.HealthPlanService)
