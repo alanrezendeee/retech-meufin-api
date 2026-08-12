@@ -9,11 +9,12 @@ import (
 )
 
 type ExamResultService struct {
-	repo dom.ExamResultRepository
+	repo    dom.ExamResultRepository
+	markers dom.MarkerRepository
 }
 
-func NewExamResultService(repo dom.ExamResultRepository) *ExamResultService {
-	return &ExamResultService{repo: repo}
+func NewExamResultService(repo dom.ExamResultRepository, markers dom.MarkerRepository) *ExamResultService {
+	return &ExamResultService{repo: repo, markers: markers}
 }
 
 type CreateExamResultItemInput struct {
@@ -90,12 +91,21 @@ type UpdateExamResultItemInput struct {
 }
 
 // applyItemDerived preenche result_numeric (quando ausente) e sempre recalcula
-// interpretation_computed a partir do valor e da faixa de referência.
-func applyItemDerived(it *dom.ExamResultItem) {
+// interpretation_computed a partir do valor e da faixa de referência. Quando o
+// laudo não traz faixa (ex.: VLDL — "não dispomos de valor de referência"),
+// usa a faixa de CURADORIA do catálogo (default_ref do marcador) como
+// fallback — a faixa do item permanece nula, fiel ao laudo.
+func (s *ExamResultService) applyItemDerived(ctx context.Context, workspaceID uuid.UUID, it *dom.ExamResultItem) {
 	if it.ResultNumeric == nil {
 		it.ResultNumeric = dom.ParseResultNumeric(it.ResultValue)
 	}
-	it.InterpretationComputed = dom.ComputeInterpretation(it.ResultNumeric, it.ReferenceMin, it.ReferenceMax)
+	refMin, refMax := it.ReferenceMin, it.ReferenceMax
+	if refMin == nil && refMax == nil && it.MarkerID != nil {
+		if m, err := s.markers.GetByID(ctx, workspaceID, *it.MarkerID); err == nil {
+			refMin, refMax = m.DefaultRefMin, m.DefaultRefMax
+		}
+	}
+	it.InterpretationComputed = dom.ComputeInterpretation(it.ResultNumeric, refMin, refMax)
 }
 
 func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput) (*dom.ExamResult, error) {
@@ -136,7 +146,7 @@ func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
-		applyItemDerived(&item)
+		s.applyItemDerived(ctx, in.WorkspaceID, &item)
 		r.Items = append(r.Items, item)
 	}
 	if err := r.Validate(); err != nil {
@@ -217,7 +227,7 @@ func (s *ExamResultService) AddItem(ctx context.Context, in AddExamResultItemInp
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	applyItemDerived(item)
+	s.applyItemDerived(ctx, in.WorkspaceID, item)
 	if err := item.Validate(); err != nil {
 		return nil, err
 	}
@@ -256,7 +266,7 @@ func (s *ExamResultService) UpdateItem(ctx context.Context, in UpdateExamResultI
 	current.Material = in.Item.Material
 	current.RawText = in.Item.RawText
 	current.UpdatedAt = time.Now().UTC()
-	applyItemDerived(current)
+	s.applyItemDerived(ctx, in.WorkspaceID, current)
 	if err := current.Validate(); err != nil {
 		return nil, err
 	}

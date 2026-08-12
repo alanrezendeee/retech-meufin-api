@@ -16,6 +16,26 @@ type seedMarker struct {
 	aliases       []string
 }
 
+// seedDefaultRef é a faixa de CURADORIA do catálogo, por nome canônico.
+// Aplica-se a marcadores que os laboratórios reportam sem referência (ex.:
+// VLDL) e serve de fallback de interpretação quando o item do laudo não traz
+// faixa própria — nunca substitui a faixa impressa no laudo.
+type seedDefaultRef struct {
+	min  *float64
+	max  *float64
+	text string
+}
+
+func systemMarkerDefaultRefs() map[string]seedDefaultRef {
+	f := func(v float64) *float64 { return &v }
+	return map[string]seedDefaultRef{
+		"Colesterol VLDL": {
+			max:  f(30),
+			text: "Desejável: inferior a 30 mg/dL (valor de literatura; laboratórios geralmente não informam faixa)",
+		},
+	}
+}
+
 // systemMarkerSeeds é o catálogo base (escopo system) de marcadores laboratoriais BR comuns.
 // comparability: standardized = valor comparável entre labs; method_dependent = varia com o
 // método; qualitative = resultado descritivo (positivo/negativo, presença/ausência).
@@ -265,6 +285,7 @@ func systemMarkerSeeds() []seedMarker {
 func (s *MarkerService) SeedSystem(ctx context.Context) (int, error) {
 	now := time.Now().UTC()
 	inserted := 0
+	defaults := systemMarkerDefaultRefs()
 	for _, sd := range systemMarkerSeeds() {
 		unit := sd.unit
 		m := &dom.Marker{
@@ -277,6 +298,14 @@ func (s *MarkerService) SeedSystem(ctx context.Context) (int, error) {
 			Active:        true,
 			CreatedAt:     now,
 			UpdatedAt:     now,
+		}
+		if ref, ok := defaults[sd.name]; ok {
+			m.DefaultRefMin = ref.min
+			m.DefaultRefMax = ref.max
+			if ref.text != "" {
+				t := ref.text
+				m.DefaultRefText = &t
+			}
 		}
 		src := "seed"
 		for _, a := range sd.aliases {

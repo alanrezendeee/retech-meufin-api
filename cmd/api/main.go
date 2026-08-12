@@ -247,7 +247,7 @@ func main() {
 	familySvc := apph.NewFamilyMemberService(familyRepo, objStorage)
 	labSvc := apph.NewLabService(labRepo)
 	examReqSvc := apph.NewExamRequestService(examReqRepo)
-	examResSvc := apph.NewExamResultService(examResRepo)
+	examResSvc := apph.NewExamResultService(examResRepo, markerRepo)
 	dashboardSvc := apph.NewDashboardService(dashboardRepo, markerRepo)
 	docSvc := apph.NewDocumentService(docRepo, objStorage, storageCfg.MaxUploadMB)
 	extractionSvc := apph.NewExtractionService(extJobRepo, docRepo, familyRepo, extractor)

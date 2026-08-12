@@ -220,6 +220,31 @@ func TestResolve_PercentualVsAbsoluto(t *testing.T) {
 	}
 }
 
+func TestApplyItemDerived_CatalogDefaultRefFallback(t *testing.T) {
+	repo := &fakeRepo{}
+	msvc := NewMarkerService(repo)
+	if _, err := msvc.SeedSystem(context.Background()); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	ws := uuid.New()
+	res, err := msvc.Resolve(context.Background(), ws, []ResolveItemInput{{RawName: "VLDL"}})
+	if err != nil || res[0].Status != ResolveMatched {
+		t.Fatalf("resolver VLDL: %v (%v)", err, res[0].Status)
+	}
+	vldlID := res[0].Matched.ID
+
+	svc := NewExamResultService(nil, repo)
+	item := &dom.ExamResultItem{WorkspaceID: ws, ResultValue: "14 mg/dL", MarkerID: &vldlID}
+	svc.applyItemDerived(context.Background(), ws, item)
+
+	if item.InterpretationComputed == nil || *item.InterpretationComputed != "normal" {
+		t.Errorf("VLDL 14 deveria interpretar 'normal' pela curadoria (<30), veio %v", item.InterpretationComputed)
+	}
+	if item.ReferenceMin != nil || item.ReferenceMax != nil {
+		t.Error("faixa do item deve permanecer nula (fidelidade ao laudo); só a interpretação usa a curadoria")
+	}
+}
+
 func TestUpdate_SystemMarkerImmutable(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := NewMarkerService(repo)

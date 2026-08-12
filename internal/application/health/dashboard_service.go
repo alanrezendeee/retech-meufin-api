@@ -35,6 +35,12 @@ func (s *DashboardService) MarkerEvolution(ctx context.Context, workspaceID, mar
 		return nil, err
 	}
 	for i := range points {
+		// Ponto sem faixa do laudo herda a faixa de curadoria do catálogo
+		// (ex.: VLDL) — sem isso o modo normalizado fica vazio para o marcador.
+		if points[i].RefMin == nil && points[i].RefMax == nil {
+			points[i].RefMin = marker.DefaultRefMin
+			points[i].RefMax = marker.DefaultRefMax
+		}
 		points[i].Normalized = dom.NormalizeToReference(points[i].Value, points[i].RefMin, points[i].RefMax)
 	}
 	mode := "absolute"
