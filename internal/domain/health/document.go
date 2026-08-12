@@ -89,10 +89,17 @@ func (d *Document) Validate() error {
 }
 
 // DocumentRepository persiste documentos de saúde (workspace-scoped, soft-delete).
+// DocumentFilter recorta a listagem de documentos.
+type DocumentFilter struct {
+	FamilyMemberID *uuid.UUID
+	ExamResultID   *uuid.UUID
+	DocumentType   string
+}
+
 type DocumentRepository interface {
 	Create(ctx context.Context, d *Document) error
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*Document, error)
-	List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]Document, int64, error)
+	List(ctx context.Context, workspaceID uuid.UUID, filter DocumentFilter, limit, offset int) ([]Document, int64, error)
 	// UpdateExtraction atualiza extraction_status/extracted_text/extracted_json.
 	UpdateExtraction(ctx context.Context, d *Document) error
 	// LinkExamResult vincula o documento ao resultado criado a partir dele

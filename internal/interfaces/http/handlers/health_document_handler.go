@@ -185,7 +185,25 @@ func (h *HealthDocumentHandler) List(c *gin.Context) {
 		return
 	}
 	limit, offset := pagination(c)
-	res, err := h.svc.List(c.Request.Context(), ws, limit, offset)
+	var filter dom.DocumentFilter
+	if v := c.Query("family_member_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "family_member_id inválido")
+			return
+		}
+		filter.FamilyMemberID = &id
+	}
+	if v := c.Query("exam_result_id"); v != "" {
+		id, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "exam_result_id inválido")
+			return
+		}
+		filter.ExamResultID = &id
+	}
+	filter.DocumentType = c.Query("document_type")
+	res, err := h.svc.List(c.Request.Context(), ws, filter, limit, offset)
 	if err != nil {
 		errrespond.Write(c, err)
 		return
@@ -195,6 +213,36 @@ func (h *HealthDocumentHandler) List(c *gin.Context) {
 		items[i] = mapDocument(&res.Items[i])
 	}
 	c.JSON(http.StatusOK, gin.H{"items": items, "total": res.Total})
+}
+
+// linkJSON é o body do PATCH: exam_result_id nulo desvincula.
+type documentLinkJSON struct {
+	ExamResultID *uuid.UUID `json:"exam_result_id"`
+}
+
+// Link vincula/desvincula o documento a um resultado de exame (anexos).
+func (h *HealthDocumentHandler) Link(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
+		return
+	}
+	var body documentLinkJSON
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	doc, err := h.svc.SetExamResult(c.Request.Context(), ws, id, body.ExamResultID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, mapDocument(doc))
 }
 
 func (h *HealthDocumentHandler) Delete(c *gin.Context) {

@@ -141,12 +141,27 @@ type ListDocumentsResult struct {
 	Total int64
 }
 
-func (s *DocumentService) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) (*ListDocumentsResult, error) {
-	items, total, err := s.repo.List(ctx, workspaceID, limit, offset)
+func (s *DocumentService) List(ctx context.Context, workspaceID uuid.UUID, filter dom.DocumentFilter, limit, offset int) (*ListDocumentsResult, error) {
+	items, total, err := s.repo.List(ctx, workspaceID, filter, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	return &ListDocumentsResult{Items: items, Total: total}, nil
+}
+
+// SetExamResult vincula (ou desvincula, com nil) o documento a um resultado —
+// anexos de radiografia/laudo no exame.
+func (s *DocumentService) SetExamResult(ctx context.Context, workspaceID, id uuid.UUID, examResultID *uuid.UUID) (*dom.Document, error) {
+	doc, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	doc.ExamResultID = examResultID
+	doc.UpdatedAt = time.Now().UTC()
+	if err := s.repo.LinkExamResult(ctx, doc); err != nil {
+		return nil, err
+	}
+	return doc, nil
 }
 
 func (s *DocumentService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
