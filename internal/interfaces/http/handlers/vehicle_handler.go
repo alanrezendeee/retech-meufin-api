@@ -198,16 +198,16 @@ func mapPlan(p dom.VehicleMaintenancePlan) planResponse {
 }
 
 type alertResponse struct {
-	TemplateID    string   `json:"template_id"`
-	Type          string   `json:"type"`
-	Title         string   `json:"title"`
-	Status        string   `json:"status"`
-	DueAtKM       *int     `json:"due_at_km"`
-	DueAtDate     *string  `json:"due_at_date"`
-	KMRemaining   *int     `json:"km_remaining"`
-	DaysRemaining *int     `json:"days_remaining"`
-	LastOdometer  *int     `json:"last_odometer"`
-	LastDate      *string  `json:"last_date"`
+	TemplateID    string  `json:"template_id"`
+	Type          string  `json:"type"`
+	Title         string  `json:"title"`
+	Status        string  `json:"status"`
+	DueAtKM       *int    `json:"due_at_km"`
+	DueAtDate     *string `json:"due_at_date"`
+	KMRemaining   *int    `json:"km_remaining"`
+	DaysRemaining *int    `json:"days_remaining"`
+	LastOdometer  *int    `json:"last_odometer"`
+	LastDate      *string `json:"last_date"`
 }
 
 func mapAlert(a dom.MaintenanceAlert) alertResponse {
@@ -233,15 +233,15 @@ func mapAlert(a dom.MaintenanceAlert) alertResponse {
 }
 
 type depreciationResponse struct {
-	AcquisitionPrice     *float64            `json:"acquisition_price"`
-	CurrentFipeValue     *float64            `json:"current_fipe_value"`
-	TotalDepreciationPct *float64            `json:"total_depreciation_pct"`
-	TotalDepreciationR   *float64            `json:"total_depreciation_r"`
-	MonthsOwned          int                 `json:"months_owned"`
-	MonthlyAvgDeprecR    *float64            `json:"monthly_avg_deprec_r"`
-	AnnualAvgDeprecR     *float64            `json:"annual_avg_deprec_r"`
-	Trend6MonthsR        *float64            `json:"trend_6months_r"`
-	History              []fipeHistoryPoint  `json:"history"`
+	AcquisitionPrice     *float64           `json:"acquisition_price"`
+	CurrentFipeValue     *float64           `json:"current_fipe_value"`
+	TotalDepreciationPct *float64           `json:"total_depreciation_pct"`
+	TotalDepreciationR   *float64           `json:"total_depreciation_r"`
+	MonthsOwned          int                `json:"months_owned"`
+	MonthlyAvgDeprecR    *float64           `json:"monthly_avg_deprec_r"`
+	AnnualAvgDeprecR     *float64           `json:"annual_avg_deprec_r"`
+	Trend6MonthsR        *float64           `json:"trend_6months_r"`
+	History              []fipeHistoryPoint `json:"history"`
 }
 
 type fipeHistoryPoint struct {
@@ -303,21 +303,21 @@ type vehicleUpdateJSON struct {
 }
 
 type maintenanceCreateJSON struct {
-	TemplateID          *string              `json:"template_id"`
-	Type                string               `json:"type"`
-	Title               string               `json:"title" binding:"required"`
-	Description         *string              `json:"description"`
-	OdometerAtService   *int                 `json:"odometer_at_service"`
-	ServiceDate         *string              `json:"service_date,omitempty"` // nullable — orçamento não tem data
-	Cost                *float64             `json:"cost"`
-	SupplierID          *string              `json:"supplier_id"`
-	NextServiceOdometer *int                 `json:"next_service_odometer"`
-	NextServiceDate     *string              `json:"next_service_date"`
-	Notes               *string              `json:"notes"`
-	Status              string               `json:"status"`
-	OSNumber            *string              `json:"os_number"`
-	Technician          *string              `json:"technician"`
-	PaymentMethod       *string              `json:"payment_method"`
+	TemplateID          *string               `json:"template_id"`
+	Type                string                `json:"type"`
+	Title               string                `json:"title" binding:"required"`
+	Description         *string               `json:"description"`
+	OdometerAtService   *int                  `json:"odometer_at_service"`
+	ServiceDate         *string               `json:"service_date,omitempty"` // nullable — orçamento não tem data
+	Cost                *float64              `json:"cost"`
+	SupplierID          *string               `json:"supplier_id"`
+	NextServiceOdometer *int                  `json:"next_service_odometer"`
+	NextServiceDate     *string               `json:"next_service_date"`
+	Notes               *string               `json:"notes"`
+	Status              string                `json:"status"`
+	OSNumber            *string               `json:"os_number"`
+	Technician          *string               `json:"technician"`
+	PaymentMethod       *string               `json:"payment_method"`
 	Items               []maintenanceItemJSON `json:"items"`
 }
 

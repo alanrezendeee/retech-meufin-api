@@ -43,11 +43,7 @@ type FamilyMember struct {
 	Notes        *string
 	HeightCm     *float64
 	WeightKg     *float64
-	// CardiovascularRisk: categoria estratificada pelo MÉDICO do membro
-	// (baixo|intermediario|alto|muito_alto). Informada pelo usuário; habilita
-	// a interpretação de marcadores com metas por risco (ex.: LDL).
-	CardiovascularRisk *string
-	Active             bool
+	Active       bool
 	// AvatarObjectKey aponta para a foto do membro no object storage (nil = sem foto).
 	AvatarObjectKey *string
 	CreatedAt       time.Time
@@ -148,17 +144,6 @@ func (f *FamilyMember) Validate() error {
 			f.Gender = nil
 		} else {
 			f.Gender = &g
-		}
-	}
-	if f.CardiovascularRisk != nil {
-		r := strings.TrimSpace(strings.ToLower(*f.CardiovascularRisk))
-		switch r {
-		case "":
-			f.CardiovascularRisk = nil
-		case RiskLow, RiskIntermediate, RiskHigh, RiskVeryHigh:
-			f.CardiovascularRisk = &r
-		default:
-			return &ValidationError{Msg: "cardiovascular_risk inválido (baixo|intermediario|alto|muito_alto)"}
 		}
 	}
 	if f.Document != nil {

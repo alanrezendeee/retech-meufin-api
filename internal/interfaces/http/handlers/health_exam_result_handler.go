@@ -88,6 +88,11 @@ type examResultItemResponse struct {
 	RawText                *string    `json:"raw_text"`
 	CreatedAt              string     `json:"created_at"`
 	UpdatedAt              string     `json:"updated_at"`
+	// Curadoria do marcador (anexada no GET por id): tooltip + confronto
+	// informativo com metas condicionais na UI.
+	MarkerName     *string       `json:"marker_name,omitempty"`
+	MarkerRefText  *string       `json:"marker_ref_text,omitempty"`
+	MarkerRefTiers []dom.RefTier `json:"marker_ref_tiers,omitempty"`
 }
 
 type examResultResponse struct {
@@ -109,7 +114,7 @@ type examResultResponse struct {
 }
 
 func mapExamResultItem(it *dom.ExamResultItem) examResultItemResponse {
-	return examResultItemResponse{
+	out := examResultItemResponse{
 		ID:                     it.ID,
 		WorkspaceID:            it.WorkspaceID,
 		ExamResultID:           it.ExamResultID,
@@ -129,6 +134,13 @@ func mapExamResultItem(it *dom.ExamResultItem) examResultItemResponse {
 		CreatedAt:              it.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:              it.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
+	if it.Marker != nil {
+		name := it.Marker.CanonicalName
+		out.MarkerName = &name
+		out.MarkerRefText = it.Marker.RefText
+		out.MarkerRefTiers = it.Marker.RefTiers
+	}
+	return out
 }
 
 func formatExamDatePtr(t *time.Time) *string {

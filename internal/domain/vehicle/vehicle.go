@@ -59,7 +59,7 @@ type Vehicle struct {
 	Color            *string
 	Plate            *string
 	FuelType         FuelType
-	FipeVehicleType  string    // "carros" | "motos" | "caminhoes"
+	FipeVehicleType  string // "carros" | "motos" | "caminhoes"
 	FipeCode         *string
 	FipeBrandCode    *string
 	FipeModelCode    *string

@@ -82,6 +82,9 @@ type ExamResultItem struct {
 	RawText                *string
 	CreatedAt              time.Time
 	UpdatedAt              time.Time
+
+	// Marker: curadoria anexada na leitura (Get); não persiste no item.
+	Marker *MarkerInfo
 }
 
 // Validate valida invariantes do cabeçalho do resultado.
@@ -206,6 +209,15 @@ func ComputeInterpretation(value *float64, min, max *float64) *string {
 		res = string(InterpretationNormal)
 	}
 	return &res
+}
+
+// MarkerInfo é a curadoria do marcador anexada ao item na LEITURA (não
+// persiste): nome canônico, texto de referência e metas condicionais, para a
+// UI exibir tooltip e o confronto informativo com a tabela (ex.: LDL).
+type MarkerInfo struct {
+	CanonicalName string
+	RefText       *string
+	RefTiers      []RefTier
 }
 
 // ExamResultFilter recorta a listagem da tela de gestão.

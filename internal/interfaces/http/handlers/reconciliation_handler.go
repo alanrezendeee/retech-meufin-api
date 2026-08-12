@@ -27,8 +27,8 @@ type reconcileMatchJSON struct {
 	PurchaseDate        string `json:"purchase_date"`
 	AmountCents         int64  `json:"amount_cents"`
 	// Cupom (despesa avulsa) que casa com a compra
-	CupomEntryID string `json:"cupom_entry_id"`
-	DocumentID   string `json:"document_id"`
+	CupomEntryID  string `json:"cupom_entry_id"`
+	DocumentID    string `json:"document_id"`
 	CupomMerchant string `json:"cupom_merchant"`
 	CupomDate     string `json:"cupom_date"`
 	DaysDiff      int    `json:"days_diff"`

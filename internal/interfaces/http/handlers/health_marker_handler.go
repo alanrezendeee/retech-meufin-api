@@ -27,23 +27,23 @@ type markerAliasResponse struct {
 }
 
 type markerResponse struct {
-	ID             uuid.UUID             `json:"id"`
-	Scope          string                `json:"scope"`
-	WorkspaceID    *uuid.UUID            `json:"workspace_id"`
-	CanonicalName  string                `json:"canonical_name"`
-	NormalizedKey  string                `json:"normalized_key"`
-	LoincCode      *string               `json:"loinc_code"`
-	Category       string                `json:"category"`
-	Comparability  string                `json:"comparability_class"`
-	CanonicalUnit  *string               `json:"canonical_unit"`
+	ID              uuid.UUID             `json:"id"`
+	Scope           string                `json:"scope"`
+	WorkspaceID     *uuid.UUID            `json:"workspace_id"`
+	CanonicalName   string                `json:"canonical_name"`
+	NormalizedKey   string                `json:"normalized_key"`
+	LoincCode       *string               `json:"loinc_code"`
+	Category        string                `json:"category"`
+	Comparability   string                `json:"comparability_class"`
+	CanonicalUnit   *string               `json:"canonical_unit"`
 	DefaultRefMin   *float64              `json:"default_ref_min"`
 	DefaultRefMax   *float64              `json:"default_ref_max"`
 	DefaultRefText  *string               `json:"default_ref_text"`
 	DefaultRefTiers []dom.RefTier         `json:"default_ref_tiers,omitempty"`
 	Active          bool                  `json:"active"`
-	Aliases        []markerAliasResponse `json:"aliases"`
-	CreatedAt      string                `json:"created_at"`
-	UpdatedAt      string                `json:"updated_at"`
+	Aliases         []markerAliasResponse `json:"aliases"`
+	CreatedAt       string                `json:"created_at"`
+	UpdatedAt       string                `json:"updated_at"`
 }
 
 func mapMarker(m *dom.Marker) markerResponse {
@@ -57,7 +57,7 @@ func mapMarker(m *dom.Marker) markerResponse {
 		Category: m.Category, Comparability: string(m.Comparability), CanonicalUnit: m.CanonicalUnit,
 		DefaultRefMin: m.DefaultRefMin, DefaultRefMax: m.DefaultRefMax, DefaultRefText: m.DefaultRefText,
 		DefaultRefTiers: m.DefaultRefTiers,
-		Active: m.Active, Aliases: aliases,
+		Active:          m.Active, Aliases: aliases,
 		CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt: m.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

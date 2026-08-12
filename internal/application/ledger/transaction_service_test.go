@@ -22,7 +22,7 @@ func (f *fakeAccRepo) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*
 	}
 	return f.acc, nil
 }
-func (f *fakeAccRepo) Update(ctx context.Context, a *dom.Account) error   { return nil }
+func (f *fakeAccRepo) Update(ctx context.Context, a *dom.Account) error            { return nil }
 func (f *fakeAccRepo) Delete(ctx context.Context, workspaceID, id uuid.UUID) error { return nil }
 func (f *fakeAccRepo) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Account, int64, error) {
 	return nil, 0, nil
@@ -40,7 +40,7 @@ func (f *fakeCatRepo) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*
 	}
 	return f.cat, nil
 }
-func (f *fakeCatRepo) Update(ctx context.Context, c *dom.Category) error { return nil }
+func (f *fakeCatRepo) Update(ctx context.Context, c *dom.Category) error           { return nil }
 func (f *fakeCatRepo) Delete(ctx context.Context, workspaceID, id uuid.UUID) error { return nil }
 func (f *fakeCatRepo) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Category, int64, error) {
 	return nil, 0, nil
@@ -57,7 +57,7 @@ func (f *fakeTxRepo) Create(ctx context.Context, t *dom.Transaction) error {
 func (f *fakeTxRepo) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.Transaction, error) {
 	return nil, dom.ErrNotFound
 }
-func (f *fakeTxRepo) Update(ctx context.Context, t *dom.Transaction) error { return nil }
+func (f *fakeTxRepo) Update(ctx context.Context, t *dom.Transaction) error        { return nil }
 func (f *fakeTxRepo) Delete(ctx context.Context, workspaceID, id uuid.UUID) error { return nil }
 func (f *fakeTxRepo) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Transaction, int64, error) {
 	return nil, 0, nil

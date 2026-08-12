@@ -14,15 +14,15 @@ import (
 type Stage string
 
 const (
-	StageBercario     Stage = "bercario"
-	StageInfantil     Stage = "infantil"
-	StageFundamental1 Stage = "fundamental1"
-	StageFundamental2 Stage = "fundamental2"
-	StageMedio        Stage = "medio"
-	StageTecnico      Stage = "tecnico"
+	StageBercario      Stage = "bercario"
+	StageInfantil      Stage = "infantil"
+	StageFundamental1  Stage = "fundamental1"
+	StageFundamental2  Stage = "fundamental2"
+	StageMedio         Stage = "medio"
+	StageTecnico       Stage = "tecnico"
 	StagePreVestibular Stage = "pre_vestibular"
-	StageSuperior     Stage = "superior"
-	StagePos          Stage = "pos"
+	StageSuperior      Stage = "superior"
+	StagePos           Stage = "pos"
 )
 
 // Shift é o turno da matrícula.
@@ -61,19 +61,19 @@ const (
 
 // SchoolEnrollment é a matrícula (ano letivo) de um membro da família.
 type SchoolEnrollment struct {
-	ID               uuid.UUID
-	WorkspaceID      uuid.UUID
-	MemberID         uuid.UUID
-	SchoolYear       int
-	Stage            Stage
-	SchoolName       *string
-	Grade            *string
-	Shift            *Shift
-	MonthlyFeeCents  int64
+	ID                 uuid.UUID
+	WorkspaceID        uuid.UUID
+	MemberID           uuid.UUID
+	SchoolYear         int
+	Stage              Stage
+	SchoolName         *string
+	Grade              *string
+	Shift              *Shift
+	MonthlyFeeCents    int64
 	EnrollmentFeeCents int64
-	Notes            *string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	Notes              *string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 
 	// MemberName é enriquecido pela camada de aplicação (não persistido aqui).
 	MemberName *string
@@ -129,20 +129,20 @@ type MemberSpend struct {
 
 // CategoryAvg agrega custo médio por item por categoria.
 type CategoryAvg struct {
-	Category        string
-	ItemCount       int
-	PurchasedCount  int
-	TotalPaidCents  int64
-	AvgPaidCents    int64
+	Category       string
+	ItemCount      int
+	PurchasedCount int
+	TotalPaidCents int64
+	AvgPaidCents   int64
 }
 
 // YearSpend é a evolução anual do gasto com educação (mensalidades + material).
 type YearSpend struct {
-	SchoolYear        int
-	MonthlyFeesCents  int64 // mensalidade anualizada (mensal × 12)
+	SchoolYear          int
+	MonthlyFeesCents    int64 // mensalidade anualizada (mensal × 12)
 	EnrollmentFeesCents int64
-	SuppliesPaidCents int64
-	TotalCents        int64
+	SuppliesPaidCents   int64
+	TotalCents          int64
 }
 
 // Dashboard consolida os indicadores de educação de um ano letivo.

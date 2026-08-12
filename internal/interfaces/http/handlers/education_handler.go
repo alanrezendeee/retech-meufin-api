@@ -78,19 +78,19 @@ func mapEnrollment(e *dom.SchoolEnrollment) enrollmentResponse {
 }
 
 type supplyItemResponse struct {
-	ID                  string   `json:"id"`
-	ListID              string   `json:"list_id"`
-	Name                string   `json:"name"`
-	Category            string   `json:"category"`
-	Quantity            float64  `json:"quantity"`
-	ReferencePriceCents int64    `json:"reference_price_cents"`
-	Purchased           bool     `json:"purchased"`
-	PaidPriceCents      int64    `json:"paid_price_cents"`
-	PurchasedAt         *string  `json:"purchased_at"`
-	Store               *string  `json:"store"`
-	Notes               *string  `json:"notes"`
-	CreatedAt           string   `json:"created_at"`
-	UpdatedAt           string   `json:"updated_at"`
+	ID                  string  `json:"id"`
+	ListID              string  `json:"list_id"`
+	Name                string  `json:"name"`
+	Category            string  `json:"category"`
+	Quantity            float64 `json:"quantity"`
+	ReferencePriceCents int64   `json:"reference_price_cents"`
+	Purchased           bool    `json:"purchased"`
+	PaidPriceCents      int64   `json:"paid_price_cents"`
+	PurchasedAt         *string `json:"purchased_at"`
+	Store               *string `json:"store"`
+	Notes               *string `json:"notes"`
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
 }
 
 func mapItem(i *dom.SchoolSupplyItem) supplyItemResponse {
@@ -174,15 +174,15 @@ type listJSON struct {
 }
 
 type itemJSON struct {
-	Name                string   `json:"name" binding:"required"`
-	Category            string   `json:"category"`
-	Quantity            float64  `json:"quantity"`
-	ReferencePriceCents int64    `json:"reference_price_cents"`
-	Purchased           bool     `json:"purchased"`
-	PaidPriceCents      int64    `json:"paid_price_cents"`
-	PurchasedAt         *string  `json:"purchased_at"`
-	Store               *string  `json:"store"`
-	Notes               *string  `json:"notes"`
+	Name                string  `json:"name" binding:"required"`
+	Category            string  `json:"category"`
+	Quantity            float64 `json:"quantity"`
+	ReferencePriceCents int64   `json:"reference_price_cents"`
+	Purchased           bool    `json:"purchased"`
+	PaidPriceCents      int64   `json:"paid_price_cents"`
+	PurchasedAt         *string `json:"purchased_at"`
+	Store               *string `json:"store"`
+	Notes               *string `json:"notes"`
 }
 
 type purchaseJSON struct {
