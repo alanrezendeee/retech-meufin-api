@@ -29,13 +29,13 @@ type healthPlanMemberJSON struct {
 }
 
 type healthPlanCreateJSON struct {
-	Name            string           `json:"name" binding:"required"`
-	Operator        *string          `json:"operator"`
-	PlanType        string           `json:"plan_type"`
-	AnsCode         *string          `json:"ans_code"`
-	MonthlyFeeCents int64            `json:"monthly_fee_cents"`
-	CoverageNotes   *string          `json:"coverage_notes"`
-	Active          *bool            `json:"active"`
+	Name            string                 `json:"name" binding:"required"`
+	Operator        *string                `json:"operator"`
+	PlanType        string                 `json:"plan_type"`
+	AnsCode         *string                `json:"ans_code"`
+	MonthlyFeeCents int64                  `json:"monthly_fee_cents"`
+	CoverageNotes   *string                `json:"coverage_notes"`
+	Active          *bool                  `json:"active"`
 	Members         []healthPlanMemberJSON `json:"members"`
 }
 
@@ -65,18 +65,18 @@ type healthPlanMemberResponse struct {
 }
 
 type healthPlanResponse struct {
-	ID              uuid.UUID            `json:"id"`
-	WorkspaceID     uuid.UUID            `json:"workspace_id"`
-	Name            string               `json:"name"`
-	Operator        *string              `json:"operator"`
-	PlanType        string               `json:"plan_type"`
-	AnsCode         *string              `json:"ans_code"`
-	MonthlyFeeCents int64                `json:"monthly_fee_cents"`
-	CoverageNotes   *string              `json:"coverage_notes"`
-	Active          bool                 `json:"active"`
+	ID              uuid.UUID                  `json:"id"`
+	WorkspaceID     uuid.UUID                  `json:"workspace_id"`
+	Name            string                     `json:"name"`
+	Operator        *string                    `json:"operator"`
+	PlanType        string                     `json:"plan_type"`
+	AnsCode         *string                    `json:"ans_code"`
+	MonthlyFeeCents int64                      `json:"monthly_fee_cents"`
+	CoverageNotes   *string                    `json:"coverage_notes"`
+	Active          bool                       `json:"active"`
 	Members         []healthPlanMemberResponse `json:"members"`
-	CreatedAt       string               `json:"created_at"`
-	UpdatedAt       string               `json:"updated_at"`
+	CreatedAt       string                     `json:"created_at"`
+	UpdatedAt       string                     `json:"updated_at"`
 }
 
 func mapHealthPlanMember(m *dom.PlanMember) healthPlanMemberResponse {

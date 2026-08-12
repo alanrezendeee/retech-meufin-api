@@ -11,24 +11,10 @@ import (
 type ExamResultService struct {
 	repo    dom.ExamResultRepository
 	markers dom.MarkerRepository
-	members dom.FamilyMemberRepository
 }
 
-func NewExamResultService(repo dom.ExamResultRepository, markers dom.MarkerRepository, members dom.FamilyMemberRepository) *ExamResultService {
-	return &ExamResultService{repo: repo, markers: markers, members: members}
-}
-
-// memberRisk devolve o risco cardiovascular cadastrado do membro ("" sem
-// cadastro/valor) — condição usada nos tiers de curadoria (ex.: LDL).
-func (s *ExamResultService) memberRisk(ctx context.Context, workspaceID, memberID uuid.UUID) string {
-	if s.members == nil {
-		return ""
-	}
-	m, err := s.members.GetByID(ctx, workspaceID, memberID)
-	if err != nil || m.CardiovascularRisk == nil {
-		return ""
-	}
-	return *m.CardiovascularRisk
+func NewExamResultService(repo dom.ExamResultRepository, markers dom.MarkerRepository) *ExamResultService {
+	return &ExamResultService{repo: repo, markers: markers}
 }
 
 type CreateExamResultItemInput struct {
@@ -108,10 +94,10 @@ type UpdateExamResultItemInput struct {
 // interpretation_computed a partir do valor e da faixa de referência. Quando o
 // laudo não traz faixa (ex.: VLDL — "não dispomos de valor de referência"),
 // usa a faixa de CURADORIA do catálogo (default_ref do marcador) como
-// fallback; para marcadores com metas condicionais (ex.: LDL por risco
-// cardiovascular), usa o tier da condição cadastrada do membro (riskKey). A
-// faixa do item permanece nula, fiel ao laudo.
-func (s *ExamResultService) applyItemDerived(ctx context.Context, workspaceID uuid.UUID, riskKey string, it *dom.ExamResultItem) {
+// fallback — a faixa do item permanece nula, fiel ao laudo. Metas condicionais
+// (tiers, ex.: LDL por risco) NÃO geram veredito único: são confrontadas
+// informativamente na UI, linha a linha.
+func (s *ExamResultService) applyItemDerived(ctx context.Context, workspaceID uuid.UUID, it *dom.ExamResultItem) {
 	if it.ResultNumeric == nil {
 		it.ResultNumeric = dom.ParseResultNumeric(it.ResultValue)
 	}
@@ -119,11 +105,6 @@ func (s *ExamResultService) applyItemDerived(ctx context.Context, workspaceID uu
 	if refMin == nil && refMax == nil && it.MarkerID != nil {
 		if m, err := s.markers.GetByID(ctx, workspaceID, *it.MarkerID); err == nil {
 			refMin, refMax = m.DefaultRefMin, m.DefaultRefMax
-			if refMin == nil && refMax == nil && riskKey != "" {
-				if tier := dom.TierForKey(m.DefaultRefTiers, riskKey); tier != nil {
-					refMin, refMax = tier.Min, tier.Max
-				}
-			}
 		}
 	}
 	it.InterpretationComputed = dom.ComputeInterpretation(it.ResultNumeric, refMin, refMax)
@@ -147,7 +128,6 @@ func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	risk := s.memberRisk(ctx, in.WorkspaceID, in.FamilyMemberID)
 	for _, ii := range in.Items {
 		item := dom.ExamResultItem{
 			ID:             uuid.New(),
@@ -168,7 +148,7 @@ func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput
 			CreatedAt:      now,
 			UpdatedAt:      now,
 		}
-		s.applyItemDerived(ctx, in.WorkspaceID, risk, &item)
+		s.applyItemDerived(ctx, in.WorkspaceID, &item)
 		r.Items = append(r.Items, item)
 	}
 	if err := r.Validate(); err != nil {
@@ -181,7 +161,37 @@ func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput
 }
 
 func (s *ExamResultService) Get(ctx context.Context, workspaceID, id uuid.UUID) (*dom.ExamResult, error) {
-	return s.repo.GetByID(ctx, workspaceID, id)
+	r, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	s.attachMarkerInfo(ctx, workspaceID, r)
+	return r, nil
+}
+
+// attachMarkerInfo anexa a curadoria do marcador (nome, texto de referência e
+// tiers) aos itens — a UI usa para tooltip e para o confronto informativo com
+// a tabela (ex.: LDL por risco). Falha em um marcador não derruba a leitura.
+func (s *ExamResultService) attachMarkerInfo(ctx context.Context, workspaceID uuid.UUID, r *dom.ExamResult) {
+	cache := map[uuid.UUID]*dom.MarkerInfo{}
+	for i := range r.Items {
+		id := r.Items[i].MarkerID
+		if id == nil {
+			continue
+		}
+		info, seen := cache[*id]
+		if !seen {
+			if m, err := s.markers.GetByID(ctx, workspaceID, *id); err == nil {
+				info = &dom.MarkerInfo{
+					CanonicalName: m.CanonicalName,
+					RefText:       m.DefaultRefText,
+					RefTiers:      m.DefaultRefTiers,
+				}
+			}
+			cache[*id] = info
+		}
+		r.Items[i].Marker = info
+	}
 }
 
 func (s *ExamResultService) Update(ctx context.Context, in UpdateExamResultInput) (*dom.ExamResult, error) {
@@ -229,12 +239,6 @@ func (s *ExamResultService) List(ctx context.Context, workspaceID uuid.UUID, fil
 }
 
 func (s *ExamResultService) AddItem(ctx context.Context, in AddExamResultItemInput) (*dom.ExamResultItem, error) {
-	// Carrega o resultado pai: valida o vínculo com o workspace e dá acesso ao
-	// membro (risco cardiovascular) para a interpretação por tier.
-	parent, err := s.repo.GetByID(ctx, in.WorkspaceID, in.ExamResultID)
-	if err != nil {
-		return nil, err
-	}
 	now := time.Now().UTC()
 	item := &dom.ExamResultItem{
 		ID:             uuid.New(),
@@ -255,7 +259,7 @@ func (s *ExamResultService) AddItem(ctx context.Context, in AddExamResultItemInp
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	s.applyItemDerived(ctx, in.WorkspaceID, s.memberRisk(ctx, in.WorkspaceID, parent.FamilyMemberID), item)
+	s.applyItemDerived(ctx, in.WorkspaceID, item)
 	if err := item.Validate(); err != nil {
 		return nil, err
 	}
@@ -294,7 +298,7 @@ func (s *ExamResultService) UpdateItem(ctx context.Context, in UpdateExamResultI
 	current.Material = in.Item.Material
 	current.RawText = in.Item.RawText
 	current.UpdatedAt = time.Now().UTC()
-	s.applyItemDerived(ctx, in.WorkspaceID, s.memberRisk(ctx, in.WorkspaceID, r.FamilyMemberID), current)
+	s.applyItemDerived(ctx, in.WorkspaceID, current)
 	if err := current.Validate(); err != nil {
 		return nil, err
 	}

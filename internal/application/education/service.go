@@ -412,7 +412,7 @@ func (s *Service) Dashboard(ctx context.Context, workspaceID uuid.UUID, schoolYe
 	for _, e := range enrollments {
 		enrollByID[e.ID.String()] = e
 	}
-	listYear := make(map[string]int, len(lists))    // list_id → school_year
+	listYear := make(map[string]int, len(lists))      // list_id → school_year
 	listMember := make(map[string]string, len(lists)) // list_id → member_id
 	for _, l := range lists {
 		if e, ok := enrollByID[l.EnrollmentID.String()]; ok {

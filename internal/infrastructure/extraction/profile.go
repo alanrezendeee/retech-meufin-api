@@ -147,13 +147,13 @@ func fiscalInputSchema() map[string]any {
 	return map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"merchant":     map[string]any{"type": "string", "description": "Nome do estabelecimento"},
-			"cnpj":         map[string]any{"type": "string", "description": "CNPJ, apenas dígitos"},
+			"merchant":       map[string]any{"type": "string", "description": "Nome do estabelecimento"},
+			"cnpj":           map[string]any{"type": "string", "description": "CNPJ, apenas dígitos"},
 			"date":           map[string]any{"type": "string", "description": "Data da compra em YYYY-MM-DD; \"\" se ilegível"},
 			"payment_method": map[string]any{"type": "string", "description": "Forma de pagamento: credito, debito, dinheiro, pix ou outros (leia o bloco FORMA PAGAMENTO); \"\" se ausente"},
 			"total_amount":   map[string]any{"type": []string{"number", "null"}, "description": "Total do cupom em reais"},
 			"items":          map[string]any{"type": "array", "items": item},
-			"warnings":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
+			"warnings":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}},
 		},
 		"required": []string{"items"},
 	}

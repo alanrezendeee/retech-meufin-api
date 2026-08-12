@@ -33,13 +33,13 @@ type Year struct {
 
 // Price é o preço FIPE para uma combinação veículo/marca/modelo/ano.
 type Price struct {
-	Value          string `json:"Valor"`           // ex: "R$ 62.839,00"
+	Value          string `json:"Valor"` // ex: "R$ 62.839,00"
 	Brand          string `json:"Marca"`
 	Model          string `json:"Modelo"`
 	YearModel      int    `json:"AnoModelo"`
 	Fuel           string `json:"Combustivel"`
 	FipeCode       string `json:"CodigoFipe"`
-	ReferenceMonth string `json:"MesReferencia"`   // ex: "julho de 2026"
+	ReferenceMonth string `json:"MesReferencia"` // ex: "julho de 2026"
 	VehicleType    int    `json:"TipoVeiculo"`
 	FuelAcronym    string `json:"SiglaCombustivel"` // G|A|D|E
 }

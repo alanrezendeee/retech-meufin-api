@@ -12,19 +12,19 @@ import (
 type PlanDocType string
 
 const (
-	PlanDocContrato            PlanDocType = "contrato"       // contrato/apólice
-	PlanDocCarteirinha         PlanDocType = "carteirinha"    // cartão do plano
-	PlanDocManual              PlanDocType = "manual"         // manual/condições gerais
+	PlanDocContrato             PlanDocType = "contrato"    // contrato/apólice
+	PlanDocCarteirinha          PlanDocType = "carteirinha" // cartão do plano
+	PlanDocManual               PlanDocType = "manual"      // manual/condições gerais
 	PlanDocTabelaCoparticipacao PlanDocType = "tabela_coparticipacao"
-	PlanDocAditivoReajuste     PlanDocType = "aditivo_reajuste"
-	PlanDocBoleto              PlanDocType = "boleto"         // comprovante de mensalidade
-	PlanDocTermoAdesao         PlanDocType = "termo_adesao"
-	PlanDocComprovanteCarencia PlanDocType = "comprovante_carencia"
-	PlanDocFormularioReembolso PlanDocType = "formulario_reembolso"
-	PlanDocDeclaracaoIR        PlanDocType = "declaracao_ir" // quitação anual p/ IR
-	PlanDocRedeCredenciada     PlanDocType = "rede_credenciada"
-	PlanDocLaudo               PlanDocType = "laudo"          // laudo p/ autorização
-	PlanDocOutro               PlanDocType = "outro"
+	PlanDocAditivoReajuste      PlanDocType = "aditivo_reajuste"
+	PlanDocBoleto               PlanDocType = "boleto" // comprovante de mensalidade
+	PlanDocTermoAdesao          PlanDocType = "termo_adesao"
+	PlanDocComprovanteCarencia  PlanDocType = "comprovante_carencia"
+	PlanDocFormularioReembolso  PlanDocType = "formulario_reembolso"
+	PlanDocDeclaracaoIR         PlanDocType = "declaracao_ir" // quitação anual p/ IR
+	PlanDocRedeCredenciada      PlanDocType = "rede_credenciada"
+	PlanDocLaudo                PlanDocType = "laudo" // laudo p/ autorização
+	PlanDocOutro                PlanDocType = "outro"
 )
 
 // ValidPlanDocType informa se o tipo é conhecido.

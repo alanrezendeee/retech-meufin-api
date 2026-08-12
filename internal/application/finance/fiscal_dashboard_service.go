@@ -41,13 +41,13 @@ type FiscalDashboardCounts struct {
 type FiscalProduct struct {
 	Name string
 	// Unit é a unidade de medida canônica (KG, UN, L…); "" quando desconhecida.
-	Unit          string
-	Purchases     int64 // nº de compras (linhas de item)
-	QtyMilliTotal int64 // quantidade total em milésimos
-	TotalCents    int64 // gasto total no produto
-	AvgUnitCents  int64 // preço unitário médio
-	MinUnitCents  int64
-	MaxUnitCents  int64
+	Unit           string
+	Purchases      int64 // nº de compras (linhas de item)
+	QtyMilliTotal  int64 // quantidade total em milésimos
+	TotalCents     int64 // gasto total no produto
+	AvgUnitCents   int64 // preço unitário médio
+	MinUnitCents   int64
+	MaxUnitCents   int64
 	FirstUnitCents int64      // preço unitário na primeira compra
 	LastUnitCents  int64      // preço unitário na última compra
 	FirstDate      *time.Time // data da primeira compra
@@ -98,7 +98,7 @@ type FiscalDashboardRepository interface {
 
 // FiscalDashboardSummary é a resposta do painel-resumo.
 type FiscalDashboardSummary struct {
-	Counts        FiscalDashboardCounts
+	Counts         FiscalDashboardCounts
 	TopByFrequency []FiscalProduct
 	TopBySpend     []FiscalProduct
 	MonthlySpend   []FiscalMonthSpend // últimos 13 meses, sempre preenchido
@@ -170,9 +170,9 @@ type FiscalInflationPoint struct {
 
 // FiscalInflation é o índice de inflação pessoal e sua metodologia.
 type FiscalInflation struct {
-	Points        []FiscalInflationPoint
-	Variation12m  float64 // variação % do índice nos últimos 12 meses (ou desde o início)
-	Methodology   string
+	Points       []FiscalInflationPoint
+	Variation12m float64 // variação % do índice nos últimos 12 meses (ou desde o início)
+	Methodology  string
 }
 
 const inflationMethodology = "Índice de inflação pessoal por produto, encadeado e ponderado pelo gasto (Laspeyres encadeado). " +

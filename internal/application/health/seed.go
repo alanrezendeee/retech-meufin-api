@@ -40,10 +40,10 @@ func systemMarkerDefaultRefs() map[string]seedDefaultRef {
 		"Colesterol LDL": {
 			text: "Metas por categoria de risco cardiovascular estimada pelo médico (diretriz SBC); crianças e adolescentes: inferior a 110 mg/dL",
 			tiers: []dom.RefTier{
-				{Key: dom.RiskLow, Label: "Risco baixo", Max: f(130)},
-				{Key: dom.RiskIntermediate, Label: "Risco intermediário", Max: f(100)},
-				{Key: dom.RiskHigh, Label: "Risco alto", Max: f(70)},
-				{Key: dom.RiskVeryHigh, Label: "Risco muito alto", Max: f(50)},
+				{Label: "Risco baixo", Max: f(130)},
+				{Label: "Risco intermediário", Max: f(100)},
+				{Label: "Risco alto", Max: f(70)},
+				{Label: "Risco muito alto", Max: f(50)},
 			},
 		},
 	}

@@ -9,7 +9,7 @@ import (
 )
 
 type TransactionService struct {
-	txRepo dom.TransactionRepository
+	txRepo  dom.TransactionRepository
 	accRepo dom.AccountRepository
 	catRepo dom.CategoryRepository
 }

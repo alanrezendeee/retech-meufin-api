@@ -30,16 +30,16 @@ func (f *fakeRepo) ListEnrollments(ctx context.Context, ws uuid.UUID, p dom.List
 }
 func (f *fakeRepo) UpdateEnrollment(ctx context.Context, e *dom.SchoolEnrollment) error { return nil }
 func (f *fakeRepo) DeleteEnrollment(ctx context.Context, ws, id uuid.UUID) error        { return nil }
-func (f *fakeRepo) CreateList(ctx context.Context, l *dom.SchoolSupplyList) error        { return nil }
+func (f *fakeRepo) CreateList(ctx context.Context, l *dom.SchoolSupplyList) error       { return nil }
 func (f *fakeRepo) GetList(ctx context.Context, ws, id uuid.UUID) (*dom.SchoolSupplyList, error) {
 	return nil, dom.ErrNotFound
 }
 func (f *fakeRepo) ListSupplyLists(ctx context.Context, ws uuid.UUID, p dom.ListSupplyListsParams) ([]dom.SchoolSupplyList, error) {
 	return f.lists, nil
 }
-func (f *fakeRepo) UpdateList(ctx context.Context, l *dom.SchoolSupplyList) error         { return nil }
-func (f *fakeRepo) DeleteList(ctx context.Context, ws, id uuid.UUID) error                { return nil }
-func (f *fakeRepo) CreateItem(ctx context.Context, i *dom.SchoolSupplyItem) error         { return nil }
+func (f *fakeRepo) UpdateList(ctx context.Context, l *dom.SchoolSupplyList) error { return nil }
+func (f *fakeRepo) DeleteList(ctx context.Context, ws, id uuid.UUID) error        { return nil }
+func (f *fakeRepo) CreateItem(ctx context.Context, i *dom.SchoolSupplyItem) error { return nil }
 func (f *fakeRepo) GetItem(ctx context.Context, ws, id uuid.UUID) (*dom.SchoolSupplyItem, error) {
 	return nil, dom.ErrNotFound
 }

@@ -16,10 +16,9 @@ type HealthFamilyMemberModel struct {
 	Gender          *string    `gorm:"size:20"`
 	Document        *string    `gorm:"size:50"`
 	Notes           *string    `gorm:"type:text"`
-	HeightCm           *float64 `gorm:"column:height_cm"`
-	WeightKg           *float64 `gorm:"column:weight_kg"`
-	CardiovascularRisk *string  `gorm:"column:cardiovascular_risk;size:20"`
-	Active             bool     `gorm:"not null;default:true"`
+	HeightCm        *float64   `gorm:"column:height_cm"`
+	WeightKg        *float64   `gorm:"column:weight_kg"`
+	Active          bool       `gorm:"not null;default:true"`
 	AvatarObjectKey *string    `gorm:"column:avatar_object_key;size:500"`
 	CreatedAt       time.Time  `gorm:"not null"`
 	UpdatedAt       time.Time  `gorm:"not null"`

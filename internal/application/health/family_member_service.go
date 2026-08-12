@@ -42,32 +42,30 @@ func NewFamilyMemberService(repo dom.FamilyMemberRepository, st ...storage.Objec
 }
 
 type CreateFamilyMemberInput struct {
-	WorkspaceID        uuid.UUID
-	FullName           string
-	Relationship       string
-	BirthDate          *time.Time
-	Gender             *string
-	Document           *string
-	Notes              *string
-	HeightCm           *float64
-	WeightKg           *float64
-	CardiovascularRisk *string
-	Active             *bool
+	WorkspaceID  uuid.UUID
+	FullName     string
+	Relationship string
+	BirthDate    *time.Time
+	Gender       *string
+	Document     *string
+	Notes        *string
+	HeightCm     *float64
+	WeightKg     *float64
+	Active       *bool
 }
 
 type UpdateFamilyMemberInput struct {
-	WorkspaceID        uuid.UUID
-	ID                 uuid.UUID
-	FullName           string
-	Relationship       string
-	BirthDate          *time.Time
-	Gender             *string
-	Document           *string
-	Notes              *string
-	HeightCm           *float64
-	WeightKg           *float64
-	CardiovascularRisk *string
-	Active             *bool
+	WorkspaceID  uuid.UUID
+	ID           uuid.UUID
+	FullName     string
+	Relationship string
+	BirthDate    *time.Time
+	Gender       *string
+	Document     *string
+	Notes        *string
+	HeightCm     *float64
+	WeightKg     *float64
+	Active       *bool
 }
 
 func (s *FamilyMemberService) Create(ctx context.Context, in CreateFamilyMemberInput) (*dom.FamilyMember, error) {
@@ -76,20 +74,19 @@ func (s *FamilyMemberService) Create(ctx context.Context, in CreateFamilyMemberI
 		active = *in.Active
 	}
 	f := &dom.FamilyMember{
-		ID:                 uuid.New(),
-		WorkspaceID:        in.WorkspaceID,
-		FullName:           in.FullName,
-		Relationship:       in.Relationship,
-		BirthDate:          in.BirthDate,
-		Gender:             in.Gender,
-		Document:           in.Document,
-		Notes:              in.Notes,
-		HeightCm:           in.HeightCm,
-		WeightKg:           in.WeightKg,
-		CardiovascularRisk: in.CardiovascularRisk,
-		Active:             active,
-		CreatedAt:          time.Now().UTC(),
-		UpdatedAt:          time.Now().UTC(),
+		ID:           uuid.New(),
+		WorkspaceID:  in.WorkspaceID,
+		FullName:     in.FullName,
+		Relationship: in.Relationship,
+		BirthDate:    in.BirthDate,
+		Gender:       in.Gender,
+		Document:     in.Document,
+		Notes:        in.Notes,
+		HeightCm:     in.HeightCm,
+		WeightKg:     in.WeightKg,
+		Active:       active,
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
 	}
 	if err := f.Validate(); err != nil {
 		return nil, err
@@ -117,7 +114,6 @@ func (s *FamilyMemberService) Update(ctx context.Context, in UpdateFamilyMemberI
 	f.Notes = in.Notes
 	f.HeightCm = in.HeightCm
 	f.WeightKg = in.WeightKg
-	f.CardiovascularRisk = in.CardiovascularRisk
 	if in.Active != nil {
 		f.Active = *in.Active
 	}

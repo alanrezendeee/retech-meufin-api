@@ -16,24 +16,24 @@ import (
 // ─── Response types ────────────────────────────────────────────────────────────
 
 type maintenanceItemResponse struct {
-	ID                        string   `json:"id"`
-	MaintenanceID             string   `json:"maintenance_id"`
-	CatalogItemID             *string  `json:"catalog_item_id"`
-	ItemType                  string   `json:"item_type"`
-	Category                  string   `json:"category"`
-	Description               string   `json:"description"`
-	Quantity                  float64  `json:"quantity"`
-	UnitPriceCents            int64    `json:"unit_price_cents"`
-	TotalPriceCents           int64    `json:"total_price_cents"`
-	KMAtInstallation          *int     `json:"km_at_installation"`
-	ReplacementIntervalKM     *int     `json:"replacement_interval_km"`
-	ReplacementIntervalMonths *int     `json:"replacement_interval_months"`
-	NextDueKM                 *int     `json:"next_due_km"`
-	NextDueDate               *string  `json:"next_due_date"`
-	WarrantyExpiresDate       *string  `json:"warranty_expires_date"`
-	WarrantyExpiresKM         *int     `json:"warranty_expires_km"`
-	Notes                     *string  `json:"notes"`
-	CreatedAt                 string   `json:"created_at"`
+	ID                        string  `json:"id"`
+	MaintenanceID             string  `json:"maintenance_id"`
+	CatalogItemID             *string `json:"catalog_item_id"`
+	ItemType                  string  `json:"item_type"`
+	Category                  string  `json:"category"`
+	Description               string  `json:"description"`
+	Quantity                  float64 `json:"quantity"`
+	UnitPriceCents            int64   `json:"unit_price_cents"`
+	TotalPriceCents           int64   `json:"total_price_cents"`
+	KMAtInstallation          *int    `json:"km_at_installation"`
+	ReplacementIntervalKM     *int    `json:"replacement_interval_km"`
+	ReplacementIntervalMonths *int    `json:"replacement_interval_months"`
+	NextDueKM                 *int    `json:"next_due_km"`
+	NextDueDate               *string `json:"next_due_date"`
+	WarrantyExpiresDate       *string `json:"warranty_expires_date"`
+	WarrantyExpiresKM         *int    `json:"warranty_expires_km"`
+	Notes                     *string `json:"notes"`
+	CreatedAt                 string  `json:"created_at"`
 }
 
 func mapMaintenanceItem(item *dom.VehicleMaintenanceItem) maintenanceItemResponse {

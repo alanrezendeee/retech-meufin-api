@@ -45,7 +45,7 @@ type categoryResponse struct {
 func mapCategory(c *dom.Category) categoryResponse {
 	return categoryResponse{
 		ID: c.ID, WorkspaceID: c.WorkspaceID, Name: c.Name, Kind: string(c.Kind),
-		ParentID: c.ParentID,
+		ParentID:  c.ParentID,
 		CreatedAt: c.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt: c.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}

@@ -10,9 +10,9 @@ import (
 )
 
 type Service struct {
-	budgetRepo  domb.Repository
+	budgetRepo   domb.Repository
 	categoryRepo doml.CategoryRepository
-	txRepo      doml.TransactionRepository
+	txRepo       doml.TransactionRepository
 }
 
 func NewService(
@@ -108,13 +108,13 @@ func (s *Service) List(ctx context.Context, workspaceID uuid.UUID, limit, offset
 
 // BudgetLine é o resultado da verificação de estouro para uma categoria orçada.
 type BudgetLine struct {
-	CategoryID  uuid.UUID `json:"category_id"`
-	Year        int       `json:"year"`
-	Month       int       `json:"month"`
-	LimitCents  int64     `json:"limit_cents"`
-	SpentCents  int64     `json:"spent_cents"`
-	OverBudget  bool      `json:"over_budget"`
-	RemainingCents int64  `json:"remaining_cents"`
+	CategoryID     uuid.UUID `json:"category_id"`
+	Year           int       `json:"year"`
+	Month          int       `json:"month"`
+	LimitCents     int64     `json:"limit_cents"`
+	SpentCents     int64     `json:"spent_cents"`
+	OverBudget     bool      `json:"over_budget"`
+	RemainingCents int64     `json:"remaining_cents"`
 }
 
 type ValidateBudgetInput struct {

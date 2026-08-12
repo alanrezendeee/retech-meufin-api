@@ -22,19 +22,19 @@ func NewFinanceFiscalDashboardHandler(svc *app.FiscalDashboardService) *FinanceF
 }
 
 type fiscalProductJSON struct {
-	Name           string   `json:"name"`
-	Unit           string   `json:"unit"`
-	Purchases      int64    `json:"purchases"`
-	QtyMilliTotal  int64    `json:"qty_milli_total"`
-	TotalCents     int64    `json:"total_cents"`
-	AvgUnitCents   int64    `json:"avg_unit_cents"`
-	MinUnitCents   int64    `json:"min_unit_cents"`
-	MaxUnitCents   int64    `json:"max_unit_cents"`
-	FirstUnitCents int64    `json:"first_unit_cents"`
-	LastUnitCents  int64    `json:"last_unit_cents"`
-	FirstDate      *string  `json:"first_date"`
-	LastDate       *string  `json:"last_date"`
-	VariationPct   float64  `json:"variation_pct"`
+	Name           string  `json:"name"`
+	Unit           string  `json:"unit"`
+	Purchases      int64   `json:"purchases"`
+	QtyMilliTotal  int64   `json:"qty_milli_total"`
+	TotalCents     int64   `json:"total_cents"`
+	AvgUnitCents   int64   `json:"avg_unit_cents"`
+	MinUnitCents   int64   `json:"min_unit_cents"`
+	MaxUnitCents   int64   `json:"max_unit_cents"`
+	FirstUnitCents int64   `json:"first_unit_cents"`
+	LastUnitCents  int64   `json:"last_unit_cents"`
+	FirstDate      *string `json:"first_date"`
+	LastDate       *string `json:"last_date"`
+	VariationPct   float64 `json:"variation_pct"`
 }
 
 func mapFiscalProduct(p app.FiscalProduct) fiscalProductJSON {
@@ -97,10 +97,10 @@ func (h *FinanceFiscalDashboardHandler) Summary(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"documents":       sum.Counts.Documents,
-		"items":           sum.Counts.Items,
-		"total_cents":     sum.Counts.TotalCents,
-		"products_count":  sum.Counts.ProductsCount,
+		"documents":        sum.Counts.Documents,
+		"items":            sum.Counts.Items,
+		"total_cents":      sum.Counts.TotalCents,
+		"products_count":   sum.Counts.ProductsCount,
 		"top_by_frequency": byFreq,
 		"top_by_spend":     bySpend,
 		"monthly_spend":    months,
