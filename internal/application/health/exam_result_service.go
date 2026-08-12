@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -111,6 +112,11 @@ func (s *ExamResultService) applyItemDerived(ctx context.Context, workspaceID uu
 }
 
 func (s *ExamResultService) Create(ctx context.Context, in CreateExamResultInput) (*dom.ExamResult, error) {
+	// Resultado descritivo (laudo de imagem sem medidas): permitido sem itens,
+	// desde que o resumo carregue a informação.
+	if len(in.Items) == 0 && (in.Summary == nil || strings.TrimSpace(*in.Summary) == "") {
+		return nil, &dom.ValidationError{Msg: "resultado sem itens precisa de um resumo (laudos descritivos)"}
+	}
 	now := time.Now().UTC()
 	r := &dom.ExamResult{
 		ID:             uuid.New(),

@@ -237,6 +237,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 			health.POST("/documents", docH.Upload)
 			health.GET("/documents", docH.List)
 			health.GET("/documents/:id", docH.Get)
+			health.PATCH("/documents/:id", docH.Link)
 			health.DELETE("/documents/:id", docH.Delete)
 			health.GET("/documents/:id/download-url", docH.DownloadURL)
 			health.POST("/documents/:id/extract", extTrigH.Extract)

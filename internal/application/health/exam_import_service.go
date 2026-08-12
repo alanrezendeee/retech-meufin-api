@@ -261,8 +261,10 @@ type ConfirmExamResult struct {
 // Confirm materializa a revisão: cria marcadores/lab novos quando pedido,
 // cria o resultado (source=llm, status=extracted) e vincula o documento.
 func (s *ExamImportService) Confirm(ctx context.Context, in ConfirmExamInput) (*ConfirmExamResult, error) {
-	if len(in.Items) == 0 {
-		return nil, &dom.ValidationError{Msg: "o exame precisa de ao menos um item"}
+	// Laudo de imagem pode não ter nenhuma medida objetiva: aceita sem itens
+	// desde que o resumo descreva o laudo.
+	if len(in.Items) == 0 && (in.Summary == nil || strings.TrimSpace(*in.Summary) == "") {
+		return nil, &dom.ValidationError{Msg: "o exame precisa de ao menos um item ou um resumo (laudos descritivos)"}
 	}
 	doc, err := s.docs.GetByID(ctx, in.WorkspaceID, in.DocumentID)
 	if err != nil {

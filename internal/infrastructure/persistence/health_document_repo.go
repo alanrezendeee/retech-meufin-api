@@ -33,9 +33,18 @@ func (r *HealthDocumentRepository) GetByID(ctx context.Context, workspaceID, id 
 	return modelToDocument(&m), nil
 }
 
-func (r *HealthDocumentRepository) List(ctx context.Context, workspaceID uuid.UUID, limit, offset int) ([]dom.Document, int64, error) {
+func (r *HealthDocumentRepository) List(ctx context.Context, workspaceID uuid.UUID, filter dom.DocumentFilter, limit, offset int) ([]dom.Document, int64, error) {
 	base := r.db.WithContext(ctx).Model(&HealthDocumentModel{}).
 		Where("workspace_id = ?", workspaceID)
+	if filter.FamilyMemberID != nil {
+		base = base.Where("family_member_id = ?", *filter.FamilyMemberID)
+	}
+	if filter.ExamResultID != nil {
+		base = base.Where("exam_result_id = ?", *filter.ExamResultID)
+	}
+	if filter.DocumentType != "" {
+		base = base.Where("document_type = ?", filter.DocumentType)
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {

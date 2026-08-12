@@ -81,8 +81,8 @@ func (r *fakeMemberRepo) GetByID(_ context.Context, ws, id uuid.UUID) (*dom.Fami
 	}
 	return nil, dom.ErrNotFound
 }
-func (r *fakeMemberRepo) Update(_ context.Context, f *dom.FamilyMember) error       { return nil }
-func (r *fakeMemberRepo) SoftDelete(_ context.Context, ws, id uuid.UUID) error      { return nil }
+func (r *fakeMemberRepo) Update(_ context.Context, f *dom.FamilyMember) error  { return nil }
+func (r *fakeMemberRepo) SoftDelete(_ context.Context, ws, id uuid.UUID) error { return nil }
 func (r *fakeMemberRepo) List(_ context.Context, ws uuid.UUID, _ dom.FamilyMemberFilter, _, _ int) ([]dom.FamilyMember, int64, error) {
 	return nil, 0, nil
 }
