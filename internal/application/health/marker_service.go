@@ -212,32 +212,57 @@ type ResolveItemResult struct {
 }
 
 // Resolve mapeia nomes crus (de OCR/LLM ou digitados) para marcadores canônicos.
-// Match exato -> matched; senão candidatos fuzzy -> ambiguous; nenhum -> unresolved.
+// Match exato (nome completo ou variantes: parênteses, barras) -> matched;
+// variantes batendo em marcadores distintos -> ambiguous; senão candidatos
+// fuzzy -> ambiguous; nenhum -> unresolved.
 func (s *MarkerService) Resolve(ctx context.Context, workspaceID uuid.UUID, items []ResolveItemInput) ([]ResolveItemResult, error) {
 	var pool []dom.Marker // carregado sob demanda para o fuzzy
 	poolLoaded := false
 
 	out := make([]ResolveItemResult, 0, len(items))
 	for _, it := range items {
-		norm := dom.Normalize(it.RawName)
 		res := ResolveItemResult{RawName: it.RawName, Status: ResolveUnresolved}
+
+		// Laudos imprimem o marcador de várias formas ("Transaminase Oxalacética
+		// (TGO)", "TGO/AST"); o Normalize achata tudo e o exato falhava mesmo com
+		// o alias no catálogo. Tenta cada variante antes de cair no fuzzy.
+		var hits []*dom.Marker
+		for _, variant := range nameVariants(it.RawName) {
+			exact, err := s.repo.MatchExact(ctx, workspaceID, variant)
+			if err != nil {
+				if errors.Is(err, dom.ErrNotFound) {
+					continue
+				}
+				return nil, err
+			}
+			if exact != nil && !containsMarker(hits, exact.ID) {
+				hits = append(hits, exact)
+			}
+		}
+		switch {
+		case len(hits) == 1:
+			res.Status = ResolveMatched
+			res.Matched = hits[0]
+			out = append(out, res)
+			continue
+		case len(hits) > 1:
+			// Variantes batem em marcadores diferentes (ex.: "TGO/TGP"): o
+			// usuário decide.
+			res.Status = ResolveAmbiguous
+			for _, h := range hits {
+				res.Candidates = append(res.Candidates, ResolveCandidate{Marker: *h, Similarity: 1})
+			}
+			out = append(out, res)
+			continue
+		}
+
+		norm := dom.Normalize(it.RawName)
 		if norm == "" {
 			out = append(out, res)
 			continue
 		}
-
-		exact, err := s.repo.MatchExact(ctx, workspaceID, norm)
-		if err == nil && exact != nil {
-			res.Status = ResolveMatched
-			res.Matched = exact
-			out = append(out, res)
-			continue
-		}
-		if err != nil && !errors.Is(err, dom.ErrNotFound) {
-			return nil, err
-		}
-
 		if !poolLoaded {
+			var err error
 			pool, err = s.repo.Candidates(ctx, workspaceID, candidatesCap)
 			if err != nil {
 				return nil, err
@@ -254,13 +279,74 @@ func (s *MarkerService) Resolve(ctx context.Context, workspaceID uuid.UUID, item
 	return out, nil
 }
 
+// nameVariants gera as chaves normalizadas a tentar no match exato, na ordem:
+// nome completo, nome sem os parênteses, conteúdo de cada parêntese e cada
+// segmento separado por "/". Ex.: "Transaminase Oxalacética (TGO)" ->
+// ["transaminase oxalacetica tgo", "transaminase oxalacetica", "tgo"].
+func nameVariants(raw string) []string {
+	var variants []string
+	seen := map[string]bool{}
+	add := func(s string) {
+		if n := dom.Normalize(s); n != "" && !seen[n] {
+			seen[n] = true
+			variants = append(variants, n)
+		}
+	}
+
+	add(raw)
+
+	// Nome sem parênteses + conteúdo de cada parêntese.
+	var outside, inside strings.Builder
+	depth := 0
+	var groups []string
+	for _, r := range raw {
+		switch {
+		case r == '(':
+			depth++
+		case r == ')':
+			if depth > 0 {
+				depth--
+				if depth == 0 {
+					groups = append(groups, inside.String())
+					inside.Reset()
+				}
+			}
+		case depth > 0:
+			inside.WriteRune(r)
+		default:
+			outside.WriteRune(r)
+		}
+	}
+	add(outside.String())
+	for _, g := range groups {
+		add(g)
+	}
+
+	// Segmentos por barra ("TGO/AST").
+	if strings.Contains(raw, "/") {
+		for _, part := range strings.Split(raw, "/") {
+			add(part)
+		}
+	}
+	return variants
+}
+
+func containsMarker(list []*dom.Marker, id uuid.UUID) bool {
+	for _, m := range list {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
 func rankCandidates(norm string, pool []dom.Marker) []ResolveCandidate {
 	var cands []ResolveCandidate
 	for i := range pool {
 		m := pool[i]
-		best := dom.Similarity(norm, m.NormalizedKey)
+		best := nameSimilarity(norm, m.NormalizedKey)
 		for _, a := range m.Aliases {
-			if s := dom.Similarity(norm, a.NormalizedAlias); s > best {
+			if s := nameSimilarity(norm, a.NormalizedAlias); s > best {
 				best = s
 			}
 		}
@@ -273,4 +359,44 @@ func rankCandidates(norm string, pool []dom.Marker) []ResolveCandidate {
 		cands = cands[:5]
 	}
 	return cands
+}
+
+// nameSimilarity combina Levenshtein com sobreposição de tokens. Nomes de
+// laudo costumam ser o nome do catálogo com palavras a mais ("transaminase
+// oxalacetica tgo" vs alias "transaminase oxalacetica") — quase idênticos em
+// tokens, mas distantes em Levenshtein puro.
+func nameSimilarity(a, b string) float64 {
+	best := dom.Similarity(a, b)
+	if s := tokenContainment(a, b); s > best {
+		best = s
+	}
+	return best
+}
+
+// tokenContainment pontua alto quando todos os tokens do nome menor aparecem
+// no maior (0.6 base + proporção de cobertura); caso contrário devolve a
+// fração de tokens compartilhados.
+func tokenContainment(a, b string) float64 {
+	ta, tb := strings.Fields(a), strings.Fields(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return 0
+	}
+	short, long := ta, tb
+	if len(tb) < len(ta) {
+		short, long = tb, ta
+	}
+	set := make(map[string]bool, len(long))
+	for _, t := range long {
+		set[t] = true
+	}
+	shared := 0
+	for _, t := range short {
+		if set[t] {
+			shared++
+		}
+	}
+	if shared == len(short) {
+		return 0.6 + 0.4*float64(len(short))/float64(len(long))
+	}
+	return float64(shared) / float64(len(long))
 }

@@ -16,7 +16,11 @@ import (
 // v2: itens só com resultado mensurado (não extrair achados descritivos de
 // laudo de imagem nem seções do documento); exam_date com fallback para a data
 // de coleta/liberação e sem hora/fuso.
-const PromptVersion = "exam-extract-v2"
+// v3: fidelidade literal (result_value/reference_text verbatim; numéricos só
+// quando inequívocos); hemograma diferencial vira dois itens (% e absoluto);
+// seleção de faixa por sexo/idade quando o contexto do paciente é informado;
+// marker_name curto (sigla/nome principal).
+const PromptVersion = "exam-extract-v3"
 
 const anthropicVersion = "2023-06-01"
 const extractionToolName = "registrar_exame"
@@ -35,8 +39,26 @@ REGRAS OBRIGATÓRIAS:
 - NÃO diagnostique, NÃO interprete clinicamente e NÃO faça recomendações médicas.
 - Extraia apenas o que está literalmente no documento. Não invente valores.
 - Se um campo não estiver presente, deixe-o vazio/nulo. Não preencha por dedução clínica.
-- Preserve os valores exatamente como aparecem (incluindo unidades e faixas de referência).
-- Quando houver valor numérico, também preencha numeric_value com o número correspondente.
+- FIDELIDADE LITERAL: result_value e reference_text são TRANSCRIÇÕES exatas do
+  laudo (incluindo símbolos, "%", "<", "Desejável: ..."). raw_text recebe a
+  linha inteira do item como impressa. Nunca resuma nem reformate esses campos.
+- numeric_value, reference_min e reference_max são a camada NUMÉRICA: preencha
+  somente quando o número correspondente for inequívoco no laudo; na dúvida,
+  deixe null e mantenha a informação nos campos textuais.
+- marker_name é o nome CURTO do marcador (sigla ou nome principal, ex.: "TGO",
+  "HDL", "Glicose"); nome por extenso e sinônimos ficam em exam_name/raw_text.
+- Faixa de referência SEM valor numérico fixo (metas por risco, tabelas por
+  faixa etária extensas): deixe reference_min/max null e transcreva a regra em
+  reference_text.
+- FAIXAS DEPENDENTES DE SEXO/IDADE: se o laudo trouxer faixas distintas e um
+  CONTEXTO DO PACIENTE for informado na mensagem, selecione a faixa
+  correspondente ao sexo/idade do paciente para reference_min/max (mantendo
+  reference_text literal). Sem contexto, deixe min/max null e registre em
+  warnings qual suposição seria necessária.
+- HEMOGRAMA DIFERENCIAL (Segmentados, Linfócitos, Monócitos etc.) com valor
+  percentual E absoluto: crie DOIS itens — um com marker_name sufixado " %"
+  (valor e faixa percentuais) e outro com o valor absoluto (/mm³ ou equivalente)
+  e sua faixa. Cada item carrega a unidade e a referência da própria escala.
 - Em "exams" registre APENAS itens com resultado mensurado ou laudado (valor numérico
   ou qualitativo como "não reagente", "ausente"). NÃO crie itens para achados
   descritivos de laudos de imagem (ex.: "Fígado: dimensões normais"), nem para
@@ -81,18 +103,18 @@ func extractionInputSchema() map[string]any {
 	examItem := map[string]any{
 		"type": "object",
 		"properties": map[string]any{
-			"exam_name":      map[string]any{"type": "string"},
-			"marker_name":    map[string]any{"type": "string"},
-			"result_value":   map[string]any{"type": "string"},
-			"numeric_value":  map[string]any{"type": []string{"number", "null"}},
-			"unit":           map[string]any{"type": "string"},
-			"reference_min":  map[string]any{"type": []string{"number", "null"}},
-			"reference_max":  map[string]any{"type": []string{"number", "null"}},
-			"reference_text": map[string]any{"type": "string"},
+			"exam_name":      map[string]any{"type": "string", "description": "Nome do exame/seção como impresso (ex.: 'Hemograma completo')"},
+			"marker_name":    map[string]any{"type": "string", "description": "Nome CURTO do marcador: sigla ou nome principal (ex.: 'TGO', 'HDL', 'Segmentados %')"},
+			"result_value":   map[string]any{"type": "string", "description": "Valor do resultado TRANSCRITO literalmente do laudo"},
+			"numeric_value":  map[string]any{"type": []string{"number", "null"}, "description": "Número correspondente ao result_value; null se ambíguo ou não numérico"},
+			"unit":           map[string]any{"type": "string", "description": "Unidade como impressa (ex.: 'mg/dL', '%', '/mm³')"},
+			"reference_min":  map[string]any{"type": []string{"number", "null"}, "description": "Mínimo da faixa aplicável ao paciente; null quando não houver faixa numérica inequívoca"},
+			"reference_max":  map[string]any{"type": []string{"number", "null"}, "description": "Máximo da faixa aplicável ao paciente; null quando não houver faixa numérica inequívoca"},
+			"reference_text": map[string]any{"type": "string", "description": "Faixa/regra de referência TRANSCRITA literalmente (incluindo metas por risco, faixas por sexo/idade)"},
 			"material":       map[string]any{"type": "string"},
 			"method":         map[string]any{"type": "string"},
 			"interpretation": map[string]any{"type": "string"},
-			"raw_text":       map[string]any{"type": "string"},
+			"raw_text":       map[string]any{"type": "string", "description": "Linha(s) inteira(s) do item como impressa(s) no laudo"},
 		},
 	}
 	return map[string]any{
