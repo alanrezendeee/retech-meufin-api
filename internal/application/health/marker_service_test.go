@@ -173,6 +173,33 @@ func TestResolve_MatchedAmbiguousUnresolved(t *testing.T) {
 	}
 }
 
+func TestResolve_VariantsAndTokenOverlap(t *testing.T) {
+	svc, ws := seededService(t)
+	res, err := svc.Resolve(context.Background(), ws, []ResolveItemInput{
+		{RawName: "Transaminase Oxalacética (TGO)"},  // alias no parêntese -> matched
+		{RawName: "TGO - AST"},                       // segmento com alias -> matched
+		{RawName: "TGO/TGP"},                         // dois marcadores distintos -> ambiguous
+		{RawName: "Dosagem de Transaminase Pirúvica"}, // tokens contidos -> candidato fuzzy
+	})
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if res[0].Status != ResolveMatched || res[0].Matched == nil || res[0].Matched.CanonicalName != "AST (TGO)" {
+		t.Errorf("TGO por extenso deveria dar matched AST (TGO), veio %s", res[0].Status)
+	}
+	if res[1].Status != ResolveMatched || res[1].Matched == nil || res[1].Matched.CanonicalName != "AST (TGO)" {
+		t.Errorf("TGO - AST deveria dar matched AST (TGO), veio %s", res[1].Status)
+	}
+	if res[2].Status != ResolveAmbiguous || len(res[2].Candidates) != 2 {
+		t.Errorf("TGO/TGP deveria dar ambiguous com 2 candidatos, veio %s (%d)", res[2].Status, len(res[2].Candidates))
+	}
+	if res[3].Status != ResolveAmbiguous || len(res[3].Candidates) == 0 {
+		t.Errorf("nome com tokens do alias deveria dar ambiguous, veio %s", res[3].Status)
+	} else if res[3].Candidates[0].Marker.CanonicalName != "ALT (TGP)" {
+		t.Errorf("melhor candidato deveria ser ALT (TGP), veio %q", res[3].Candidates[0].Marker.CanonicalName)
+	}
+}
+
 func TestUpdate_SystemMarkerImmutable(t *testing.T) {
 	repo := &fakeRepo{}
 	svc := NewMarkerService(repo)

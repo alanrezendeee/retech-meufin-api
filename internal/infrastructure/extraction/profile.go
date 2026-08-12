@@ -24,6 +24,18 @@ func LabExamProfile() ExtractProfile {
 	}
 }
 
+// WithPatientContext antepõe à instrução do usuário o contexto do paciente
+// (sexo/idade do cadastro do membro), permitindo ao modelo selecionar a faixa
+// de referência correta quando o laudo traz faixas por sexo/idade. O contexto
+// varia por chamada e não altera o PromptVersion.
+func (p *ExtractProfile) WithPatientContext(desc string) {
+	if desc == "" {
+		return
+	}
+	p.UserInstruction = "CONTEXTO DO PACIENTE (do cadastro; use apenas para selecionar faixas de referência dependentes de sexo/idade): " +
+		desc + "\n\n" + p.UserInstruction
+}
+
 // InvoicePromptVersion versiona o prompt/schema de extração de faturas.
 // v2: datas normalizadas para YYYY-MM-DD com inferência de ano.
 // v3: pagamentos/créditos em credits[], total_amount = total a pagar,

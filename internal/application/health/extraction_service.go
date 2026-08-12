@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -17,12 +18,13 @@ import (
 type ExtractionService struct {
 	jobs      dom.ExtractionJobRepository
 	docs      dom.DocumentRepository
+	members   dom.FamilyMemberRepository
 	extractor extraction.Extractor
 }
 
 // NewExtractionService constrói o serviço de extração.
-func NewExtractionService(jobs dom.ExtractionJobRepository, docs dom.DocumentRepository, extractor extraction.Extractor) *ExtractionService {
-	return &ExtractionService{jobs: jobs, docs: docs, extractor: extractor}
+func NewExtractionService(jobs dom.ExtractionJobRepository, docs dom.DocumentRepository, members dom.FamilyMemberRepository, extractor extraction.Extractor) *ExtractionService {
+	return &ExtractionService{jobs: jobs, docs: docs, members: members, extractor: extractor}
 }
 
 // StartExtraction cria um job (status=pending) e dispara a extração em
@@ -105,6 +107,9 @@ func (s *ExtractionService) runExtraction(
 	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionProcessing, nil, nil)
 
 	profile := extraction.LabExamProfile()
+	// Sexo/idade do membro dono do documento: laudos trazem faixas de
+	// referência distintas por sexo/idade e, sem o contexto, o modelo chuta.
+	profile.WithPatientContext(s.patientContext(ctx, workspaceID, documentID))
 	res, extErr := s.extractor.Extract(ctx, extraction.ExtractInput{
 		InputType: string(inputType),
 		MimeType:  mimeType,
@@ -162,6 +167,42 @@ func (s *ExtractionService) runExtraction(
 		structured = []byte(res.StructuredJSON)
 	}
 	s.updateDocumentStatus(ctx, workspaceID, documentID, dom.ExtractionExtracted, text, structured)
+}
+
+// patientContext monta a descrição de sexo/idade do membro vinculado ao
+// documento ("" quando o documento não tem membro ou o cadastro não tem os
+// dados — a extração segue sem contexto, comportamento anterior).
+func (s *ExtractionService) patientContext(ctx context.Context, workspaceID, documentID uuid.UUID) string {
+	doc, err := s.docs.GetByID(ctx, workspaceID, documentID)
+	if err != nil || doc.FamilyMemberID == nil {
+		return ""
+	}
+	member, err := s.members.GetByID(ctx, workspaceID, *doc.FamilyMemberID)
+	if err != nil {
+		return ""
+	}
+	var parts []string
+	if member.Gender != nil {
+		if g := describeGender(*member.Gender); g != "" {
+			parts = append(parts, "sexo "+g)
+		}
+	}
+	if age := member.Age(); age != nil {
+		parts = append(parts, fmt.Sprintf("%d anos", *age))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// describeGender traduz o valor do cadastro para o texto do prompt.
+func describeGender(g string) string {
+	switch strings.ToLower(strings.TrimSpace(g)) {
+	case "male", "m", "masculino":
+		return "masculino"
+	case "female", "f", "feminino":
+		return "feminino"
+	default:
+		return ""
+	}
 }
 
 func (s *ExtractionService) updateDocumentStatus(
