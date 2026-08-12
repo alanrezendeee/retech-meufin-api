@@ -86,6 +86,10 @@ type ExamItemSuggestion struct {
 	Candidates   []MarkerCandidateSuggestion
 	// MarkerIsNew: sem match exato — a UI oferece criar o marcador.
 	MarkerIsNew bool
+	// Curadoria do marcador casado (texto e metas condicionais, ex.: LDL por
+	// risco) — a UI usa para tooltip e enquadramento informativo.
+	MarkerRefText  *string
+	MarkerRefTiers []dom.RefTier
 }
 
 // ExamSuggestion é o laudo estruturado pronto para revisão na UI.
@@ -132,13 +136,18 @@ func (s *ExamImportService) Suggest(ctx context.Context, workspaceID uuid.UUID, 
 	}
 
 	// Resolução de marcadores em lote (nome do marcador; fallback nome do exame).
+	names := make([]string, 0, len(raw.Exams))
 	resolveIn := make([]ResolveItemInput, 0, len(raw.Exams))
 	for _, e := range raw.Exams {
 		name := strings.TrimSpace(e.MarkerName)
 		if name == "" {
 			name = strings.TrimSpace(e.ExamName)
 		}
-		resolveIn = append(resolveIn, ResolveItemInput{RawName: name})
+		names = append(names, name)
+		// "%" é descartado pelo Normalize, então "Segmentados %" colidiria com
+		// o marcador absoluto "Segmentados". Resolve com "percentual" no lugar
+		// (o catálogo tem os marcadores percentuais com esse alias).
+		resolveIn = append(resolveIn, ResolveItemInput{RawName: percentualName(name)})
 	}
 	resolved, err := s.markers.Resolve(ctx, workspaceID, resolveIn)
 	if err != nil {
@@ -148,7 +157,7 @@ func (s *ExamImportService) Suggest(ctx context.Context, workspaceID uuid.UUID, 
 	out.Items = make([]ExamItemSuggestion, 0, len(raw.Exams))
 	for i, e := range raw.Exams {
 		it := ExamItemSuggestion{
-			RawName:        resolveIn[i].RawName,
+			RawName:        names[i],
 			ResultValue:    strings.TrimSpace(e.ResultValue),
 			ResultNumeric:  e.NumericValue,
 			Unit:           optStr(e.Unit),
@@ -172,6 +181,8 @@ func (s *ExamImportService) Suggest(ctx context.Context, workspaceID uuid.UUID, 
 				it.MarkerID = &id
 				it.MarkerName = &name
 				it.MarkerIsNew = false
+				it.MarkerRefText = r.Matched.DefaultRefText
+				it.MarkerRefTiers = r.Matched.DefaultRefTiers
 			case ResolveAmbiguous:
 				for _, c := range r.Candidates {
 					it.Candidates = append(it.Candidates, MarkerCandidateSuggestion{
@@ -363,6 +374,16 @@ func (s *ExamImportService) Confirm(ctx context.Context, in ConfirmExamInput) (*
 	_ = s.docs.LinkExamResult(ctx, doc)
 
 	return out, nil
+}
+
+// percentualName troca "%" por "percentual" no nome do marcador para fins de
+// resolução ("Segmentados %" -> "Segmentados percentual"). Sem isso o Normalize
+// descarta o símbolo e o nome cai no marcador da escala absoluta.
+func percentualName(name string) string {
+	if !strings.Contains(name, "%") {
+		return name
+	}
+	return strings.Join(strings.Fields(strings.ReplaceAll(name, "%", " percentual ")), " ")
 }
 
 // findLabByName procura um laboratório ativo pelo nome (case-insensitive).

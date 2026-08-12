@@ -17,10 +17,11 @@ type HealthMarkerModel struct {
 	Category       string     `gorm:"size:50;not null"`
 	Comparability  string     `gorm:"column:comparability_class;size:20;not null;default:standardized"`
 	CanonicalUnit  *string    `gorm:"size:30"`
-	DefaultRefMin  *float64   `gorm:"column:default_ref_min"`
-	DefaultRefMax  *float64   `gorm:"column:default_ref_max"`
-	DefaultRefText *string    `gorm:"column:default_ref_text;size:255"`
-	Active         bool       `gorm:"not null;default:true"`
+	DefaultRefMin   *float64 `gorm:"column:default_ref_min"`
+	DefaultRefMax   *float64 `gorm:"column:default_ref_max"`
+	DefaultRefText  *string  `gorm:"column:default_ref_text"`
+	DefaultRefTiers *string  `gorm:"column:default_ref_tiers;type:jsonb"`
+	Active          bool     `gorm:"not null;default:true"`
 	CreatedAt      time.Time  `gorm:"not null"`
 	UpdatedAt      time.Time  `gorm:"not null"`
 	DeletedAt      gorm.DeletedAt

@@ -2,6 +2,7 @@ package persistence
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/google/uuid"
@@ -43,6 +44,7 @@ func (r *HealthMarkerRepository) Update(ctx context.Context, m *dom.Marker) erro
 			"default_ref_min":     model.DefaultRefMin,
 			"default_ref_max":     model.DefaultRefMax,
 			"default_ref_text":    model.DefaultRefText,
+			"default_ref_tiers":   model.DefaultRefTiers,
 			"active":              model.Active,
 			"updated_at":          model.UpdatedAt,
 		})
@@ -181,22 +183,47 @@ func (r *HealthMarkerRepository) UpsertSystem(ctx context.Context, m *dom.Marker
 
 func markerToModel(m *dom.Marker) HealthMarkerModel {
 	return HealthMarkerModel{
-		ID:             m.ID,
-		Scope:          string(m.Scope),
-		WorkspaceID:    m.WorkspaceID,
-		CanonicalName:  m.CanonicalName,
-		NormalizedKey:  m.NormalizedKey,
-		LoincCode:      m.LoincCode,
-		Category:       m.Category,
-		Comparability:  string(m.Comparability),
-		CanonicalUnit:  m.CanonicalUnit,
-		DefaultRefMin:  m.DefaultRefMin,
-		DefaultRefMax:  m.DefaultRefMax,
-		DefaultRefText: m.DefaultRefText,
-		Active:         m.Active,
-		CreatedAt:      m.CreatedAt,
-		UpdatedAt:      m.UpdatedAt,
+		ID:              m.ID,
+		Scope:           string(m.Scope),
+		WorkspaceID:     m.WorkspaceID,
+		CanonicalName:   m.CanonicalName,
+		NormalizedKey:   m.NormalizedKey,
+		LoincCode:       m.LoincCode,
+		Category:        m.Category,
+		Comparability:   string(m.Comparability),
+		CanonicalUnit:   m.CanonicalUnit,
+		DefaultRefMin:   m.DefaultRefMin,
+		DefaultRefMax:   m.DefaultRefMax,
+		DefaultRefText:  m.DefaultRefText,
+		DefaultRefTiers: tiersToJSON(m.DefaultRefTiers),
+		Active:          m.Active,
+		CreatedAt:       m.CreatedAt,
+		UpdatedAt:       m.UpdatedAt,
 	}
+}
+
+// tiersToJSON serializa as metas condicionais para a coluna jsonb (nil sem tiers).
+func tiersToJSON(tiers []dom.RefTier) *string {
+	if len(tiers) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(tiers)
+	if err != nil {
+		return nil
+	}
+	s := string(b)
+	return &s
+}
+
+func tiersFromJSON(raw *string) []dom.RefTier {
+	if raw == nil || *raw == "" {
+		return nil
+	}
+	var tiers []dom.RefTier
+	if err := json.Unmarshal([]byte(*raw), &tiers); err != nil {
+		return nil
+	}
+	return tiers
 }
 
 func aliasesToModels(as []dom.MarkerAlias) []HealthMarkerAliasModel {
@@ -219,21 +246,22 @@ func aliasesToModels(as []dom.MarkerAlias) []HealthMarkerAliasModel {
 
 func modelToMarker(m *HealthMarkerModel) *dom.Marker {
 	out := &dom.Marker{
-		ID:             m.ID,
-		Scope:          dom.Scope(m.Scope),
-		WorkspaceID:    m.WorkspaceID,
-		CanonicalName:  m.CanonicalName,
-		NormalizedKey:  m.NormalizedKey,
-		LoincCode:      m.LoincCode,
-		Category:       m.Category,
-		Comparability:  dom.ComparabilityClass(m.Comparability),
-		CanonicalUnit:  m.CanonicalUnit,
-		DefaultRefMin:  m.DefaultRefMin,
-		DefaultRefMax:  m.DefaultRefMax,
-		DefaultRefText: m.DefaultRefText,
-		Active:         m.Active,
-		CreatedAt:      m.CreatedAt,
-		UpdatedAt:      m.UpdatedAt,
+		ID:              m.ID,
+		Scope:           dom.Scope(m.Scope),
+		WorkspaceID:     m.WorkspaceID,
+		CanonicalName:   m.CanonicalName,
+		NormalizedKey:   m.NormalizedKey,
+		LoincCode:       m.LoincCode,
+		Category:        m.Category,
+		Comparability:   dom.ComparabilityClass(m.Comparability),
+		CanonicalUnit:   m.CanonicalUnit,
+		DefaultRefMin:   m.DefaultRefMin,
+		DefaultRefMax:   m.DefaultRefMax,
+		DefaultRefText:  m.DefaultRefText,
+		DefaultRefTiers: tiersFromJSON(m.DefaultRefTiers),
+		Active:          m.Active,
+		CreatedAt:       m.CreatedAt,
+		UpdatedAt:       m.UpdatedAt,
 	}
 	for i := range m.Aliases {
 		a := m.Aliases[i]

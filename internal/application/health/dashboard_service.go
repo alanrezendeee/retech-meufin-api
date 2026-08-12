@@ -11,10 +11,11 @@ import (
 type DashboardService struct {
 	dashboard dom.DashboardRepository
 	markers   dom.MarkerRepository
+	members   dom.FamilyMemberRepository
 }
 
-func NewDashboardService(dashboard dom.DashboardRepository, markers dom.MarkerRepository) *DashboardService {
-	return &DashboardService{dashboard: dashboard, markers: markers}
+func NewDashboardService(dashboard dom.DashboardRepository, markers dom.MarkerRepository, members dom.FamilyMemberRepository) *DashboardService {
+	return &DashboardService{dashboard: dashboard, markers: markers, members: members}
 }
 
 type MarkerEvolutionResult struct {
@@ -34,7 +35,25 @@ func (s *DashboardService) MarkerEvolution(ctx context.Context, workspaceID, mar
 	if err != nil {
 		return nil, err
 	}
+	// Fallback de curadoria: faixa default do marcador; para metas
+	// condicionais (ex.: LDL por risco), o tier do risco cadastrado do membro
+	// — só quando a evolução é de um membro específico.
+	fallbackMin, fallbackMax := marker.DefaultRefMin, marker.DefaultRefMax
+	if fallbackMin == nil && fallbackMax == nil && len(marker.DefaultRefTiers) > 0 &&
+		familyMemberID != nil && s.members != nil {
+		if member, err := s.members.GetByID(ctx, workspaceID, *familyMemberID); err == nil && member.CardiovascularRisk != nil {
+			if tier := dom.TierForKey(marker.DefaultRefTiers, *member.CardiovascularRisk); tier != nil {
+				fallbackMin, fallbackMax = tier.Min, tier.Max
+			}
+		}
+	}
 	for i := range points {
+		// Ponto sem faixa do laudo herda a faixa de curadoria do catálogo
+		// (ex.: VLDL) — sem isso o modo normalizado fica vazio para o marcador.
+		if points[i].RefMin == nil && points[i].RefMax == nil {
+			points[i].RefMin = fallbackMin
+			points[i].RefMax = fallbackMax
+		}
 		points[i].Normalized = dom.NormalizeToReference(points[i].Value, points[i].RefMin, points[i].RefMax)
 	}
 	mode := "absolute"

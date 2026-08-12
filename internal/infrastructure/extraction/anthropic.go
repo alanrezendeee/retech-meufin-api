@@ -56,9 +56,11 @@ REGRAS OBRIGATÓRIAS:
   reference_text literal). Sem contexto, deixe min/max null e registre em
   warnings qual suposição seria necessária.
 - HEMOGRAMA DIFERENCIAL (Segmentados, Linfócitos, Monócitos etc.) com valor
-  percentual E absoluto: crie DOIS itens — um com marker_name sufixado " %"
-  (valor e faixa percentuais) e outro com o valor absoluto (/mm³ ou equivalente)
-  e sua faixa. Cada item carrega a unidade e a referência da própria escala.
+  percentual E absoluto: crie DOIS itens — um com marker_name sufixado
+  " (percentual)" (ex.: "Segmentados (percentual)", valor e faixa percentuais)
+  e outro com o valor absoluto (/mm³ ou equivalente) e sua faixa. Cada item
+  carrega a unidade e a referência da própria escala. NÃO use "%" no
+  marker_name.
 - Em "exams" registre APENAS itens com resultado mensurado ou laudado (valor numérico
   ou qualitativo como "não reagente", "ausente"). NÃO crie itens para achados
   descritivos de laudos de imagem (ex.: "Fígado: dimensões normais"), nem para
@@ -104,7 +106,7 @@ func extractionInputSchema() map[string]any {
 		"type": "object",
 		"properties": map[string]any{
 			"exam_name":      map[string]any{"type": "string", "description": "Nome do exame/seção como impresso (ex.: 'Hemograma completo')"},
-			"marker_name":    map[string]any{"type": "string", "description": "Nome CURTO do marcador: sigla ou nome principal (ex.: 'TGO', 'HDL', 'Segmentados %')"},
+			"marker_name":    map[string]any{"type": "string", "description": "Nome CURTO do marcador: sigla ou nome principal (ex.: 'TGO', 'HDL', 'Segmentados (percentual)'); nunca use '%' no nome"},
 			"result_value":   map[string]any{"type": "string", "description": "Valor do resultado TRANSCRITO literalmente do laudo"},
 			"numeric_value":  map[string]any{"type": []string{"number", "null"}, "description": "Número correspondente ao result_value; null se ambíguo ou não numérico"},
 			"unit":           map[string]any{"type": "string", "description": "Unidade como impressa (ex.: 'mg/dL', '%', '/mm³')"},

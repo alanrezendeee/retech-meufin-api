@@ -45,10 +45,43 @@ type Marker struct {
 	DefaultRefMin  *float64
 	DefaultRefMax  *float64
 	DefaultRefText *string
-	Active         bool
-	Aliases        []MarkerAlias
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// DefaultRefTiers: metas condicionais de curadoria quando não existe faixa
+	// única (ex.: LDL por categoria de risco cardiovascular). Informativo — a
+	// interpretação computada NÃO escolhe tier sozinha (a condição, como o
+	// risco do paciente, não é inferível do laudo).
+	DefaultRefTiers []RefTier
+	Active          bool
+	Aliases         []MarkerAlias
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// RefTier é uma meta condicional de referência do catálogo (curadoria).
+// Key liga o tier a uma condição do membro (ex.: cardiovascular_risk) para
+// interpretação automática; sem key o tier é apenas informativo.
+type RefTier struct {
+	Key   string   `json:"key,omitempty"`
+	Label string   `json:"label"`
+	Min   *float64 `json:"min,omitempty"`
+	Max   *float64 `json:"max,omitempty"`
+}
+
+// Categorias de risco cardiovascular (estratificação clínica, diretriz SBC).
+const (
+	RiskLow          = "baixo"
+	RiskIntermediate = "intermediario"
+	RiskHigh         = "alto"
+	RiskVeryHigh     = "muito_alto"
+)
+
+// TierForKey devolve o tier cuja key casa com a condição informada.
+func TierForKey(tiers []RefTier, key string) *RefTier {
+	for i := range tiers {
+		if tiers[i].Key == key {
+			return &tiers[i]
+		}
+	}
+	return nil
 }
 
 // MarkerAlias mapeia sinônimos/abreviações para o marcador canônico (TGO->AST etc.).

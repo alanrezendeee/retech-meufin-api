@@ -77,6 +77,8 @@ type examItemSuggestionResponse struct {
 	MarkerName     *string                   `json:"marker_name,omitempty"`
 	Candidates     []markerCandidateResponse `json:"candidates,omitempty"`
 	MarkerIsNew    bool                      `json:"marker_is_new,omitempty"`
+	MarkerRefText  *string                   `json:"marker_ref_text,omitempty"`
+	MarkerRefTiers []dom.RefTier             `json:"marker_ref_tiers,omitempty"`
 }
 
 type examSuggestionResponse struct {
@@ -124,6 +126,8 @@ func mapExamSuggestion(s *app.ExamSuggestion) *examSuggestionResponse {
 			MarkerID:       it.MarkerID,
 			MarkerName:     it.MarkerName,
 			MarkerIsNew:    it.MarkerIsNew,
+			MarkerRefText:  it.MarkerRefText,
+			MarkerRefTiers: it.MarkerRefTiers,
 		}
 		for _, c := range it.Candidates {
 			r.Candidates = append(r.Candidates, markerCandidateResponse{

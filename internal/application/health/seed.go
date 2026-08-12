@@ -16,6 +16,39 @@ type seedMarker struct {
 	aliases       []string
 }
 
+// seedDefaultRef é a faixa de CURADORIA do catálogo, por nome canônico.
+// Aplica-se a marcadores que os laboratórios reportam sem referência (ex.:
+// VLDL) e serve de fallback de interpretação quando o item do laudo não traz
+// faixa própria — nunca substitui a faixa impressa no laudo.
+type seedDefaultRef struct {
+	min   *float64
+	max   *float64
+	text  string
+	tiers []dom.RefTier
+}
+
+func systemMarkerDefaultRefs() map[string]seedDefaultRef {
+	f := func(v float64) *float64 { return &v }
+	return map[string]seedDefaultRef{
+		"Colesterol VLDL": {
+			max:  f(30),
+			text: "Desejável: inferior a 30 mg/dL (valor de literatura; laboratórios geralmente não informam faixa)",
+		},
+		// LDL não tem faixa única: metas por risco cardiovascular (diretriz
+		// SBC), estimado pelo médico — tiers informativos, sem interpretação
+		// automática.
+		"Colesterol LDL": {
+			text: "Metas por categoria de risco cardiovascular estimada pelo médico (diretriz SBC); crianças e adolescentes: inferior a 110 mg/dL",
+			tiers: []dom.RefTier{
+				{Key: dom.RiskLow, Label: "Risco baixo", Max: f(130)},
+				{Key: dom.RiskIntermediate, Label: "Risco intermediário", Max: f(100)},
+				{Key: dom.RiskHigh, Label: "Risco alto", Max: f(70)},
+				{Key: dom.RiskVeryHigh, Label: "Risco muito alto", Max: f(50)},
+			},
+		},
+	}
+}
+
 // systemMarkerSeeds é o catálogo base (escopo system) de marcadores laboratoriais BR comuns.
 // comparability: standardized = valor comparável entre labs; method_dependent = varia com o
 // método; qualitative = resultado descritivo (positivo/negativo, presença/ausência).
@@ -124,6 +157,19 @@ func systemMarkerSeeds() []seedMarker {
 		{"Monócitos", "hematologia", "/mm³", std, nil},
 		{"Eosinófilos", "hematologia", "/mm³", std, nil},
 		{"Basófilos", "hematologia", "/mm³", std, nil},
+
+		// --- hematologia: série branca, escala percentual ---
+		// O diferencial do hemograma imprime % e absoluto; são marcadores
+		// distintos (unidade e faixa próprias). "(percentual)" no nome porque
+		// "%" é descartado pelo Normalize e colidiria com o absoluto.
+		{"Neutrófilos (percentual)", "hematologia", "%", std, []string{
+			"Segmentados percentual", "Percentual de neutrófilos",
+		}},
+		{"Bastonetes (percentual)", "hematologia", "%", std, []string{"Bastões percentual"}},
+		{"Linfócitos (percentual)", "hematologia", "%", std, []string{"Percentual de linfócitos"}},
+		{"Monócitos (percentual)", "hematologia", "%", std, []string{"Percentual de monócitos"}},
+		{"Eosinófilos (percentual)", "hematologia", "%", std, []string{"Percentual de eosinófilos"}},
+		{"Basófilos (percentual)", "hematologia", "%", std, []string{"Percentual de basófilos"}},
 
 		// --- hematologia: plaquetas ---
 		{"Plaquetas", "hematologia", "/mm³", std, []string{"PLT", "Contagem de plaquetas"}},
@@ -252,6 +298,7 @@ func systemMarkerSeeds() []seedMarker {
 func (s *MarkerService) SeedSystem(ctx context.Context) (int, error) {
 	now := time.Now().UTC()
 	inserted := 0
+	defaults := systemMarkerDefaultRefs()
 	for _, sd := range systemMarkerSeeds() {
 		unit := sd.unit
 		m := &dom.Marker{
@@ -264,6 +311,15 @@ func (s *MarkerService) SeedSystem(ctx context.Context) (int, error) {
 			Active:        true,
 			CreatedAt:     now,
 			UpdatedAt:     now,
+		}
+		if ref, ok := defaults[sd.name]; ok {
+			m.DefaultRefMin = ref.min
+			m.DefaultRefMax = ref.max
+			m.DefaultRefTiers = ref.tiers
+			if ref.text != "" {
+				t := ref.text
+				m.DefaultRefText = &t
+			}
 		}
 		src := "seed"
 		for _, a := range sd.aliases {
