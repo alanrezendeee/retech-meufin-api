@@ -216,6 +216,8 @@ func ComputeInterpretation(value *float64, min, max *float64) *string {
 // UI exibir tooltip e o confronto informativo com a tabela (ex.: LDL).
 type MarkerInfo struct {
 	CanonicalName string
+	RefMin        *float64
+	RefMax        *float64
 	RefText       *string
 	RefTiers      []RefTier
 }

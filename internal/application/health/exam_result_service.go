@@ -190,6 +190,8 @@ func (s *ExamResultService) attachMarkerInfo(ctx context.Context, workspaceID uu
 			if m, err := s.markers.GetByID(ctx, workspaceID, *id); err == nil {
 				info = &dom.MarkerInfo{
 					CanonicalName: m.CanonicalName,
+					RefMin:        m.DefaultRefMin,
+					RefMax:        m.DefaultRefMax,
 					RefText:       m.DefaultRefText,
 					RefTiers:      m.DefaultRefTiers,
 				}
