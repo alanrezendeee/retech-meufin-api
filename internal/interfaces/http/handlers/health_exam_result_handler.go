@@ -91,6 +91,8 @@ type examResultItemResponse struct {
 	// Curadoria do marcador (anexada no GET por id): tooltip + confronto
 	// informativo com metas condicionais na UI.
 	MarkerName     *string       `json:"marker_name,omitempty"`
+	MarkerRefMin   *float64      `json:"marker_ref_min,omitempty"`
+	MarkerRefMax   *float64      `json:"marker_ref_max,omitempty"`
 	MarkerRefText  *string       `json:"marker_ref_text,omitempty"`
 	MarkerRefTiers []dom.RefTier `json:"marker_ref_tiers,omitempty"`
 }
@@ -137,6 +139,8 @@ func mapExamResultItem(it *dom.ExamResultItem) examResultItemResponse {
 	if it.Marker != nil {
 		name := it.Marker.CanonicalName
 		out.MarkerName = &name
+		out.MarkerRefMin = it.Marker.RefMin
+		out.MarkerRefMax = it.Marker.RefMax
 		out.MarkerRefText = it.Marker.RefText
 		out.MarkerRefTiers = it.Marker.RefTiers
 	}
