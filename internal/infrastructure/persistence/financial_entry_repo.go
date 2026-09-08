@@ -95,6 +95,26 @@ func (r *FinancialEntryRepository) SoftDelete(ctx context.Context, workspaceID, 
 	return nil
 }
 
+func (r *FinancialEntryRepository) SoftDeleteBatch(ctx context.Context, workspaceID uuid.UUID, ids []uuid.UUID) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	var deleted int
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("workspace_id = ? AND id IN ?", workspaceID, ids).
+			Delete(&FinancialEntryModel{})
+		if res.Error != nil {
+			return mapFinanceErr(res.Error)
+		}
+		deleted = int(res.RowsAffected)
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return deleted, nil
+}
+
 func (r *FinancialEntryRepository) GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*dom.FinancialEntry, error) {
 	var m FinancialEntryModel
 	err := r.db.WithContext(ctx).

@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -105,6 +106,11 @@ type CreateEntryInput struct {
 	// começado ano passado), as ocorrências com vencimento até hoje nascem
 	// 'realizada' — evita confirmar dezenas de parcelas uma a uma.
 	ConfirmPastOccurrences bool
+	// Installments: parcelas informadas uma a uma (vencimento, valor e
+	// liquidação opcional). Quando presente substitui a progressão mensal
+	// automática; o tamanho da lista define o total de parcelas e deve bater
+	// com InstallmentsTotal quando este vier preenchido.
+	Installments []dom.InstallmentSpec
 }
 
 type UpdateEntryInput struct {
@@ -174,6 +180,27 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 	// Três caminhos mutuamente exclusivos: parcelado, recorrente ou único.
 	var occurrences []dom.FinancialEntry
 	switch {
+	case len(in.Installments) > 0:
+		// Parcelado com parcelas informadas uma a uma.
+		if len(in.Installments) < 2 {
+			return nil, &dom.ValidationError{Msg: "parcelamento exige ao menos 2 parcelas"}
+		}
+		if in.InstallmentsTotal != nil && *in.InstallmentsTotal != len(in.Installments) {
+			return nil, &dom.ValidationError{Msg: "installments_total não bate com a quantidade de parcelas informadas"}
+		}
+		if err := validateInstallmentSpecs(in.Installments); err != nil {
+			return nil, err
+		}
+		base.Recurrence = dom.RecurrenceNone
+		base.Status = dom.StatusPrevista
+		// Valor e vencimento do template vêm da primeira parcela: só valem
+		// para a validação das invariantes, cada parcela traz os seus.
+		base.AmountCents = in.Installments[0].AmountCents
+		base.DueDate = in.Installments[0].DueDate
+		if err := base.Validate(); err != nil {
+			return nil, err
+		}
+		occurrences = dom.GenerateCustomInstallments(base, in.Installments)
 	case in.InstallmentsTotal != nil && *in.InstallmentsTotal > 1:
 		// Parcelado: N lançamentos mensais, recurrence forçada para none.
 		base.Recurrence = dom.RecurrenceNone
@@ -689,8 +716,166 @@ func (s *FinancialEntryService) ResizeInstallments(ctx context.Context, workspac
 	return res, nil
 }
 
-func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid.UUID) error {
-	return s.repo.SoftDelete(ctx, workspaceID, id)
+// validateInstallmentSpecs garante que cada parcela informada é coerente:
+// vencimento e valor obrigatórios, pagamento (quando houver) positivo e
+// datado. Duas parcelas no mesmo dia são aceitas (entrada + 1ª parcela).
+func validateInstallmentSpecs(specs []dom.InstallmentSpec) error {
+	for i, sp := range specs {
+		n := i + 1
+		if sp.DueDate.IsZero() {
+			return &dom.ValidationError{Msg: fmt.Sprintf("parcela %d: vencimento é obrigatório", n)}
+		}
+		if sp.AmountCents <= 0 {
+			return &dom.ValidationError{Msg: fmt.Sprintf("parcela %d: valor deve ser maior que zero", n)}
+		}
+		if sp.PaidAmountCents != nil && sp.PaidAt == nil {
+			return &dom.ValidationError{Msg: fmt.Sprintf("parcela %d: valor pago exige data de pagamento", n)}
+		}
+		if sp.PaidAmountCents != nil && *sp.PaidAmountCents <= 0 {
+			return &dom.ValidationError{Msg: fmt.Sprintf("parcela %d: valor pago deve ser maior que zero", n)}
+		}
+	}
+	return nil
+}
+
+// DeleteScope define o alcance da exclusão de um lançamento que pertence a
+// uma série (parcelamento ou recorrência).
+type DeleteScope string
+
+const (
+	// DeleteScopeOne exclui só o lançamento indicado (comportamento padrão).
+	DeleteScopeOne DeleteScope = "one"
+	// DeleteScopeFuture exclui o lançamento e as ocorrências previstas com
+	// vencimento a partir dele. Em recorrência, o lançamento indicado vira
+	// cancelado com motivo de encerramento (em vez de excluído) para que o
+	// extensor não recrie os meses apagados.
+	DeleteScopeFuture DeleteScope = "future"
+	// DeleteScopeAll exclui a série inteira, inclusive parcelas realizadas.
+	DeleteScopeAll DeleteScope = "all"
+)
+
+// ParseDeleteScope converte o valor da query em escopo; vazio = one.
+func ParseDeleteScope(raw string) (DeleteScope, bool) {
+	switch DeleteScope(raw) {
+	case "", DeleteScopeOne:
+		return DeleteScopeOne, true
+	case DeleteScopeFuture:
+		return DeleteScopeFuture, true
+	case DeleteScopeAll:
+		return DeleteScopeAll, true
+	}
+	return "", false
+}
+
+// DeleteResult resume a exclusão.
+type DeleteResult struct {
+	Scope DeleteScope
+	// Deleted: lançamentos da série excluídos (sem contar residuais).
+	Deleted int
+	// DeletedPaid: quantos dos excluídos estavam realizados.
+	DeletedPaid int
+	// DeletedResiduals: residuais (pagamento parcial) das parcelas excluídas.
+	DeletedResiduals int
+	// RecurrenceEnded: escopo future em recorrência — o lançamento indicado
+	// foi cancelado com motivo de encerramento em vez de excluído.
+	RecurrenceEnded bool
+}
+
+// Delete exclui o lançamento; com escopo de série, alcança as irmãs do grupo.
+func (s *FinancialEntryService) Delete(ctx context.Context, workspaceID, id uuid.UUID, scope DeleteScope) (*DeleteResult, error) {
+	if scope == "" {
+		scope = DeleteScopeOne
+	}
+	if scope == DeleteScopeOne {
+		if err := s.repo.SoftDelete(ctx, workspaceID, id); err != nil {
+			return nil, err
+		}
+		return &DeleteResult{Scope: scope, Deleted: 1}, nil
+	}
+
+	anchor, err := s.repo.GetByID(ctx, workspaceID, id)
+	if err != nil {
+		return nil, err
+	}
+	if anchor.RecurrenceGroupID == nil {
+		return nil, &dom.ValidationError{Msg: "o lançamento não faz parte de uma série (recorrência ou parcelamento)"}
+	}
+	group, err := s.repo.ListGroup(ctx, workspaceID, *anchor.RecurrenceGroupID)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &DeleteResult{Scope: scope}
+	isRecurring := anchor.Recurrence != dom.RecurrenceNone
+	var targets []dom.FinancialEntry
+	switch scope {
+	case DeleteScopeAll:
+		targets = group
+	case DeleteScopeFuture:
+		for _, e := range group {
+			if e.ID == anchor.ID {
+				// Em recorrência o âncora é preservado como marcador de
+				// encerramento; em parcelamento é excluído junto.
+				if !isRecurring {
+					targets = append(targets, e)
+				}
+				continue
+			}
+			if e.Status == dom.StatusPrevista && !e.DueDate.Before(anchor.DueDate) {
+				targets = append(targets, e)
+			}
+		}
+	default:
+		return nil, &dom.ValidationError{Msg: "escopo de exclusão inválido (use 'one', 'future' ou 'all')"}
+	}
+
+	ids := make([]uuid.UUID, 0, len(targets))
+	for _, e := range targets {
+		ids = append(ids, e.ID)
+		if e.Status == dom.StatusRealizada {
+			res.DeletedPaid++
+		}
+	}
+	residuals, err := s.repo.ListResidualsOf(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	resIDs := make([]uuid.UUID, 0, len(residuals))
+	for _, r := range residuals {
+		resIDs = append(resIDs, r.ID)
+	}
+
+	if scope == DeleteScopeFuture && isRecurring {
+		reason := dom.CancelReasonEncerramento
+		anchor.Status = dom.StatusCancelada
+		anchor.CancelReason = &reason
+		anchor.UpdatedAt = time.Now().UTC()
+		if err := s.repo.Update(ctx, anchor); err != nil {
+			return nil, err
+		}
+		res.RecurrenceEnded = true
+		s.logEvent(ctx, dom.EntryEvent{
+			WorkspaceID:  anchor.WorkspaceID,
+			EntryID:      anchor.ID,
+			Event:        dom.EventCancelled,
+			ToStatus:     statusPtr(dom.StatusCancelada),
+			CancelReason: anchor.CancelReason,
+		})
+	}
+
+	deleted, err := s.repo.SoftDeleteBatch(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+	res.Deleted = deleted
+	if len(resIDs) > 0 {
+		n, err := s.repo.SoftDeleteBatch(ctx, workspaceID, resIDs)
+		if err != nil {
+			return nil, err
+		}
+		res.DeletedResiduals = n
+	}
+	return res, nil
 }
 
 // ConfirmEntryInput parametriza a confirmação rápida; desconto é opcional.
