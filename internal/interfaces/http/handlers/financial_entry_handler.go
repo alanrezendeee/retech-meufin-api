@@ -321,6 +321,14 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 		}
 		filter.SupplierID = &sID
 	}
+	if v := c.Query("recurrence_group_id"); v != "" {
+		gID, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "recurrence_group_id inválido")
+			return
+		}
+		filter.RecurrenceGroupID = &gID
+	}
 	if v := c.Query("overdue"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {

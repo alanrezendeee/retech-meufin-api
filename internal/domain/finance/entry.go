@@ -200,6 +200,8 @@ type FinancialEntryFilter struct {
 	DueTo      *time.Time // due_date <= dia
 	Overdue    bool       // due_date < hoje AND status = prevista
 	SupplierID *uuid.UUID // filtra pelo fornecedor vinculado
+	// RecurrenceGroupID: todas as ocorrências/parcelas do grupo (série).
+	RecurrenceGroupID *uuid.UUID
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.

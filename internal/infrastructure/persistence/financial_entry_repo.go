@@ -186,6 +186,9 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	if filter.SupplierID != nil {
 		base = base.Where("supplier_id = ?", *filter.SupplierID)
 	}
+	if filter.RecurrenceGroupID != nil {
+		base = base.Where("recurrence_group_id = ?", *filter.RecurrenceGroupID)
+	}
 
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
