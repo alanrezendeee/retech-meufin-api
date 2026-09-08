@@ -1,6 +1,7 @@
 package finance
 
 import (
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,4 +193,53 @@ func cloneOccurrence(base FinancialEntry, due time.Time, groupID *uuid.UUID) Fin
 	occ.CancelReason = nil
 	occ.ResidualOfID = nil
 	return occ
+}
+
+// InstallmentSpec descreve uma parcela informada pelo usuário no lançamento
+// de um parcelamento: vencimento e valor próprios e, opcionalmente, a
+// liquidação já ocorrida (parcelamento antigo lançado retroativamente).
+type InstallmentSpec struct {
+	DueDate     time.Time
+	AmountCents int64
+	// PaidAt presente: a parcela nasce realizada, paga nessa data.
+	PaidAt *time.Time
+	// PaidAmountCents: valor efetivamente pago; default é AmountCents.
+	PaidAmountCents *int64
+}
+
+// GenerateCustomInstallments monta as parcelas a partir da lista informada
+// pelo usuário, em vez da progressão mensal automática. As parcelas são
+// ordenadas por vencimento e numeradas nessa ordem; todas compartilham o
+// mesmo grupo. Parcela com PaidAt nasce realizada com paid_amount_cents
+// (default: o valor da parcela) — sem residual nem desconto, que só existem
+// pelo fluxo de liquidação.
+func GenerateCustomInstallments(base FinancialEntry, specs []InstallmentSpec) []FinancialEntry {
+	sorted := make([]InstallmentSpec, len(specs))
+	copy(sorted, specs)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].DueDate.Before(sorted[j].DueDate) })
+
+	groupID := uuid.New()
+	total := len(sorted)
+	out := make([]FinancialEntry, 0, total)
+	for i, sp := range sorted {
+		occ := cloneOccurrence(base, sp.DueDate, &groupID)
+		occ.Recurrence = RecurrenceNone
+		occ.AmountCents = sp.AmountCents
+		num := i + 1
+		tot := total
+		occ.InstallmentNumber = &num
+		occ.InstallmentTotal = &tot
+		if sp.PaidAt != nil {
+			paidAt := sp.PaidAt.UTC()
+			paid := sp.AmountCents
+			if sp.PaidAmountCents != nil {
+				paid = *sp.PaidAmountCents
+			}
+			occ.Status = StatusRealizada
+			occ.PaidAt = &paidAt
+			occ.PaidAmountCents = &paid
+		}
+		out = append(out, occ)
+	}
+	return out
 }

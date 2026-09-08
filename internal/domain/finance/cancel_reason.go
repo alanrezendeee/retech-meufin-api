@@ -43,6 +43,11 @@ func ValidCancelReason(slug string) bool {
 	return false
 }
 
+// CancelReasonEncerramento é o slug do motivo que encerra a série recorrente
+// — usado pela exclusão em série ("esta e as futuras") para deixar um
+// marcador de fim no lugar do lançamento âncora.
+const CancelReasonEncerramento = "encerramento"
+
 // CancelReasonEndsRecurrence informa se o motivo encerra a série recorrente.
 //
 // Cancelamento SEM motivo (dados anteriores a este catálogo) preserva o

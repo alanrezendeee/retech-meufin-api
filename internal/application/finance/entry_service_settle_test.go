@@ -60,6 +60,17 @@ func (f *fakeEntryRepo) SoftDelete(_ context.Context, _, id uuid.UUID) error {
 	return nil
 }
 
+func (f *fakeEntryRepo) SoftDeleteBatch(_ context.Context, workspaceID uuid.UUID, ids []uuid.UUID) (int, error) {
+	n := 0
+	for _, id := range ids {
+		if e, ok := f.entries[id]; ok && e.WorkspaceID == workspaceID {
+			delete(f.entries, id)
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (f *fakeEntryRepo) List(_ context.Context, _ uuid.UUID, _ dom.FinancialEntryFilter, _, _ int) ([]dom.FinancialEntry, int64, error) {
 	return nil, 0, nil
 }

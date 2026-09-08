@@ -200,6 +200,8 @@ type FinancialEntryFilter struct {
 	DueTo      *time.Time // due_date <= dia
 	Overdue    bool       // due_date < hoje AND status = prevista
 	SupplierID *uuid.UUID // filtra pelo fornecedor vinculado
+	// RecurrenceGroupID: todas as ocorrências/parcelas do grupo (série).
+	RecurrenceGroupID *uuid.UUID
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.
@@ -209,6 +211,10 @@ type FinancialEntryRepository interface {
 	GetByID(ctx context.Context, workspaceID, id uuid.UUID) (*FinancialEntry, error)
 	Update(ctx context.Context, e *FinancialEntry) error
 	SoftDelete(ctx context.Context, workspaceID, id uuid.UUID) error
+	// SoftDeleteBatch exclui vários lançamentos do workspace numa única
+	// transação e devolve quantos foram de fato excluídos — base da exclusão
+	// em série (parcelamento inteiro, esta e as futuras).
+	SoftDeleteBatch(ctx context.Context, workspaceID uuid.UUID, ids []uuid.UUID) (int, error)
 	List(ctx context.Context, workspaceID uuid.UUID, filter FinancialEntryFilter, limit, offset int) ([]FinancialEntry, int64, error)
 	// CascadeStatusToChildren propaga o status da fatura pai para os filhos não cancelados
 	// (liquidar/cancelar a fatura liquida/cancela os itens juntos). paidAt só é aplicado

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -127,6 +128,17 @@ type financialEntryCreateJSON struct {
 	PurchaseDate      *string    `json:"purchase_date"` // YYYY-MM-DD; data da compra (itens de fatura)
 	// Lançamento retroativo: ocorrências vencidas nascem realizadas.
 	ConfirmPastOccurrences bool `json:"confirm_past_occurrences"`
+	// Parcelas informadas uma a uma; substitui a progressão mensal automática.
+	Installments []financialEntryInstallmentJSON `json:"installments"`
+}
+
+// financialEntryInstallmentJSON é uma parcela do editor de parcelamento:
+// vencimento e valor próprios e, opcionalmente, pagamento já ocorrido.
+type financialEntryInstallmentJSON struct {
+	DueDate         string  `json:"due_date" binding:"required"` // YYYY-MM-DD
+	AmountCents     int64   `json:"amount_cents"`
+	PaidAt          *string `json:"paid_at"` // YYYY-MM-DD; presente = parcela nasce realizada
+	PaidAmountCents *int64  `json:"paid_amount_cents"`
 }
 
 func (h *FinancialEntryHandler) Create(c *gin.Context) {
@@ -154,12 +166,31 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		}
 		purchaseDate = &d
 	}
+	var installments []dom.InstallmentSpec
+	for i, it := range body.Installments {
+		d, derr := time.Parse(entryDateLayout, it.DueDate)
+		if derr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, fmt.Sprintf("parcela %d: due_date inválida (use YYYY-MM-DD)", i+1))
+			return
+		}
+		sp := dom.InstallmentSpec{DueDate: d, AmountCents: it.AmountCents, PaidAmountCents: it.PaidAmountCents}
+		if it.PaidAt != nil && *it.PaidAt != "" {
+			p, perr := time.Parse(entryDateLayout, *it.PaidAt)
+			if perr != nil {
+				errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, fmt.Sprintf("parcela %d: paid_at inválida (use YYYY-MM-DD)", i+1))
+				return
+			}
+			sp.PaidAt = &p
+		}
+		installments = append(installments, sp)
+	}
 	entries, err := h.svc.Create(c.Request.Context(), app.CreateEntryInput{
 		WorkspaceID: ws, Kind: body.Kind, Status: body.Status, AmountCents: body.AmountCents,
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
 		SupplierID: body.SupplierID, PurchaseDate: purchaseDate, ConfirmPastOccurrences: body.ConfirmPastOccurrences,
+		Installments: installments,
 	})
 	if err != nil {
 		errrespond.Write(c, err)
@@ -290,6 +321,14 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 		}
 		filter.SupplierID = &sID
 	}
+	if v := c.Query("recurrence_group_id"); v != "" {
+		gID, err := uuid.Parse(v)
+		if err != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "recurrence_group_id inválido")
+			return
+		}
+		filter.RecurrenceGroupID = &gID
+	}
 	if v := c.Query("overdue"); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -418,11 +457,34 @@ func (h *FinancialEntryHandler) Delete(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
 		return
 	}
-	if err := h.svc.Delete(c.Request.Context(), ws, id); err != nil {
+	// scope: one (default) | future | all — alcance em série (parcelamento
+	// ou recorrência). Fora de série, só 'one' é aceito pelo service.
+	scope, ok := app.ParseDeleteScope(c.Query("scope"))
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "scope inválido (use 'one', 'future' ou 'all')")
+		return
+	}
+	res, err := h.svc.Delete(c.Request.Context(), ws, id, scope)
+	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
-	c.Status(http.StatusNoContent)
+	c.JSON(http.StatusOK, financialEntryDeleteResponse{
+		Scope:            string(res.Scope),
+		Deleted:          res.Deleted,
+		DeletedPaid:      res.DeletedPaid,
+		DeletedResiduals: res.DeletedResiduals,
+		RecurrenceEnded:  res.RecurrenceEnded,
+	})
+}
+
+// financialEntryDeleteResponse resume a exclusão (simples ou em série).
+type financialEntryDeleteResponse struct {
+	Scope            string `json:"scope"`
+	Deleted          int    `json:"deleted"`
+	DeletedPaid      int    `json:"deleted_paid"`
+	DeletedResiduals int    `json:"deleted_residuals"`
+	RecurrenceEnded  bool   `json:"recurrence_ended"`
 }
 
 func (h *FinancialEntryHandler) Confirm(c *gin.Context) {
