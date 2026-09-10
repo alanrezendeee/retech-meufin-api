@@ -35,7 +35,7 @@ func (f *fakeRenegRepo) Apply(_ context.Context, r *dom.Renegotiation, originIDs
 		e.Status = dom.StatusCancelada
 		reason := dom.CancelReasonRenegotiation
 		e.CancelReason = &reason
-		e.RenegotiationID = &r.ID
+		e.SettledByRenegotiationID = &r.ID
 	}
 	for _, e := range newEntries {
 		cp := *e
@@ -65,17 +65,36 @@ func (f *fakeRenegRepo) List(_ context.Context, workspaceID uuid.UUID, _, _ int)
 func (f *fakeRenegRepo) ListEntries(_ context.Context, workspaceID, renegotiationID uuid.UUID) ([]dom.FinancialEntry, []dom.FinancialEntry, error) {
 	var origins, created []dom.FinancialEntry
 	for _, e := range f.entries.entries {
-		if e.WorkspaceID != workspaceID || e.RenegotiationID == nil || *e.RenegotiationID != renegotiationID {
+		if e.WorkspaceID != workspaceID {
 			continue
 		}
-		if e.Status == dom.StatusCancelada {
+		if e.SettledByRenegotiationID != nil && *e.SettledByRenegotiationID == renegotiationID {
 			origins = append(origins, *e)
-		} else {
+		}
+		if e.RenegotiationID != nil && *e.RenegotiationID == renegotiationID {
 			created = append(created, *e)
 		}
 	}
 	sort.Slice(created, func(i, j int) bool { return created[i].DueDate.Before(created[j].DueDate) })
 	return origins, created, nil
+}
+
+func (f *fakeRenegRepo) FindByNewGroup(_ context.Context, workspaceID, groupID uuid.UUID) (*dom.Renegotiation, error) {
+	for _, r := range f.events {
+		if r.WorkspaceID == workspaceID && r.NewGroupID != nil && *r.NewGroupID == groupID {
+			return r, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeRenegRepo) FindByOriginGroup(_ context.Context, workspaceID, groupID uuid.UUID) (*dom.Renegotiation, error) {
+	for _, r := range f.events {
+		if r.WorkspaceID == workspaceID && r.OriginGroupID != nil && *r.OriginGroupID == groupID {
+			return r, nil
+		}
+	}
+	return nil, nil
 }
 
 // seedInstallmentDebt monta o cenário real: parcelamento de `total` parcelas de
@@ -452,15 +471,15 @@ func TestReopenBloqueadoPorResidualRenegociado(t *testing.T) {
 	e := seedEntry(repo, dom.StatusRealizada)
 	renegID := uuid.New()
 	res := &dom.FinancialEntry{
-		ID:              uuid.New(),
-		WorkspaceID:     e.WorkspaceID,
-		Kind:            dom.KindDebit,
-		Status:          dom.StatusCancelada,
-		AmountCents:     5_000,
-		DueDate:         e.DueDate,
-		Description:     "Residual de " + e.Description,
-		ResidualOfID:    &e.ID,
-		RenegotiationID: &renegID,
+		ID:                       uuid.New(),
+		WorkspaceID:              e.WorkspaceID,
+		Kind:                     dom.KindDebit,
+		Status:                   dom.StatusCancelada,
+		AmountCents:              5_000,
+		DueDate:                  e.DueDate,
+		Description:              "Residual de " + e.Description,
+		ResidualOfID:             &e.ID,
+		SettledByRenegotiationID: &renegID,
 	}
 	repo.entries[res.ID] = res
 	svc := NewFinancialEntryService(repo, fakeCategoryRepo{})

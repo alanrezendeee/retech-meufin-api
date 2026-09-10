@@ -60,39 +60,40 @@ type SupplierModel struct {
 func (SupplierModel) TableName() string { return "suppliers" }
 
 type FinancialEntryModel struct {
-	ID                uuid.UUID  `gorm:"type:uuid;primaryKey"`
-	WorkspaceID       uuid.UUID  `gorm:"type:uuid;not null;index:idx_financial_entries_workspace"`
-	Kind              string     `gorm:"size:10;not null"`
-	Status            string     `gorm:"size:15;not null;default:prevista"`
-	AmountCents       int64      `gorm:"not null"`
-	DueDate           time.Time  `gorm:"column:due_date;type:date;not null"`
-	FamilyMemberID    *uuid.UUID `gorm:"type:uuid"`
-	SourceID          *uuid.UUID `gorm:"type:uuid"`
-	Type              *string    `gorm:"size:30"`
-	Description       string     `gorm:"type:text;not null;default:''"`
-	Recurrence        string     `gorm:"size:10;not null;default:none"`
-	RecurrenceGroupID *uuid.UUID `gorm:"type:uuid"`
-	CardID            *uuid.UUID `gorm:"column:card_id;type:uuid"`
-	ParentID          *uuid.UUID `gorm:"column:parent_id;type:uuid"`
-	InstallmentNumber *int       `gorm:"column:installment_number"`
-	InstallmentTotal  *int       `gorm:"column:installment_total"`
-	Notes             *string    `gorm:"type:text"`
-	PaidAt            *time.Time `gorm:"column:paid_at"`
-	PaidAmountCents   *int64     `gorm:"column:paid_amount_cents"`
-	PaymentMethod     *string    `gorm:"column:payment_method;size:20"`
-	PaymentAccountID  *uuid.UUID `gorm:"column:payment_account_id;type:uuid"`
-	PaymentCardID     *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
-	DiscountCents     *int64     `gorm:"column:discount_cents"`
-	DiscountReason    *string    `gorm:"column:discount_reason;size:40"`
-	CancelReason      *string    `gorm:"column:cancel_reason;size:30"`
-	RenegotiationID   *uuid.UUID `gorm:"column:renegotiation_id;type:uuid"`
-	ResidualOfID      *uuid.UUID `gorm:"column:residual_of_id;type:uuid"`
-	PurchaseDate      *time.Time `gorm:"column:purchase_date;type:date"`
-	FiscalDocumentID  *uuid.UUID `gorm:"column:fiscal_document_id;type:uuid"`
-	SupplierID        *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
-	CreatedAt         time.Time  `gorm:"not null"`
-	UpdatedAt         time.Time  `gorm:"not null"`
-	DeletedAt         gorm.DeletedAt
+	ID                       uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	WorkspaceID              uuid.UUID  `gorm:"type:uuid;not null;index:idx_financial_entries_workspace"`
+	Kind                     string     `gorm:"size:10;not null"`
+	Status                   string     `gorm:"size:15;not null;default:prevista"`
+	AmountCents              int64      `gorm:"not null"`
+	DueDate                  time.Time  `gorm:"column:due_date;type:date;not null"`
+	FamilyMemberID           *uuid.UUID `gorm:"type:uuid"`
+	SourceID                 *uuid.UUID `gorm:"type:uuid"`
+	Type                     *string    `gorm:"size:30"`
+	Description              string     `gorm:"type:text;not null;default:''"`
+	Recurrence               string     `gorm:"size:10;not null;default:none"`
+	RecurrenceGroupID        *uuid.UUID `gorm:"type:uuid"`
+	CardID                   *uuid.UUID `gorm:"column:card_id;type:uuid"`
+	ParentID                 *uuid.UUID `gorm:"column:parent_id;type:uuid"`
+	InstallmentNumber        *int       `gorm:"column:installment_number"`
+	InstallmentTotal         *int       `gorm:"column:installment_total"`
+	Notes                    *string    `gorm:"type:text"`
+	PaidAt                   *time.Time `gorm:"column:paid_at"`
+	PaidAmountCents          *int64     `gorm:"column:paid_amount_cents"`
+	PaymentMethod            *string    `gorm:"column:payment_method;size:20"`
+	PaymentAccountID         *uuid.UUID `gorm:"column:payment_account_id;type:uuid"`
+	PaymentCardID            *uuid.UUID `gorm:"column:payment_card_id;type:uuid"`
+	DiscountCents            *int64     `gorm:"column:discount_cents"`
+	DiscountReason           *string    `gorm:"column:discount_reason;size:40"`
+	CancelReason             *string    `gorm:"column:cancel_reason;size:30"`
+	RenegotiationID          *uuid.UUID `gorm:"column:renegotiation_id;type:uuid"`
+	SettledByRenegotiationID *uuid.UUID `gorm:"column:settled_by_renegotiation_id;type:uuid"`
+	ResidualOfID             *uuid.UUID `gorm:"column:residual_of_id;type:uuid"`
+	PurchaseDate             *time.Time `gorm:"column:purchase_date;type:date"`
+	FiscalDocumentID         *uuid.UUID `gorm:"column:fiscal_document_id;type:uuid"`
+	SupplierID               *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
+	CreatedAt                time.Time  `gorm:"not null"`
+	UpdatedAt                time.Time  `gorm:"not null"`
+	DeletedAt                gorm.DeletedAt
 }
 
 func (FinancialEntryModel) TableName() string { return "financial_entries" }

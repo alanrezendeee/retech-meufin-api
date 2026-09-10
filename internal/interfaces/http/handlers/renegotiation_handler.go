@@ -105,6 +105,8 @@ func mapRenegotiation(r *dom.Renegotiation) gin.H {
 		"adjustment_cents":     r.AdjustmentCents,
 		"origin_count":         r.OriginCount,
 		"new_count":            r.NewCount,
+		"origin_group_id":      r.OriginGroupID,
+		"new_group_id":         r.NewGroupID,
 		"notes":                r.Notes,
 		"created_at":           r.CreatedAt.UTC().Format(time.RFC3339Nano),
 	}
@@ -266,9 +268,102 @@ func (h *RenegotiationHandler) Get(c *gin.Context) {
 	for i := range d.Created {
 		created = append(created, mapFinancialEntry(&d.Created[i]))
 	}
+	paidBefore := make([]financialEntryResponse, 0, len(d.PaidBefore))
+	for i := range d.PaidBefore {
+		paidBefore = append(paidBefore, mapFinancialEntry(&d.PaidBefore[i]))
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"renegotiation": mapRenegotiation(d.Renegotiation),
-		"origins":       origins,
-		"created":       created,
+		"renegotiation":             mapRenegotiation(d.Renegotiation),
+		"origins":                   origins,
+		"created":                   created,
+		"paid_before":               paidBefore,
+		"paid_before_count":         len(paidBefore),
+		"paid_before_cents":         d.PaidBeforeCents,
+		"previous_renegotiation_id": d.PreviousID,
+		"next_renegotiation_id":     d.NextID,
+		"root_group_id":             d.RootGroupID,
+	})
+}
+
+func fmtDatePtr(t *time.Time) *string {
+	if t == nil {
+		return nil
+	}
+	s := t.Format("2006-01-02")
+	return &s
+}
+
+// Lineage responde GET /finance/debts/:groupId — a história da dívida
+// através das renegociações, a partir de qualquer grupo da cadeia.
+func (h *RenegotiationHandler) Lineage(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "groupId inválido")
+		return
+	}
+	l, err := h.svc.Lineage(c.Request.Context(), ws, groupID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	stages := make([]gin.H, 0, len(l.Stages))
+	for i := range l.Stages {
+		st := &l.Stages[i]
+		entries := make([]financialEntryResponse, 0, len(st.Entries))
+		for j := range st.Entries {
+			entries = append(entries, mapFinancialEntry(&st.Entries[j]))
+		}
+		var reneg, settledBy any
+		if st.Renegotiation != nil {
+			reneg = mapRenegotiation(st.Renegotiation)
+		}
+		if st.SettledBy != nil {
+			settledBy = mapRenegotiation(st.SettledBy)
+		}
+		stages = append(stages, gin.H{
+			"index":             st.Index,
+			"group_id":          st.GroupID,
+			"description":       st.Description,
+			"renegotiation":     reneg,
+			"settled_by":        settledBy,
+			"installment_total": st.InstallmentTotal,
+			"total_cents":       st.TotalCents,
+			"first_due_date":    fmtDatePtr(st.FirstDueDate),
+			"last_due_date":     fmtDatePtr(st.LastDueDate),
+			"paid_count":        st.PaidCount,
+			"paid_cents":        st.PaidCents,
+			"carried_count":     st.CarriedCount,
+			"carried_cents":     st.CarriedCents,
+			"cancelled_count":   st.CancelledCount,
+			"cancelled_cents":   st.CancelledCents,
+			"open_count":        st.OpenCount,
+			"open_cents":        st.OpenCents,
+			"overdue_count":     st.OverdueCount,
+			"overdue_cents":     st.OverdueCents,
+			"entries":           entries,
+		})
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"root_group_id":       l.RootGroupID,
+		"current_group_id":    l.CurrentGroupID,
+		"description":         l.Description,
+		"stages":              stages,
+		"original_cents":      l.OriginalCents,
+		"interest_cents":      l.InterestCents,
+		"discount_cents":      l.DiscountCents,
+		"current_total_cents": l.CurrentTotalCents,
+		"paid_cents":          l.PaidCents,
+		"paid_count":          l.PaidCount,
+		"open_cents":          l.OpenCents,
+		"open_count":          l.OpenCount,
+		"overdue_cents":       l.OverdueCents,
+		"overdue_count":       l.OverdueCount,
+		"renegotiation_count": l.RenegotiationCnt,
+		"settled":             l.Settled,
 	})
 }

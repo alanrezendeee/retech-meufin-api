@@ -11,15 +11,17 @@ import (
 
 // RenegotiationModel mapeia finance_renegotiations.
 type RenegotiationModel struct {
-	ID                 uuid.UUID `gorm:"type:uuid;primaryKey"`
-	WorkspaceID        uuid.UUID `gorm:"type:uuid;not null;index"`
-	Date               time.Time `gorm:"type:date;not null"`
-	Description        string    `gorm:"size:255;not null"`
-	SettledAmountCents int64     `gorm:"not null"`
-	NewAmountCents     int64     `gorm:"not null"`
-	AdjustmentCents    int64     `gorm:"not null"`
-	OriginCount        int       `gorm:"not null"`
-	NewCount           int       `gorm:"not null"`
+	ID                 uuid.UUID  `gorm:"type:uuid;primaryKey"`
+	WorkspaceID        uuid.UUID  `gorm:"type:uuid;not null;index"`
+	Date               time.Time  `gorm:"type:date;not null"`
+	Description        string     `gorm:"size:255;not null"`
+	SettledAmountCents int64      `gorm:"not null"`
+	NewAmountCents     int64      `gorm:"not null"`
+	AdjustmentCents    int64      `gorm:"not null"`
+	OriginCount        int        `gorm:"not null"`
+	NewCount           int        `gorm:"not null"`
+	OriginGroupID      *uuid.UUID `gorm:"type:uuid"`
+	NewGroupID         *uuid.UUID `gorm:"type:uuid"`
 	Notes              *string
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -58,11 +60,14 @@ func (r *RenegotiationRepository) Apply(
 			res := tx.Model(&FinancialEntryModel{}).
 				Where("workspace_id = ? AND id IN ? AND status = ?",
 					reneg.WorkspaceID, originIDs, string(dom.StatusPrevista)).
+				// Só o "encerrado por" muda: o "criado por" (renegotiation_id)
+				// fica, para o acordo anterior continuar enxergando as
+				// parcelas que criou mesmo depois de repactuadas de novo.
 				Updates(map[string]any{
-					"status":           string(dom.StatusCancelada),
-					"cancel_reason":    dom.CancelReasonRenegotiation,
-					"renegotiation_id": reneg.ID,
-					"updated_at":       time.Now().UTC(),
+					"status":                      string(dom.StatusCancelada),
+					"cancel_reason":               dom.CancelReasonRenegotiation,
+					"settled_by_renegotiation_id": reneg.ID,
+					"updated_at":                  time.Now().UTC(),
 				})
 			if res.Error != nil {
 				return mapFinanceErr(res.Error)
@@ -120,12 +125,13 @@ func (r *RenegotiationRepository) List(ctx context.Context, workspaceID uuid.UUI
 	return out, total, nil
 }
 
-// ListEntries separa os lançamentos do evento entre origens encerradas e
-// parcelas novas — o status distingue os dois papéis.
+// ListEntries separa os lançamentos do evento entre origens encerradas
+// (settled_by_renegotiation_id) e parcelas novas (renegotiation_id).
 func (r *RenegotiationRepository) ListEntries(ctx context.Context, workspaceID, renegotiationID uuid.UUID) ([]dom.FinancialEntry, []dom.FinancialEntry, error) {
 	var rows []FinancialEntryModel
 	err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND renegotiation_id = ?", workspaceID, renegotiationID).
+		Where("workspace_id = ? AND (renegotiation_id = ? OR settled_by_renegotiation_id = ?)",
+			workspaceID, renegotiationID, renegotiationID).
 		Order("due_date ASC").
 		Find(&rows).Error
 	if err != nil {
@@ -134,13 +140,37 @@ func (r *RenegotiationRepository) ListEntries(ctx context.Context, workspaceID, 
 	var origins, created []dom.FinancialEntry
 	for i := range rows {
 		e := *modelToFinancialEntry(&rows[i])
-		if e.Status == dom.StatusCancelada {
+		if e.SettledByRenegotiationID != nil && *e.SettledByRenegotiationID == renegotiationID {
 			origins = append(origins, e)
-		} else {
+		}
+		if e.RenegotiationID != nil && *e.RenegotiationID == renegotiationID {
 			created = append(created, e)
 		}
 	}
 	return origins, created, nil
+}
+
+func (r *RenegotiationRepository) FindByNewGroup(ctx context.Context, workspaceID, groupID uuid.UUID) (*dom.Renegotiation, error) {
+	return r.findByGroup(ctx, workspaceID, "new_group_id", groupID)
+}
+
+func (r *RenegotiationRepository) FindByOriginGroup(ctx context.Context, workspaceID, groupID uuid.UUID) (*dom.Renegotiation, error) {
+	return r.findByGroup(ctx, workspaceID, "origin_group_id", groupID)
+}
+
+func (r *RenegotiationRepository) findByGroup(ctx context.Context, workspaceID uuid.UUID, column string, groupID uuid.UUID) (*dom.Renegotiation, error) {
+	var m RenegotiationModel
+	err := r.db.WithContext(ctx).
+		Where("workspace_id = ? AND "+column+" = ?", workspaceID, groupID).
+		Order("date DESC, created_at DESC").
+		First(&m).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, mapFinanceErr(err)
+	}
+	return modelToRenegotiation(&m), nil
 }
 
 // --- conversões ---
@@ -156,6 +186,8 @@ func renegotiationToModel(r *dom.Renegotiation) RenegotiationModel {
 		AdjustmentCents:    r.AdjustmentCents,
 		OriginCount:        r.OriginCount,
 		NewCount:           r.NewCount,
+		OriginGroupID:      r.OriginGroupID,
+		NewGroupID:         r.NewGroupID,
 		Notes:              r.Notes,
 		CreatedAt:          r.CreatedAt,
 		UpdatedAt:          r.UpdatedAt,
@@ -173,6 +205,8 @@ func modelToRenegotiation(m *RenegotiationModel) *dom.Renegotiation {
 		AdjustmentCents:    m.AdjustmentCents,
 		OriginCount:        m.OriginCount,
 		NewCount:           m.NewCount,
+		OriginGroupID:      m.OriginGroupID,
+		NewGroupID:         m.NewGroupID,
 		Notes:              m.Notes,
 		CreatedAt:          m.CreatedAt,
 		UpdatedAt:          m.UpdatedAt,

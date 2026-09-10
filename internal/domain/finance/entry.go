@@ -89,9 +89,14 @@ type FinancialEntry struct {
 	// CancelReason é o slug do catálogo global CancelReasons, preenchido no
 	// cancelamento. Determina se a série recorrente é encerrada ou continua.
 	CancelReason *string
-	// RenegotiationID vincula o lançamento a um evento de renegociação, tanto
-	// nas cobranças encerradas (origens) quanto nas parcelas novas.
+	// RenegotiationID aponta para o acordo que CRIOU o lançamento (parcela
+	// nova de uma renegociação).
 	RenegotiationID *uuid.UUID
+	// SettledByRenegotiationID aponta para o acordo que ENCERROU o
+	// lançamento (cobrança em aberto cancelada por renegociação). Os dois
+	// campos coexistem: a parcela criada pelo acordo 1 e encerrada pelo
+	// acordo 2 carrega ambos — é o que mantém a cadeia navegável.
+	SettledByRenegotiationID *uuid.UUID
 	// ResidualOfID aponta para o lançamento de origem quando este lançamento
 	// nasceu de um pagamento parcial (desdobramento do saldo não pago).
 	ResidualOfID *uuid.UUID
