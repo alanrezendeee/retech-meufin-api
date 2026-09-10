@@ -26,37 +26,39 @@ func NewFinancialEntryHandler(svc *app.FinancialEntryService) *FinancialEntryHan
 }
 
 type financialEntryResponse struct {
-	ID                uuid.UUID  `json:"id"`
-	WorkspaceID       uuid.UUID  `json:"workspace_id"`
-	Kind              string     `json:"kind"`
-	Status            string     `json:"status"`
-	AmountCents       int64      `json:"amount_cents"`
-	DueDate           string     `json:"due_date"`
-	FamilyMemberID    *uuid.UUID `json:"family_member_id"`
-	SourceID          *uuid.UUID `json:"source_id"`
-	Type              *string    `json:"type"`
-	Description       string     `json:"description"`
-	Recurrence        string     `json:"recurrence"`
-	RecurrenceGroupID *uuid.UUID `json:"recurrence_group_id"`
-	CardID            *uuid.UUID `json:"card_id"`
-	ParentID          *uuid.UUID `json:"parent_id"`
-	InstallmentNumber *int       `json:"installment_number"`
-	InstallmentTotal  *int       `json:"installment_total"`
-	Notes             *string    `json:"notes"`
-	PaidAt            *string    `json:"paid_at"`
-	PaidAmountCents   *int64     `json:"paid_amount_cents"`
-	PaymentMethod     *string    `json:"payment_method"`
-	PaymentAccountID  *uuid.UUID `json:"payment_account_id"`
-	PaymentCardID     *uuid.UUID `json:"payment_card_id"`
-	DiscountCents     *int64     `json:"discount_cents"`
-	DiscountReason    *string    `json:"discount_reason"`
-	CancelReason      *string    `json:"cancel_reason"`
-	ResidualOfID      *uuid.UUID `json:"residual_of_id"`
-	PurchaseDate      *string    `json:"purchase_date"`
-	FiscalDocumentID  *uuid.UUID `json:"fiscal_document_id"`
-	SupplierID        *uuid.UUID `json:"supplier_id"`
-	CreatedAt         string     `json:"created_at"`
-	UpdatedAt         string     `json:"updated_at"`
+	ID                       uuid.UUID  `json:"id"`
+	WorkspaceID              uuid.UUID  `json:"workspace_id"`
+	Kind                     string     `json:"kind"`
+	Status                   string     `json:"status"`
+	AmountCents              int64      `json:"amount_cents"`
+	DueDate                  string     `json:"due_date"`
+	FamilyMemberID           *uuid.UUID `json:"family_member_id"`
+	SourceID                 *uuid.UUID `json:"source_id"`
+	Type                     *string    `json:"type"`
+	Description              string     `json:"description"`
+	Recurrence               string     `json:"recurrence"`
+	RecurrenceGroupID        *uuid.UUID `json:"recurrence_group_id"`
+	CardID                   *uuid.UUID `json:"card_id"`
+	ParentID                 *uuid.UUID `json:"parent_id"`
+	InstallmentNumber        *int       `json:"installment_number"`
+	InstallmentTotal         *int       `json:"installment_total"`
+	Notes                    *string    `json:"notes"`
+	PaidAt                   *string    `json:"paid_at"`
+	PaidAmountCents          *int64     `json:"paid_amount_cents"`
+	PaymentMethod            *string    `json:"payment_method"`
+	PaymentAccountID         *uuid.UUID `json:"payment_account_id"`
+	PaymentCardID            *uuid.UUID `json:"payment_card_id"`
+	DiscountCents            *int64     `json:"discount_cents"`
+	DiscountReason           *string    `json:"discount_reason"`
+	CancelReason             *string    `json:"cancel_reason"`
+	ResidualOfID             *uuid.UUID `json:"residual_of_id"`
+	RenegotiationID          *uuid.UUID `json:"renegotiation_id"`
+	SettledByRenegotiationID *uuid.UUID `json:"settled_by_renegotiation_id"`
+	PurchaseDate             *string    `json:"purchase_date"`
+	FiscalDocumentID         *uuid.UUID `json:"fiscal_document_id"`
+	SupplierID               *uuid.UUID `json:"supplier_id"`
+	CreatedAt                string     `json:"created_at"`
+	UpdatedAt                string     `json:"updated_at"`
 }
 
 func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
@@ -76,37 +78,39 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		purchaseDate = &v
 	}
 	return financialEntryResponse{
-		ID:                e.ID,
-		WorkspaceID:       e.WorkspaceID,
-		Kind:              string(e.Kind),
-		Status:            string(e.Status),
-		AmountCents:       e.AmountCents,
-		DueDate:           e.DueDate.Format(entryDateLayout),
-		FamilyMemberID:    e.FamilyMemberID,
-		SourceID:          e.SourceID,
-		Type:              e.Type,
-		Description:       e.Description,
-		Recurrence:        string(e.Recurrence),
-		RecurrenceGroupID: e.RecurrenceGroupID,
-		CardID:            e.CardID,
-		ParentID:          e.ParentID,
-		InstallmentNumber: e.InstallmentNumber,
-		InstallmentTotal:  e.InstallmentTotal,
-		Notes:             e.Notes,
-		PaidAt:            paidAt,
-		PaidAmountCents:   e.PaidAmountCents,
-		PaymentMethod:     paymentMethod,
-		PaymentAccountID:  e.PaymentAccountID,
-		PaymentCardID:     e.PaymentCardID,
-		DiscountCents:     e.DiscountCents,
-		DiscountReason:    e.DiscountReason,
-		CancelReason:      e.CancelReason,
-		ResidualOfID:      e.ResidualOfID,
-		PurchaseDate:      purchaseDate,
-		FiscalDocumentID:  e.FiscalDocumentID,
-		SupplierID:        e.SupplierID,
-		CreatedAt:         e.CreatedAt.UTC().Format(time.RFC3339Nano),
-		UpdatedAt:         e.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		ID:                       e.ID,
+		WorkspaceID:              e.WorkspaceID,
+		Kind:                     string(e.Kind),
+		Status:                   string(e.Status),
+		AmountCents:              e.AmountCents,
+		DueDate:                  e.DueDate.Format(entryDateLayout),
+		FamilyMemberID:           e.FamilyMemberID,
+		SourceID:                 e.SourceID,
+		Type:                     e.Type,
+		Description:              e.Description,
+		Recurrence:               string(e.Recurrence),
+		RecurrenceGroupID:        e.RecurrenceGroupID,
+		CardID:                   e.CardID,
+		ParentID:                 e.ParentID,
+		InstallmentNumber:        e.InstallmentNumber,
+		InstallmentTotal:         e.InstallmentTotal,
+		Notes:                    e.Notes,
+		PaidAt:                   paidAt,
+		PaidAmountCents:          e.PaidAmountCents,
+		PaymentMethod:            paymentMethod,
+		PaymentAccountID:         e.PaymentAccountID,
+		PaymentCardID:            e.PaymentCardID,
+		DiscountCents:            e.DiscountCents,
+		DiscountReason:           e.DiscountReason,
+		CancelReason:             e.CancelReason,
+		ResidualOfID:             e.ResidualOfID,
+		RenegotiationID:          e.RenegotiationID,
+		SettledByRenegotiationID: e.SettledByRenegotiationID,
+		PurchaseDate:             purchaseDate,
+		FiscalDocumentID:         e.FiscalDocumentID,
+		SupplierID:               e.SupplierID,
+		CreatedAt:                e.CreatedAt.UTC().Format(time.RFC3339Nano),
+		UpdatedAt:                e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 

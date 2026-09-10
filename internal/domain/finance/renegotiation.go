@@ -34,9 +34,14 @@ type Renegotiation struct {
 	// OriginCount / NewCount: quantos lançamentos entraram e quantos nasceram.
 	OriginCount int
 	NewCount    int
-	Notes       *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// OriginGroupID é o parcelamento renegociado; NewGroupID é o grupo da
+	// série nova. Juntos encadeiam acordos sucessivos (o NewGroupID de um é
+	// o OriginGroupID do seguinte) e ancoram a linhagem da dívida.
+	OriginGroupID *uuid.UUID
+	NewGroupID    *uuid.UUID
+	Notes         *string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // IsDiscount informa se a renegociação resultou em abatimento.
@@ -78,4 +83,10 @@ type RenegotiationRepository interface {
 	// ListEntries devolve os lançamentos vinculados ao evento, separados
 	// entre origens (canceladas) e as parcelas novas.
 	ListEntries(ctx context.Context, workspaceID, renegotiationID uuid.UUID) (origins, created []FinancialEntry, err error)
+	// FindByNewGroup devolve o acordo que criou o grupo; nil sem erro quando
+	// o grupo é um parcelamento original.
+	FindByNewGroup(ctx context.Context, workspaceID, groupID uuid.UUID) (*Renegotiation, error)
+	// FindByOriginGroup devolve o acordo que encerrou o grupo; nil sem erro
+	// quando o grupo ainda não foi renegociado.
+	FindByOriginGroup(ctx context.Context, workspaceID, groupID uuid.UUID) (*Renegotiation, error)
 }

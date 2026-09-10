@@ -317,6 +317,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.POST("/renegotiations", renegH.Create)
 		finance.GET("/renegotiations", renegH.List)
 		finance.GET("/renegotiations/:id", renegH.Get)
+		finance.GET("/debts/:groupId", renegH.Lineage)
 
 		// Comprovantes de pagamento anexados a lançamentos.
 		receiptH := handlers.NewFinanceReceiptHandler(d.FinanceDocumentService, d.FinancialEntryService)

@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -337,6 +338,12 @@ func (s *RenegotiationService) Renegotiate(ctx context.Context, in RenegotiateIn
 		SupplierID:     template.SupplierID,
 	}
 	occurrences := dom.GenerateInstallments(base, in.InstallmentCount)
+	originGroup := in.GroupID
+	reneg.OriginGroupID = &originGroup
+	if len(occurrences) > 0 && occurrences[0].RecurrenceGroupID != nil {
+		newGroup := *occurrences[0].RecurrenceGroupID
+		reneg.NewGroupID = &newGroup
+	}
 
 	now := time.Now().UTC()
 	batch := make([]*dom.FinancialEntry, len(occurrences))
@@ -363,11 +370,22 @@ func (s *RenegotiationService) Renegotiate(ctx context.Context, in RenegotiateIn
 }
 
 // Get devolve o evento com os lançamentos dos dois lados — a trilha que liga
-// as cobranças encerradas às parcelas novas.
+// as cobranças encerradas às parcelas novas — mais o que já tinha sido pago
+// do acordo antigo antes da repactuação e os vizinhos na cadeia.
 type RenegotiationDetail struct {
 	Renegotiation *dom.Renegotiation
 	Origins       []dom.FinancialEntry
 	Created       []dom.FinancialEntry
+	// PaidBefore: parcelas (e residuais) do grupo de origem quitadas antes
+	// do acordo. Não entram no saldo apurado, mas são parte da história da
+	// dívida — "quanto eu já tinha pago quando renegociei".
+	PaidBefore      []dom.FinancialEntry
+	PaidBeforeCents int64
+	// Previous/Next: acordo que criou o grupo de origem e acordo que
+	// encerrou o grupo criado, quando existem.
+	PreviousID  *uuid.UUID
+	NextID      *uuid.UUID
+	RootGroupID *uuid.UUID
 }
 
 func (s *RenegotiationService) Get(ctx context.Context, workspaceID, id uuid.UUID) (*RenegotiationDetail, error) {
@@ -379,7 +397,264 @@ func (s *RenegotiationService) Get(ctx context.Context, workspaceID, id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	return &RenegotiationDetail{Renegotiation: reneg, Origins: origins, Created: created}, nil
+	out := &RenegotiationDetail{Renegotiation: reneg, Origins: origins, Created: created}
+
+	if reneg.OriginGroupID != nil {
+		series, err := s.entries.ListGroup(ctx, workspaceID, *reneg.OriginGroupID)
+		if err != nil {
+			return nil, err
+		}
+		ids := make([]uuid.UUID, 0, len(series))
+		for i := range series {
+			ids = append(ids, series[i].ID)
+			if series[i].Status == dom.StatusRealizada {
+				out.PaidBefore = append(out.PaidBefore, series[i])
+				out.PaidBeforeCents += paidOf(&series[i])
+			}
+		}
+		residuals, err := s.entries.ListResidualsOf(ctx, workspaceID, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range residuals {
+			if residuals[i].Status == dom.StatusRealizada {
+				out.PaidBefore = append(out.PaidBefore, residuals[i])
+				out.PaidBeforeCents += paidOf(&residuals[i])
+			}
+		}
+		sort.Slice(out.PaidBefore, func(i, j int) bool { return out.PaidBefore[i].DueDate.Before(out.PaidBefore[j].DueDate) })
+
+		prev, err := s.renegs.FindByNewGroup(ctx, workspaceID, *reneg.OriginGroupID)
+		if err != nil {
+			return nil, err
+		}
+		if prev != nil {
+			out.PreviousID = &prev.ID
+		}
+		root, err := s.rootGroup(ctx, workspaceID, *reneg.OriginGroupID)
+		if err != nil {
+			return nil, err
+		}
+		out.RootGroupID = &root
+	}
+	if reneg.NewGroupID != nil {
+		next, err := s.renegs.FindByOriginGroup(ctx, workspaceID, *reneg.NewGroupID)
+		if err != nil {
+			return nil, err
+		}
+		if next != nil {
+			out.NextID = &next.ID
+		}
+	}
+	return out, nil
+}
+
+// paidOf devolve o valor efetivamente pago de um lançamento realizado.
+func paidOf(e *dom.FinancialEntry) int64 {
+	if e.PaidAmountCents != nil {
+		return *e.PaidAmountCents
+	}
+	return e.AmountCents
+}
+
+// rootGroup anda a cadeia para trás até o parcelamento original.
+func (s *RenegotiationService) rootGroup(ctx context.Context, workspaceID, groupID uuid.UUID) (uuid.UUID, error) {
+	cur := groupID
+	for hops := 0; hops < 100; hops++ {
+		prev, err := s.renegs.FindByNewGroup(ctx, workspaceID, cur)
+		if err != nil {
+			return uuid.Nil, err
+		}
+		if prev == nil || prev.OriginGroupID == nil || *prev.OriginGroupID == cur {
+			return cur, nil
+		}
+		cur = *prev.OriginGroupID
+	}
+	return cur, nil
+}
+
+// DebtStage é uma etapa da dívida: o parcelamento original ou a série criada
+// por um acordo. Cada etapa fecha as próprias contas — o que foi pago, o que
+// foi levado ao acordo seguinte e o que ainda está em aberto.
+type DebtStage struct {
+	Index       int
+	GroupID     uuid.UUID
+	Description string
+	// Renegotiation é o acordo que criou esta etapa (nil na original).
+	Renegotiation *dom.Renegotiation
+	// SettledBy é o acordo que encerrou esta etapa (nil na etapa vigente).
+	SettledBy *dom.Renegotiation
+	// TotalCents: soma das parcelas da série (o "valor do acordo" da etapa).
+	InstallmentTotal int
+	TotalCents       int64
+	FirstDueDate     *time.Time
+	LastDueDate      *time.Time
+	// Pago: parcelas e residuais realizados desta etapa.
+	PaidCount int
+	PaidCents int64
+	// Carregado: cobranças canceladas por renegociação (saldo que foi para
+	// o acordo seguinte).
+	CarriedCount int
+	CarriedCents int64
+	// Cancelado por outro motivo (fora da dívida).
+	CancelledCount int
+	CancelledCents int64
+	// Em aberto: previstas (parcelas + residuais) — só na etapa vigente.
+	OpenCount    int
+	OpenCents    int64
+	OverdueCount int
+	OverdueCents int64
+	// Entries: a série inteira mais os residuais, por vencimento.
+	Entries []dom.FinancialEntry
+}
+
+// DebtLineage é a história completa de uma dívida através das suas
+// renegociações, com o balanço consolidado.
+type DebtLineage struct {
+	RootGroupID    uuid.UUID
+	CurrentGroupID uuid.UUID
+	Description    string
+	Stages         []DebtStage
+	// Balanço.
+	OriginalCents     int64 // valor do parcelamento original
+	InterestCents     int64 // encargos somados das renegociações
+	DiscountCents     int64 // descontos somados das renegociações
+	CurrentTotalCents int64 // original + encargos - descontos
+	PaidCents         int64 // pago em todas as etapas
+	PaidCount         int
+	OpenCents         int64 // em aberto na etapa vigente
+	OpenCount         int
+	OverdueCents      int64
+	OverdueCount      int
+	RenegotiationCnt  int
+	Settled           bool // nada em aberto
+}
+
+// Lineage monta a linhagem a partir de QUALQUER grupo da cadeia: volta até a
+// raiz e avança acordo a acordo até a etapa vigente.
+func (s *RenegotiationService) Lineage(ctx context.Context, workspaceID, groupID uuid.UUID) (*DebtLineage, error) {
+	root, err := s.rootGroup(ctx, workspaceID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	out := &DebtLineage{RootGroupID: root}
+	cur := root
+	var createdBy *dom.Renegotiation
+	for hops := 0; hops < 100; hops++ {
+		stage, err := s.buildStage(ctx, workspaceID, cur, len(out.Stages), createdBy, today)
+		if err != nil {
+			return nil, err
+		}
+		next, err := s.renegs.FindByOriginGroup(ctx, workspaceID, cur)
+		if err != nil {
+			return nil, err
+		}
+		stage.SettledBy = next
+		out.Stages = append(out.Stages, *stage)
+		if next == nil || next.NewGroupID == nil || *next.NewGroupID == cur {
+			break
+		}
+		createdBy = next
+		cur = *next.NewGroupID
+	}
+	if len(out.Stages) == 0 {
+		return nil, dom.ErrNotFound
+	}
+
+	first := out.Stages[0]
+	last := out.Stages[len(out.Stages)-1]
+	out.CurrentGroupID = last.GroupID
+	out.Description = last.Description
+	out.OriginalCents = first.TotalCents
+	for i := range out.Stages {
+		st := &out.Stages[i]
+		out.PaidCents += st.PaidCents
+		out.PaidCount += st.PaidCount
+		out.OpenCents += st.OpenCents
+		out.OpenCount += st.OpenCount
+		out.OverdueCents += st.OverdueCents
+		out.OverdueCount += st.OverdueCount
+		if st.Renegotiation != nil {
+			out.RenegotiationCnt++
+			if st.Renegotiation.AdjustmentCents > 0 {
+				out.InterestCents += st.Renegotiation.AdjustmentCents
+			} else {
+				out.DiscountCents += -st.Renegotiation.AdjustmentCents
+			}
+		}
+	}
+	out.CurrentTotalCents = out.OriginalCents + out.InterestCents - out.DiscountCents
+	out.Settled = out.OpenCount == 0
+	return out, nil
+}
+
+func (s *RenegotiationService) buildStage(ctx context.Context, workspaceID, groupID uuid.UUID, index int, createdBy *dom.Renegotiation, today time.Time) (*DebtStage, error) {
+	series, err := s.entries.ListGroup(ctx, workspaceID, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if len(series) == 0 {
+		return nil, dom.ErrNotFound
+	}
+	ids := make([]uuid.UUID, 0, len(series))
+	for i := range series {
+		ids = append(ids, series[i].ID)
+	}
+	residuals, err := s.entries.ListResidualsOf(ctx, workspaceID, ids)
+	if err != nil {
+		return nil, err
+	}
+
+	st := &DebtStage{Index: index, GroupID: groupID, Renegotiation: createdBy}
+	// Descrição e total de parcelas: da parcela mais recente (é a exibida
+	// como nome do parcelamento e reflete renomeações).
+	latest := series[len(series)-1]
+	st.Description = latest.Description
+	if latest.InstallmentTotal != nil {
+		st.InstallmentTotal = *latest.InstallmentTotal
+	}
+	for i := range series {
+		e := &series[i]
+		st.TotalCents += e.AmountCents
+		if st.FirstDueDate == nil || e.DueDate.Before(*st.FirstDueDate) {
+			d := e.DueDate
+			st.FirstDueDate = &d
+		}
+		if st.LastDueDate == nil || e.DueDate.After(*st.LastDueDate) {
+			d := e.DueDate
+			st.LastDueDate = &d
+		}
+	}
+	all := append(append([]dom.FinancialEntry{}, series...), residuals...)
+	sort.SliceStable(all, func(i, j int) bool { return all[i].DueDate.Before(all[j].DueDate) })
+	for i := range all {
+		e := &all[i]
+		switch e.Status {
+		case dom.StatusRealizada:
+			st.PaidCount++
+			st.PaidCents += paidOf(e)
+		case dom.StatusPrevista:
+			st.OpenCount++
+			st.OpenCents += e.AmountCents
+			if chargeStatusFor(e.DueDate, today) == ChargeOverdue {
+				st.OverdueCount++
+				st.OverdueCents += e.AmountCents
+			}
+		case dom.StatusCancelada:
+			if e.SettledByRenegotiationID != nil {
+				st.CarriedCount++
+				st.CarriedCents += e.AmountCents
+			} else {
+				st.CancelledCount++
+				st.CancelledCents += e.AmountCents
+			}
+		}
+	}
+	st.Entries = all
+	return st, nil
 }
 
 type ListRenegotiationsResult struct {

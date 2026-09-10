@@ -1089,7 +1089,7 @@ func (s *FinancialEntryService) Reopen(ctx context.Context, workspaceID, id uuid
 		}
 		// Residual que entrou numa renegociação virou parcela do novo acordo:
 		// reabrir a parcela original recriaria uma dívida que já foi repactuada.
-		if r.RenegotiationID != nil {
+		if r.SettledByRenegotiationID != nil {
 			return nil, &dom.ValidationError{Msg: "o residual deste lançamento foi renegociado; desfaça a renegociação antes de reabrir"}
 		}
 	}
