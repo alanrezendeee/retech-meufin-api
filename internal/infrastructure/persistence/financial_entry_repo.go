@@ -72,6 +72,8 @@ func (r *FinancialEntryRepository) Update(ctx context.Context, e *dom.FinancialE
 			"purchase_date":               model.PurchaseDate,
 			"fiscal_document_id":          model.FiscalDocumentID,
 			"supplier_id":                 model.SupplierID,
+			"asset_type":                  model.AssetType,
+			"asset_id":                    model.AssetID,
 			"updated_at":                  model.UpdatedAt,
 		})
 	if res.Error != nil {
@@ -189,6 +191,12 @@ func (r *FinancialEntryRepository) List(ctx context.Context, workspaceID uuid.UU
 	}
 	if filter.RecurrenceGroupID != nil {
 		base = base.Where("recurrence_group_id = ?", *filter.RecurrenceGroupID)
+	}
+	if filter.AssetID != nil {
+		base = base.Where("asset_id = ?", *filter.AssetID)
+	}
+	if filter.AssetType != nil && *filter.AssetType != "" {
+		base = base.Where("asset_type = ?", string(*filter.AssetType))
 	}
 
 	var total int64
@@ -450,9 +458,27 @@ func financialEntryToModel(e *dom.FinancialEntry) FinancialEntryModel {
 		PurchaseDate:             e.PurchaseDate,
 		FiscalDocumentID:         e.FiscalDocumentID,
 		SupplierID:               e.SupplierID,
+		AssetType:                assetTypeToString(e.AssetType),
+		AssetID:                  e.AssetID,
 		CreatedAt:                e.CreatedAt,
 		UpdatedAt:                e.UpdatedAt,
 	}
+}
+
+func assetTypeToString(t *dom.AssetType) *string {
+	if t == nil || *t == "" {
+		return nil
+	}
+	s := string(*t)
+	return &s
+}
+
+func stringToAssetType(s *string) *dom.AssetType {
+	if s == nil || *s == "" {
+		return nil
+	}
+	t := dom.AssetType(*s)
+	return &t
 }
 
 func paymentMethodToString(m *dom.PaymentMethod) *string {
@@ -504,7 +530,67 @@ func modelToFinancialEntry(m *FinancialEntryModel) *dom.FinancialEntry {
 		PurchaseDate:             m.PurchaseDate,
 		FiscalDocumentID:         m.FiscalDocumentID,
 		SupplierID:               m.SupplierID,
+		AssetType:                stringToAssetType(m.AssetType),
+		AssetID:                  m.AssetID,
 		CreatedAt:                m.CreatedAt,
 		UpdatedAt:                m.UpdatedAt,
 	}
+}
+
+// SetGroupAsset vincula o grupo inteiro (e os residuais das parcelas) a um
+// bem. Vínculo é rótulo, não valor: não reescreve história financeira.
+func (r *FinancialEntryRepository) SetGroupAsset(ctx context.Context, workspaceID, groupID uuid.UUID, assetType *dom.AssetType, assetID *uuid.UUID) (int, error) {
+	updates := map[string]any{
+		"asset_type": assetTypeToString(assetType),
+		"asset_id":   assetID,
+		"updated_at": time.Now().UTC(),
+	}
+	var n int
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&FinancialEntryModel{}).
+			Where("workspace_id = ? AND recurrence_group_id = ?", workspaceID, groupID).
+			Updates(updates)
+		if res.Error != nil {
+			return mapFinanceErr(res.Error)
+		}
+		n = int(res.RowsAffected)
+		if n == 0 {
+			return dom.ErrNotFound
+		}
+		if err := tx.Model(&FinancialEntryModel{}).
+			Where(`workspace_id = ? AND residual_of_id IN (
+			           SELECT id FROM financial_entries WHERE workspace_id = ? AND recurrence_group_id = ?)`,
+				workspaceID, workspaceID, groupID).
+			Updates(updates).Error; err != nil {
+			return mapFinanceErr(err)
+		}
+		return nil
+	})
+	return n, err
+}
+
+// ListGroupIDsByAsset devolve os parcelamentos vinculados ao bem, do mais
+// recente ao mais antigo (pela primeira parcela). Só grupos com parcelas
+// numeradas: lançamentos avulsos do bem (quitação, venda) não são contrato.
+func (r *FinancialEntryRepository) ListGroupIDsByAsset(ctx context.Context, workspaceID uuid.UUID, assetType dom.AssetType, assetID uuid.UUID) ([]uuid.UUID, error) {
+	type row struct {
+		GroupID  uuid.UUID `gorm:"column:group_id"`
+		FirstDue time.Time `gorm:"column:first_due"`
+	}
+	var rows []row
+	err := r.db.WithContext(ctx).Model(&FinancialEntryModel{}).
+		Select("recurrence_group_id AS group_id, MIN(due_date) AS first_due").
+		Where("workspace_id = ? AND asset_type = ? AND asset_id = ? AND recurrence_group_id IS NOT NULL AND installment_total IS NOT NULL",
+			workspaceID, string(assetType), assetID).
+		Group("recurrence_group_id").
+		Order("first_due DESC").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, mapFinanceErr(err)
+	}
+	out := make([]uuid.UUID, len(rows))
+	for i := range rows {
+		out[i] = rows[i].GroupID
+	}
+	return out, nil
 }

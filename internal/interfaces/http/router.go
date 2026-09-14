@@ -311,6 +311,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		// série nova, vinculando os dois lados ao mesmo evento.
 		renegH := handlers.NewRenegotiationHandler(d.RenegotiationService)
 		finance.PUT("/installments/:groupId", entH.RenameInstallmentGroup)
+		finance.PUT("/installments/:groupId/asset", entH.LinkInstallmentGroupAsset)
 		finance.GET("/installments/:groupId/renegotiation-preview", renegH.Preview)
 		finance.GET("/entries/:id/renegotiation-preview", renegH.PreviewByEntry)
 		finance.GET("/entries/:id/events", entH.Events)
@@ -318,6 +319,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.GET("/renegotiations", renegH.List)
 		finance.GET("/renegotiations/:id", renegH.Get)
 		finance.GET("/debts/:groupId", renegH.Lineage)
+		// Quitação antecipada e troca de bem financiado: mesmo evento, outro
+		// desfecho. A quitação encerra a dívida com um lançamento realizado;
+		// a troca soma quitação + venda do usado + financiamento novo.
+		finance.POST("/debts/:groupId/payoff", renegH.Payoff)
+		finance.POST("/asset-swaps", renegH.AssetSwap)
+		finance.GET("/assets/:assetType/:assetId/debts", renegH.AssetDebts)
 
 		// Comprovantes de pagamento anexados a lançamentos.
 		receiptH := handlers.NewFinanceReceiptHandler(d.FinanceDocumentService, d.FinancialEntryService)

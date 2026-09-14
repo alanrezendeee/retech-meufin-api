@@ -12,8 +12,12 @@ package finance
 var IncomeTypes = map[string]struct{}{
 	"salario": {}, "pj_contrato": {}, "pro_labore": {}, "dividendos": {},
 	"rendimento": {}, "aluguel": {}, "freela": {}, "ferias_13": {},
-	"beneficio": {}, "reembolso": {}, "outro": {},
+	"beneficio": {}, "reembolso": {}, "venda_bem": {}, "outro": {},
 }
+
+// IncomeTypeAssetSale é a receita de venda de um bem (troca de veículo,
+// venda direta). Gravada pelo evento de troca sem passar pela UI.
+const IncomeTypeAssetSale = "venda_bem"
 
 // validEntryType valida o que é estático: tipos de receita. Categorias de
 // despesa passam aqui (validação dinâmica no serviço).

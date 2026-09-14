@@ -45,12 +45,35 @@ const (
 	PaymentBoleto        PaymentMethod = "boleto"
 	PaymentDinheiro      PaymentMethod = "dinheiro"
 	PaymentCartaoCredito PaymentMethod = "cartao_credito"
+	// PaymentCompensacao: liquidação SEM movimento de caixa — o valor foi
+	// compensado com outro (ex.: concessionária quitou o financiamento
+	// abatendo do valor do carro usado dado como entrada). Lançamentos com
+	// esta forma entram nos relatórios de dívida e patrimônio, mas ficam
+	// fora do fluxo de caixa.
+	PaymentCompensacao PaymentMethod = "compensacao"
 )
 
 // ValidPaymentMethod informa se o método de pagamento é conhecido.
 func ValidPaymentMethod(m PaymentMethod) bool {
 	switch m {
-	case PaymentPix, PaymentDebito, PaymentTransferencia, PaymentBoleto, PaymentDinheiro, PaymentCartaoCredito:
+	case PaymentPix, PaymentDebito, PaymentTransferencia, PaymentBoleto, PaymentDinheiro, PaymentCartaoCredito, PaymentCompensacao:
+		return true
+	}
+	return false
+}
+
+// AssetType identifica a tabela do bem vinculado a um lançamento.
+type AssetType string
+
+const (
+	AssetVehicle  AssetType = "vehicle"
+	AssetProperty AssetType = "property"
+)
+
+// ValidAssetType informa se o tipo de bem é conhecido.
+func ValidAssetType(t AssetType) bool {
+	switch t {
+	case AssetVehicle, AssetProperty:
 		return true
 	}
 	return false
@@ -107,8 +130,13 @@ type FinancialEntry struct {
 	// cujo detalhamento item a item está vinculado a este lançamento.
 	FiscalDocumentID *uuid.UUID
 	SupplierID       *uuid.UUID
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// AssetType/AssetID vinculam o lançamento ao bem que ele paga ou vende
+	// (parcela de financiamento → veículo; quitação → veículo; venda → bem).
+	// Sem FK física: o módulo financeiro não depende da tabela de cada bem.
+	AssetType *AssetType
+	AssetID   *uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 // Validate valida invariantes do lançamento.
@@ -177,6 +205,12 @@ func (e *FinancialEntry) Validate() error {
 			return &ValidationError{Msg: "motivo de cancelamento só vale em lançamento cancelado"}
 		}
 	}
+	if e.AssetType != nil && *e.AssetType != "" && !ValidAssetType(*e.AssetType) {
+		return &ValidationError{Msg: "asset_type inválido"}
+	}
+	if (e.AssetType == nil || *e.AssetType == "") != (e.AssetID == nil) {
+		return &ValidationError{Msg: "asset_type e asset_id devem vir juntos"}
+	}
 	e.Description = strings.TrimSpace(e.Description)
 	return nil
 }
@@ -207,6 +241,9 @@ type FinancialEntryFilter struct {
 	SupplierID *uuid.UUID // filtra pelo fornecedor vinculado
 	// RecurrenceGroupID: todas as ocorrências/parcelas do grupo (série).
 	RecurrenceGroupID *uuid.UUID
+	// AssetType/AssetID: lançamentos vinculados a um bem.
+	AssetType *AssetType
+	AssetID   *uuid.UUID
 }
 
 // FinancialEntryRepository persiste lançamentos com escopo de workspace.
@@ -253,4 +290,10 @@ type FinancialEntryRepository interface {
 	// as já pagas, e dos residuais cujo nome deriva da descrição antiga.
 	// Descrição é rótulo, não valor: renomear não reescreve história financeira.
 	RenameGroup(ctx context.Context, workspaceID, groupID uuid.UUID, oldDesc, newDesc string) (entries, residuals int, err error)
+	// ListGroupIDsByAsset devolve os parcelamentos (grupos com parcelas
+	// numeradas) vinculados ao bem, do mais recente ao mais antigo.
+	ListGroupIDsByAsset(ctx context.Context, workspaceID uuid.UUID, assetType AssetType, assetID uuid.UUID) ([]uuid.UUID, error)
+	// SetGroupAsset vincula (ou desvincula, com nil) TODAS as parcelas do
+	// grupo e os residuais derivados a um bem. Devolve quantas mudaram.
+	SetGroupAsset(ctx context.Context, workspaceID, groupID uuid.UUID, assetType *AssetType, assetID *uuid.UUID) (int, error)
 }

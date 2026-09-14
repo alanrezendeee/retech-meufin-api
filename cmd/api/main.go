@@ -260,7 +260,7 @@ func main() {
 	financialEntrySvc := appf.NewFinancialEntryService(financialEntryRepo, finCategoryRepo, entryEventRepo)
 	finCategorySvc := appf.NewExpenseCategoryService(finCategoryRepo)
 	renegRepo := persistence.NewRenegotiationRepository(db)
-	renegSvc := appf.NewRenegotiationService(financialEntryRepo, renegRepo)
+	renegSvc := appf.NewRenegotiationService(financialEntryRepo, renegRepo, entryEventRepo, finCategoryRepo)
 	creditCardSvc := appf.NewCreditCardService(creditCardRepo)
 	entitlementSvc := appent.NewService(entitlementRepo, redisCache)
 	finDocSvc := appf.NewFinanceDocumentService(finDocRepo, objStorage, storageCfg.MaxUploadMB)

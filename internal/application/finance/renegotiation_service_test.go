@@ -15,33 +15,59 @@ type fakeRenegRepo struct {
 	entries *fakeEntryRepo
 	events  map[uuid.UUID]*dom.Renegotiation
 	// failApply simula erro no meio da transação.
-	failApply error
+	failApply    error
+	sales        []dom.AssetSale
+	acquisitions []dom.AssetAcquisition
 }
 
 func newFakeRenegRepo(entries *fakeEntryRepo) *fakeRenegRepo {
 	return &fakeRenegRepo{entries: entries, events: map[uuid.UUID]*dom.Renegotiation{}}
 }
 
-func (f *fakeRenegRepo) Apply(_ context.Context, r *dom.Renegotiation, originIDs []uuid.UUID, newEntries []*dom.FinancialEntry) error {
+func (f *fakeRenegRepo) Apply(_ context.Context, in dom.ApplyInput) error {
 	if f.failApply != nil {
 		return f.failApply
 	}
+	r := in.Event
 	f.events[r.ID] = r
-	for _, id := range originIDs {
+	reason := in.CancelReason
+	if reason == "" {
+		reason = dom.CancelReasonRenegotiation
+	}
+	for _, id := range in.OriginIDs {
 		e, ok := f.entries.entries[id]
 		if !ok || e.Status != dom.StatusPrevista {
 			return &dom.ValidationError{Msg: "as cobranças mudaram durante a renegociação"}
 		}
 		e.Status = dom.StatusCancelada
-		reason := dom.CancelReasonRenegotiation
-		e.CancelReason = &reason
+		rs := reason
+		e.CancelReason = &rs
 		e.SettledByRenegotiationID = &r.ID
 	}
-	for _, e := range newEntries {
+	for _, e := range in.NewEntries {
 		cp := *e
 		f.entries.entries[e.ID] = &cp
 	}
+	if in.Sale != nil {
+		f.sales = append(f.sales, *in.Sale)
+	}
+	if in.Acquisition != nil {
+		f.acquisitions = append(f.acquisitions, *in.Acquisition)
+	}
 	return nil
+}
+
+func (f *fakeRenegRepo) ListByAsset(_ context.Context, workspaceID uuid.UUID, _ dom.AssetType, assetID uuid.UUID) ([]dom.Renegotiation, error) {
+	var out []dom.Renegotiation
+	for _, r := range f.events {
+		if r.WorkspaceID != workspaceID {
+			continue
+		}
+		if (r.AssetID != nil && *r.AssetID == assetID) || (r.NewAssetID != nil && *r.NewAssetID == assetID) {
+			out = append(out, *r)
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeRenegRepo) GetByID(_ context.Context, workspaceID, id uuid.UUID) (*dom.Renegotiation, error) {
