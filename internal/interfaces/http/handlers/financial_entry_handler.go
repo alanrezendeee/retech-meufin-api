@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -57,6 +59,8 @@ type financialEntryResponse struct {
 	PurchaseDate             *string    `json:"purchase_date"`
 	FiscalDocumentID         *uuid.UUID `json:"fiscal_document_id"`
 	SupplierID               *uuid.UUID `json:"supplier_id"`
+	AssetType                *string    `json:"asset_type"`
+	AssetID                  *uuid.UUID `json:"asset_id"`
 	CreatedAt                string     `json:"created_at"`
 	UpdatedAt                string     `json:"updated_at"`
 }
@@ -109,9 +113,27 @@ func mapFinancialEntry(e *dom.FinancialEntry) financialEntryResponse {
 		PurchaseDate:             purchaseDate,
 		FiscalDocumentID:         e.FiscalDocumentID,
 		SupplierID:               e.SupplierID,
+		AssetType:                assetTypeStr(e.AssetType),
+		AssetID:                  e.AssetID,
 		CreatedAt:                e.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:                e.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
+}
+
+func assetTypeStr(t *dom.AssetType) *string {
+	if t == nil || *t == "" {
+		return nil
+	}
+	s := string(*t)
+	return &s
+}
+
+func assetTypePtr(s *string) *dom.AssetType {
+	if s == nil || *s == "" {
+		return nil
+	}
+	t := dom.AssetType(*s)
+	return &t
 }
 
 type financialEntryCreateJSON struct {
@@ -129,6 +151,8 @@ type financialEntryCreateJSON struct {
 	ParentID          *uuid.UUID `json:"parent_id"`
 	InstallmentsTotal *int       `json:"installments_total"`
 	SupplierID        *uuid.UUID `json:"supplier_id"`
+	AssetType         *string    `json:"asset_type"` // vehicle | property
+	AssetID           *uuid.UUID `json:"asset_id"`
 	PurchaseDate      *string    `json:"purchase_date"` // YYYY-MM-DD; data da compra (itens de fatura)
 	// Lançamento retroativo: ocorrências vencidas nascem realizadas.
 	ConfirmPastOccurrences bool `json:"confirm_past_occurrences"`
@@ -194,6 +218,7 @@ func (h *FinancialEntryHandler) Create(c *gin.Context) {
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		CardID: body.CardID, ParentID: body.ParentID, InstallmentsTotal: body.InstallmentsTotal,
 		SupplierID: body.SupplierID, PurchaseDate: purchaseDate, ConfirmPastOccurrences: body.ConfirmPastOccurrences,
+		AssetType: assetTypePtr(body.AssetType), AssetID: body.AssetID,
 		Installments: installments,
 	})
 	if err != nil {
@@ -325,6 +350,18 @@ func (h *FinancialEntryHandler) List(c *gin.Context) {
 		}
 		filter.SupplierID = &sID
 	}
+	if v := c.Query("asset_id"); v != "" {
+		aID, perr := uuid.Parse(v)
+		if perr != nil {
+			errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "asset_id inválido")
+			return
+		}
+		filter.AssetID = &aID
+	}
+	if v := c.Query("asset_type"); v != "" {
+		t := dom.AssetType(v)
+		filter.AssetType = &t
+	}
 	if v := c.Query("recurrence_group_id"); v != "" {
 		gID, err := uuid.Parse(v)
 		if err != nil {
@@ -366,7 +403,11 @@ type financialEntryUpdateJSON struct {
 	Recurrence     string     `json:"recurrence"`
 	Notes          *string    `json:"notes"`
 	SupplierID     *uuid.UUID `json:"supplier_id"`
-	PurchaseDate   *string    `json:"purchase_date"` // YYYY-MM-DD; ausente preserva a atual
+	// Vínculo com o bem: chave ausente preserva; presente grava (null limpa).
+	AssetType    *string    `json:"asset_type"`
+	AssetID      *uuid.UUID `json:"asset_id"`
+	AssetSet     bool       `json:"-"`
+	PurchaseDate *string    `json:"purchase_date"` // YYYY-MM-DD; ausente preserva a atual
 	// Parcela da compra em fatura: ausente preserva; 0 limpa.
 	InstallmentNumber *int `json:"installment_number"`
 	InstallmentTotal  *int `json:"installment_total"`
@@ -387,10 +428,26 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "id inválido")
 		return
 	}
-	var body financialEntryUpdateJSON
-	if err := c.ShouldBindJSON(&body); err != nil {
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
 		return
+	}
+	var body financialEntryUpdateJSON
+	if err := json.Unmarshal(raw, &body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	if body.Kind == "" || body.DueDate == "" {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "kind e due_date são obrigatórios")
+		return
+	}
+	// Vínculo com o bem: só muda quando a chave veio no corpo (null limpa).
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(raw, &keys) == nil {
+		_, hasType := keys["asset_type"]
+		_, hasID := keys["asset_id"]
+		body.AssetSet = hasType || hasID
 	}
 	due, err := time.Parse(entryDateLayout, body.DueDate)
 	if err != nil {
@@ -420,6 +477,7 @@ func (h *FinancialEntryHandler) Update(c *gin.Context) {
 		DueDate: due, FamilyMemberID: body.FamilyMemberID, SourceID: body.SourceID,
 		Type: body.Type, Description: body.Description, Recurrence: body.Recurrence, Notes: body.Notes,
 		SupplierID: body.SupplierID, PurchaseDate: purchaseDate,
+		AssetSet: body.AssetSet, AssetType: assetTypePtr(body.AssetType), AssetID: body.AssetID,
 		InstallmentNumber: body.InstallmentNumber, InstallmentTotal: body.InstallmentTotal,
 		ApplyToFuture: applyToFuture,
 	})
@@ -671,6 +729,37 @@ func (h *FinancialEntryHandler) RenameInstallmentGroup(c *gin.Context) {
 		"entries_updated":   res.Entries,
 		"residuals_updated": res.Residuals,
 	})
+}
+
+type linkInstallmentGroupAssetRequest struct {
+	AssetType *string    `json:"asset_type"`
+	AssetID   *uuid.UUID `json:"asset_id"`
+}
+
+// LinkInstallmentGroupAsset responde PUT /finance/installments/:groupId/asset
+// — vincula (ou desvincula, com nulos) o parcelamento inteiro a um bem.
+func (h *FinancialEntryHandler) LinkInstallmentGroupAsset(c *gin.Context) {
+	ws, ok := middleware.WorkspaceID(c)
+	if !ok {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeWorkspaceRequired, "workspace inválido")
+		return
+	}
+	groupID, err := uuid.Parse(c.Param("groupId"))
+	if err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "group_id inválido")
+		return
+	}
+	var body linkInstallmentGroupAssetRequest
+	if err := c.ShouldBindJSON(&body); err != nil {
+		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeBadRequest, "JSON inválido")
+		return
+	}
+	n, err := h.svc.LinkInstallmentGroupAsset(c.Request.Context(), ws, groupID, assetTypePtr(body.AssetType), body.AssetID)
+	if err != nil {
+		errrespond.Write(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"entries_updated": n})
 }
 
 // DiscountReasons lista o catálogo global de motivos de desconto.

@@ -91,6 +91,8 @@ type FinancialEntryModel struct {
 	PurchaseDate             *time.Time `gorm:"column:purchase_date;type:date"`
 	FiscalDocumentID         *uuid.UUID `gorm:"column:fiscal_document_id;type:uuid"`
 	SupplierID               *uuid.UUID `gorm:"column:supplier_id;type:uuid"`
+	AssetType                *string    `gorm:"column:asset_type;size:20"`
+	AssetID                  *uuid.UUID `gorm:"column:asset_id;type:uuid"`
 	CreatedAt                time.Time  `gorm:"not null"`
 	UpdatedAt                time.Time  `gorm:"not null"`
 	DeletedAt                gorm.DeletedAt

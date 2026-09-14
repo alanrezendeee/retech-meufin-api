@@ -746,3 +746,34 @@ func TestConfirmQuickRejectsCancelada(t *testing.T) {
 		t.Fatal("confirmar lançamento cancelado deveria ser rejeitado")
 	}
 }
+
+func (f *fakeEntryRepo) ListGroupIDsByAsset(_ context.Context, workspaceID uuid.UUID, assetType dom.AssetType, assetID uuid.UUID) ([]uuid.UUID, error) {
+	seen := map[uuid.UUID]bool{}
+	var out []uuid.UUID
+	for _, e := range f.entries {
+		if e.WorkspaceID != workspaceID || e.AssetID == nil || *e.AssetID != assetID || e.AssetType == nil || *e.AssetType != assetType {
+			continue
+		}
+		if e.RecurrenceGroupID == nil || e.InstallmentTotal == nil || seen[*e.RecurrenceGroupID] {
+			continue
+		}
+		seen[*e.RecurrenceGroupID] = true
+		out = append(out, *e.RecurrenceGroupID)
+	}
+	return out, nil
+}
+
+func (f *fakeEntryRepo) SetGroupAsset(_ context.Context, workspaceID, groupID uuid.UUID, assetType *dom.AssetType, assetID *uuid.UUID) (int, error) {
+	n := 0
+	for _, e := range f.entries {
+		if e.WorkspaceID == workspaceID && e.RecurrenceGroupID != nil && *e.RecurrenceGroupID == groupID {
+			e.AssetType = assetType
+			e.AssetID = assetID
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, dom.ErrNotFound
+	}
+	return n, nil
+}

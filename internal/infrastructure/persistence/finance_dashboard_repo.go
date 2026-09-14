@@ -14,6 +14,14 @@ type FinanceDashboardRepository struct {
 	db *gorm.DB
 }
 
+// nonCashExcluded tira do dashboard os lançamentos liquidados por
+// compensação (quitação paga pela concessionária, venda do usado numa
+// troca): eles existem para a dívida e o patrimônio fecharem, mas nenhum
+// centavo passou pelo caixa — no mês da troca apareceriam uma despesa e uma
+// receita fantasmas de dezenas de milhares.
+const nonCashExcluded = "COALESCE(payment_method, '') <> 'compensacao'"
+const nonCashExcludedE = "COALESCE(e.payment_method, '') <> 'compensacao'"
+
 func NewFinanceDashboardRepository(db *gorm.DB) *FinanceDashboardRepository {
 	return &FinanceDashboardRepository{db: db}
 }
@@ -41,6 +49,7 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 			COALESCE(SUM(CASE WHEN kind = 'credit' AND status = 'prevista' THEN amount_cents ELSE 0 END), 0) AS receivable,
 			COALESCE(SUM(CASE WHEN kind = 'debit' AND status = 'prevista' THEN amount_cents ELSE 0 END), 0) AS payable`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status <> 'cancelada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("due_date >= ? AND due_date < ?", start, end)
 	if familyMemberID != nil {
 		q = q.Where("family_member_id = ?", *familyMemberID)
@@ -63,6 +72,7 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end)
 	if familyMemberID != nil {
 		rq = rq.Where("family_member_id = ?", *familyMemberID)
@@ -83,6 +93,7 @@ func (r *FinanceDashboardRepository) Summary(ctx context.Context, workspaceID uu
 		Select(`COALESCE(e.type, 'outros') AS category,
 			COALESCE(SUM(CASE WHEN e.status = 'realizada' THEN COALESCE(e.paid_amount_cents, e.amount_cents) ELSE e.amount_cents END), 0) AS total`).
 		Where("e.workspace_id = ? AND e.deleted_at IS NULL AND e.kind = 'debit' AND e.status <> 'cancelada'", workspaceID).
+		Where(nonCashExcludedE).
 		// Cada status no seu eixo: prevista por vencimento (competência),
 		// realizada por pagamento (caixa, fallback vencimento).
 		Where(`((e.status = 'prevista' AND e.due_date >= ? AND e.due_date < ?)
@@ -153,6 +164,7 @@ func (r *FinanceDashboardRepository) CategoryEntries(ctx context.Context, worksp
 		Table("financial_entries e").
 		Select("e.*").
 		Where("e.workspace_id = ? AND e.deleted_at IS NULL AND e.kind = 'debit' AND e.status <> 'cancelada'", workspaceID).
+		Where(nonCashExcludedE).
 		// Espelho exato da agregação: prevista por vencimento, realizada por
 		// pagamento — senão o modal não bate com a barra.
 		Where(`((e.status = 'prevista' AND e.due_date >= ? AND e.due_date < ?)
@@ -207,6 +219,7 @@ func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspac
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN amount_cents ELSE 0 END), 0) AS income_expected,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN amount_cents ELSE 0 END), 0) AS expense_expected`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status <> 'cancelada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("due_date >= ? AND due_date < ?", start, end).
 		Group("EXTRACT(MONTH FROM due_date)")
 	if familyMemberID != nil {
@@ -234,6 +247,7 @@ func (r *FinanceDashboardRepository) MonthlySeries(ctx context.Context, workspac
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS income_realized,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS expense_realized`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end).
 		Group("EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))")
 	if familyMemberID != nil {
@@ -276,6 +290,7 @@ func (r *FinanceDashboardRepository) CashFlowRaw(ctx context.Context, workspaceI
 		Select(`COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents)
 		                          ELSE -COALESCE(paid_amount_cents, amount_cents) END), 0) AS net`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("COALESCE(DATE(paid_at), due_date) < ?", start)
 	if familyMemberID != nil {
 		oq = oq.Where("family_member_id = ?", *familyMemberID)
@@ -297,6 +312,7 @@ func (r *FinanceDashboardRepository) CashFlowRaw(ctx context.Context, workspaceI
 			COALESCE(SUM(CASE WHEN kind = 'credit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS inflow,
 			COALESCE(SUM(CASE WHEN kind = 'debit' THEN COALESCE(paid_amount_cents, amount_cents) ELSE 0 END), 0) AS outflow`).
 		Where("workspace_id = ? AND deleted_at IS NULL AND parent_id IS NULL AND status = 'realizada'", workspaceID).
+		Where(nonCashExcluded).
 		Where("COALESCE(DATE(paid_at), due_date) >= ? AND COALESCE(DATE(paid_at), due_date) < ?", start, end).
 		Group("EXTRACT(MONTH FROM COALESCE(DATE(paid_at), due_date))").
 		Order("month ASC")

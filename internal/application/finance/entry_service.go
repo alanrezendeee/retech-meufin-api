@@ -100,6 +100,10 @@ type CreateEntryInput struct {
 	ParentID          *uuid.UUID
 	InstallmentsTotal *int
 	SupplierID        *uuid.UUID
+	// AssetType/AssetID: bem que o lançamento paga (ex.: parcelas de
+	// financiamento → veículo). Propagado a toda a série/parcelamento.
+	AssetType *dom.AssetType
+	AssetID   *uuid.UUID
 	// PurchaseDate: data da compra (informacional, itens de fatura).
 	PurchaseDate *time.Time
 	// ConfirmPastOccurrences: em lançamento retroativo (ex.: financiamento
@@ -127,6 +131,11 @@ type UpdateEntryInput struct {
 	Recurrence     string
 	Notes          *string
 	SupplierID     *uuid.UUID
+	// AssetType/AssetID: vínculo com o bem. AssetSet=false preserva o atual
+	// (edições genéricas não o enviam); true grava o informado (nil limpa).
+	AssetSet  bool
+	AssetType *dom.AssetType
+	AssetID   *uuid.UUID
 	// PurchaseDate: quando informada, atualiza a data da compra (itens de
 	// fatura). Nil preserva a atual (edições genéricas não a enviam).
 	PurchaseDate *time.Time
@@ -168,6 +177,8 @@ func (s *FinancialEntryService) Create(ctx context.Context, in CreateEntryInput)
 		ParentID:       in.ParentID,
 		Notes:          in.Notes,
 		SupplierID:     in.SupplierID,
+		AssetType:      in.AssetType,
+		AssetID:        in.AssetID,
 		PurchaseDate:   in.PurchaseDate,
 		CreatedAt:      now,
 		UpdatedAt:      now,
@@ -413,6 +424,10 @@ func (s *FinancialEntryService) Update(ctx context.Context, in UpdateEntryInput)
 	}
 	e.Notes = in.Notes
 	e.SupplierID = in.SupplierID
+	if in.AssetSet {
+		e.AssetType = in.AssetType
+		e.AssetID = in.AssetID
+	}
 	if in.PurchaseDate != nil {
 		e.PurchaseDate = in.PurchaseDate
 	}
@@ -598,6 +613,22 @@ func (s *FinancialEntryService) RenameInstallmentGroup(ctx context.Context, work
 		return nil, err
 	}
 	return &RenameGroupResult{Description: description, Entries: entries, Residuals: residuals}, nil
+}
+
+// LinkInstallmentGroupAsset vincula (assetID != nil) ou desvincula todas as
+// parcelas do parcelamento a um bem — é o que faz um financiamento lançado
+// antes do vínculo existir aparecer na tela do veículo.
+func (s *FinancialEntryService) LinkInstallmentGroupAsset(ctx context.Context, workspaceID, groupID uuid.UUID, assetType *dom.AssetType, assetID *uuid.UUID) (int, error) {
+	if (assetType == nil || *assetType == "") != (assetID == nil) {
+		return 0, &dom.ValidationError{Msg: "asset_type e asset_id devem vir juntos"}
+	}
+	if assetType != nil && *assetType != "" && !dom.ValidAssetType(*assetType) {
+		return 0, &dom.ValidationError{Msg: "asset_type inválido"}
+	}
+	if assetType != nil && *assetType == "" {
+		assetType = nil
+	}
+	return s.repo.SetGroupAsset(ctx, workspaceID, groupID, assetType, assetID)
 }
 
 // ResizeInstallmentsResult resume o redimensionamento de um parcelamento.
@@ -974,6 +1005,8 @@ func (s *FinancialEntryService) Confirm(ctx context.Context, in ConfirmEntryInpu
 			Description:    dom.ResidualPrefix + e.Description,
 			Recurrence:     dom.RecurrenceNone,
 			SupplierID:     e.SupplierID,
+			AssetType:      e.AssetType,
+			AssetID:        e.AssetID,
 			ResidualOfID:   &e.ID,
 			CreatedAt:      now,
 			UpdatedAt:      now,
