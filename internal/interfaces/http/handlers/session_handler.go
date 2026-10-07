@@ -17,7 +17,7 @@ import (
 // SessionHandler expõe o gateway de autenticação do browser:
 // POST /auth/login, POST /auth/logout (cookie HttpOnly) e GET /auth/me.
 type SessionHandler struct {
-	svc    *appsess.Service // nil = gateway desabilitado (SESSION_ENCRYPTION_KEY ausente)
+	svc    *appsess.Service
 	auth   *authclient.PublicAuthenticator
 	cookie middleware.SessionCookie
 }
@@ -34,10 +34,6 @@ type loginJSON struct {
 // Login autentica no auth central e emite o cookie de sessão. 204 sem corpo:
 // o admin chama GET /auth/me em seguida para obter usuário e abilities.
 func (h *SessionHandler) Login(c *gin.Context) {
-	if h.svc == nil {
-		errrespond.Message(c, http.StatusServiceUnavailable, errrespond.CodeInternal, "login por sessão desabilitado neste ambiente")
-		return
-	}
 	var body loginJSON
 	if err := c.ShouldBindJSON(&body); err != nil {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeValidation, "informe e-mail válido e senha (mínimo 6 caracteres)")
@@ -63,7 +59,7 @@ func (h *SessionHandler) Login(c *gin.Context) {
 // Logout revoga a sessão e limpa o cookie. Idempotente.
 func (h *SessionHandler) Logout(c *gin.Context) {
 	raw := h.cookie.Read(c)
-	if h.svc != nil && raw != "" {
+	if raw != "" {
 		if err := h.svc.Logout(c.Request.Context(), raw); err != nil {
 			errrespond.Message(c, http.StatusInternalServerError, errrespond.CodeInternal, "não foi possível encerrar a sessão")
 			return
@@ -74,8 +70,7 @@ func (h *SessionHandler) Logout(c *gin.Context) {
 }
 
 // Me repassa GET /v1/me do auth (usuário, roles, permissions, abilities CASL)
-// usando o access token da requisição — Bearer ou sessão. Protegido por
-// RequireAuth.
+// usando o access token da sessão. Protegido por RequireAuth.
 func (h *SessionHandler) Me(c *gin.Context) {
 	token := c.GetString(middleware.CtxAccessToken)
 	if token == "" {
@@ -91,9 +86,7 @@ func (h *SessionHandler) Me(c *gin.Context) {
 	case http.StatusOK:
 		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 	case http.StatusUnauthorized, http.StatusForbidden:
-		if c.GetString(middleware.CtxAuthVia) == middleware.AuthViaCookie {
-			h.cookie.Clear(c)
-		}
+		h.cookie.Clear(c)
 		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "sessão inválida; faça login novamente")
 	default:
 		errrespond.Message(c, http.StatusBadGateway, errrespond.CodeInternal, "auth respondeu com erro ao carregar o perfil")

@@ -64,14 +64,11 @@ Migrations rodam automaticamente na subida do processo.
 
 ## API (`/api/v1`)
 
-Todas as rotas versionadas exigem autenticação, por um de dois caminhos:
-
-- **Cookie de sessão** (`meufin_session`, HttpOnly) — é o que o admin usa. Emitido por
-  `POST /api/v1/auth/login`; o browser nunca vê JWT. Ver `docs/auth-session-gateway.md`.
-- **`Authorization: Bearer <jwt do retech-auth-api>`** — clientes não-browser (Postman, integrações).
-
-Nos dois casos o JWT é validado via JWKS e o workspace vem do claim `tenant_id` do token
-(o header `X-Workspace-ID` é ignorado).
+Todas as rotas versionadas exigem o **cookie de sessão** (`meufin_session`, HttpOnly),
+emitido por `POST /api/v1/auth/login`. É a única forma de autenticação: a API não aceita
+`Authorization: Bearer`, e nenhum JWT chega ao browser. Internamente a sessão guarda o JWT do
+retech-auth-api (cifrado), que é validado via JWKS; o workspace vem do claim `tenant_id`
+(o header `X-Workspace-ID` é ignorado). Ver `docs/auth-session-gateway.md`.
 
 ### Autenticação (gateway de sessão)
 
@@ -79,7 +76,7 @@ Nos dois casos o JWT é validado via JWKS e o workspace vem do claim `tenant_id`
 |--------|---------|-----------|
 | `POST` | `/api/v1/auth/login` | `{email, password}` → `204` + cookie `meufin_session` (rate limit 10/min por IP) |
 | `POST` | `/api/v1/auth/logout` | Revoga a sessão e limpa o cookie (idempotente) |
-| `GET` | `/api/v1/auth/me` | Perfil + abilities CASL (repasse do `/v1/me` do auth); aceita cookie ou Bearer |
+| `GET` | `/api/v1/auth/me` | Perfil + abilities CASL (repasse do `/v1/me` do auth) |
 | `ANY` | `/api/v1/iam/v1/{users,roles,permissions}/*` | Proxy para o auth com o token da sessão (telas de administração) |
 
 ### Endpoints principais

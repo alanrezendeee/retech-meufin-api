@@ -77,7 +77,7 @@ type RouterDeps struct {
 	ProfileService                *appacc.ProfileService
 
 	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
-	SessionService *appsess.Service                // nil = desabilitado (só Bearer)
+	SessionService *appsess.Service
 	SessionAuth    *authclient.PublicAuthenticator // /auth/me e login
 	SessionCookie  middleware.SessionCookie
 	AuthBaseURL    string // base do retech-auth-api para o proxy IAM
@@ -86,6 +86,7 @@ type RouterDeps struct {
 func NewRouter(d RouterDeps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(middleware.SecurityHeaders())
 	r.Use(middleware.CORS(d.CORSOrigins))
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog(d.Log))
@@ -114,14 +115,12 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		ApplicationID:  d.ApplicationID,
 		Cookie:         d.SessionCookie,
 		AllowedOrigins: d.CORSOrigins,
-	}
-	if d.SessionService != nil {
-		authOpts.Sessions = d.SessionService
+		Sessions:       d.SessionService,
 	}
 	requireAuth := middleware.RequireAuth(authOpts)
 
 	// Gateway de autenticação do browser: login/logout emitem o cookie opaco;
-	// /me repassa o perfil do auth (funciona com cookie OU Bearer).
+	// /me repassa o perfil do auth.
 	sessH := handlers.NewSessionHandler(d.SessionService, d.SessionAuth, d.SessionCookie)
 	authG := r.Group("/api/v1/auth")
 	{
