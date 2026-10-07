@@ -23,7 +23,10 @@ func NewFinanceAttachmentHandler(docSvc *app.FinanceDocumentService, entrySvc *a
 }
 
 // Upload anexa um documento (multipart: 'file' obrigatório; 'attachment_type'
-// obrigatório; 'payment_code' e 'note' opcionais) ao lançamento :id.
+// obrigatório; 'payment_code', 'note' e 'apply_to' opcionais) ao lançamento :id.
+// apply_to=future replica o anexo às parcelas futuras previstas da série —
+// só para tipos replicáveis (pix_qrcode, contrato); boleto/nota/fatura/outro
+// ficam só no lançamento alvo. A resposta traz replicated_to.
 func (h *FinanceAttachmentHandler) Upload(c *gin.Context) {
 	ws, ok := middleware.WorkspaceID(c)
 	if !ok {
@@ -57,7 +60,7 @@ func (h *FinanceAttachmentHandler) Upload(c *gin.Context) {
 	}
 	defer f.Close()
 
-	doc, err := h.docSvc.UploadAttachment(c.Request.Context(), app.UploadAttachmentInput{
+	res, err := h.docSvc.UploadAttachment(c.Request.Context(), app.UploadAttachmentInput{
 		WorkspaceID:      ws,
 		UploadedByUserID: userID,
 		EntryID:          entryID,
@@ -68,12 +71,16 @@ func (h *FinanceAttachmentHandler) Upload(c *gin.Context) {
 		MimeType:         fileHeader.Header.Get("Content-Type"),
 		Size:             fileHeader.Size,
 		Content:          f,
+		ApplyToFuture:    c.PostForm("apply_to") == "future",
 	})
 	if err != nil {
 		errrespond.Write(c, err)
 		return
 	}
-	c.JSON(http.StatusCreated, mapFinanceDocument(doc))
+	out := mapFinanceDocument(res.Doc)
+	n := res.ReplicatedTo
+	out.ReplicatedTo = &n
+	c.JSON(http.StatusCreated, out)
 }
 
 // List lista os anexos do lançamento :id.

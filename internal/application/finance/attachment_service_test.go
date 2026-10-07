@@ -161,10 +161,11 @@ func TestUploadAttachment_UserCodeWinsOverQR(t *testing.T) {
 	in.PaymentCode = "23793.38128 60000.000003 00000.000400 1 84340000010000"
 	in.Note = "vence dia 10"
 
-	doc, err := svc.UploadAttachment(context.Background(), in)
+	res, err := svc.UploadAttachment(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
+	doc := res.Doc
 	if qr.calls != 0 {
 		t.Fatalf("QR não deveria ser lido quando o usuário informa o código; calls=%d", qr.calls)
 	}
@@ -197,10 +198,11 @@ func TestUploadAttachment_ReadsPixFromQRCode(t *testing.T) {
 	svc, _, st := newAttachmentSvc(t, qr)
 	in := baseInput(uuid.New(), dom.AttachmentPixQRCode, "image/jpeg", "jpeg-bytes")
 
-	doc, err := svc.UploadAttachment(context.Background(), in)
+	res, err := svc.UploadAttachment(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
+	doc := res.Doc
 	if qr.calls != 1 {
 		t.Fatalf("QR deveria ser lido uma vez; calls=%d", qr.calls)
 	}
@@ -220,11 +222,11 @@ func TestUploadAttachment_ReadsPixFromQRCode(t *testing.T) {
 func TestUploadAttachment_IgnoresNonPixQR(t *testing.T) {
 	qr := &fakeQR{payload: "https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx?p=4321", ok: true}
 	svc, _, _ := newAttachmentSvc(t, qr)
-	doc, err := svc.UploadAttachment(context.Background(), baseInput(uuid.New(), dom.AttachmentPixQRCode, "image/png", "x"))
+	res, err := svc.UploadAttachment(context.Background(), baseInput(uuid.New(), dom.AttachmentPixQRCode, "image/png", "x"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	meta, _ := doc.AttachmentMeta()
+	meta, _ := res.Doc.AttachmentMeta()
 	if meta.PaymentCode != nil {
 		t.Fatalf("QR de NFC-e não é código de pagamento: %+v", meta)
 	}
@@ -307,5 +309,183 @@ func TestListAttachments_OnlyAttachmentsOfEntry(t *testing.T) {
 	}
 	if rec.Total != 1 {
 		t.Fatalf("esperado 1 comprovante em A; total=%d", rec.Total)
+	}
+}
+
+// pixDynamicPayload tem o campo 01 = "12" (Point of Initiation dinâmico).
+const pixDynamicPayload = "00020101021226850014br.gov.bcb.pix2563pix.example.com/qr/v2/9d36b84f-c70b-478f-b95c-12729b90ca255204000053039865802BR5913Fulano de Tal6008BRASILIA62070503***63041D3D"
+
+func TestPixIsDynamic(t *testing.T) {
+	if PixIsDynamic(pixPayload) {
+		t.Fatal("payload sem campo 01 é estático")
+	}
+	if !PixIsDynamic(pixDynamicPayload) {
+		t.Fatal("campo 01=12 deveria ser dinâmico")
+	}
+	static11 := "000201010211" + pixPayload[6:]
+	if PixIsDynamic(static11) {
+		t.Fatal("campo 01=11 é estático")
+	}
+	if PixIsDynamic("0002") {
+		t.Fatal("payload truncado não pode ser dinâmico")
+	}
+}
+
+// seriesFixture cria uma série de 5 parcelas mensais: #1 realizada (passada),
+// #2 alvo, #3 e #5 previstas futuras, #4 cancelada. Retorna o repo e os ids.
+func seriesFixture(ws uuid.UUID) (*fakeEntryRepo, uuid.UUID, []uuid.UUID) {
+	repo := newFakeEntryRepo()
+	group := uuid.New()
+	base := time.Date(2026, 1, 10, 0, 0, 0, 0, time.UTC)
+	statuses := []dom.Status{dom.StatusRealizada, dom.StatusPrevista, dom.StatusPrevista, dom.StatusCancelada, dom.StatusPrevista}
+	ids := make([]uuid.UUID, 5)
+	for i := 0; i < 5; i++ {
+		ids[i] = uuid.New()
+		repo.entries[ids[i]] = &dom.FinancialEntry{
+			ID: ids[i], WorkspaceID: ws, RecurrenceGroupID: &group,
+			DueDate: base.AddDate(0, i, 0), Status: statuses[i], Kind: dom.KindDebit,
+		}
+	}
+	return repo, ids[1], []uuid.UUID{ids[2], ids[4]}
+}
+
+func TestUploadAttachment_ReplicatesPixToFuturePrevistas(t *testing.T) {
+	svc, docRepo, st := newAttachmentSvc(t, nil)
+	ws := uuid.New()
+	entries, target, wantFuture := seriesFixture(ws)
+	svc.SetEntryRepo(entries)
+
+	in := baseInput(target, dom.AttachmentPixQRCode, "application/pdf", "pdf")
+	in.WorkspaceID = ws
+	in.PaymentCode = pixPayload
+	in.ApplyToFuture = true
+
+	res, err := svc.UploadAttachment(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ReplicatedTo != 2 {
+		t.Fatalf("esperado replicar em 2 futuras previstas (pula passada, realizada e cancelada); got %d", res.ReplicatedTo)
+	}
+	if len(docRepo.docs) != 3 {
+		t.Fatalf("esperado 3 linhas (alvo + 2 cópias); got %d", len(docRepo.docs))
+	}
+	if len(st.objects) != 1 {
+		t.Fatalf("cópias devem apontar para o MESMO objeto; objetos=%d", len(st.objects))
+	}
+	seen := map[uuid.UUID]bool{}
+	for _, d := range docRepo.docs {
+		if d.ObjectKey != res.Doc.ObjectKey {
+			t.Fatalf("object_key divergente: %s vs %s", d.ObjectKey, res.Doc.ObjectKey)
+		}
+		m, _ := d.AttachmentMeta()
+		if d.ID == res.Doc.ID {
+			if m.ReplicatedFromEntryID != nil {
+				t.Fatal("o original não é réplica")
+			}
+			continue
+		}
+		seen[*d.EntryID] = true
+		if m.ReplicatedFromEntryID == nil || *m.ReplicatedFromEntryID != target {
+			t.Fatalf("réplica deve apontar para o lançamento de origem: %+v", m)
+		}
+		if m.PaymentCode == nil || *m.PaymentCode != pixPayload {
+			t.Fatalf("réplica deve carregar o mesmo código: %+v", m)
+		}
+	}
+	for _, id := range wantFuture {
+		if !seen[id] {
+			t.Fatalf("parcela futura %s não recebeu cópia", id)
+		}
+	}
+	// Listagem por parcela enxerga a cópia.
+	lst, err := svc.ListAttachments(context.Background(), ws, wantFuture[0], 10, 0)
+	if err != nil || lst.Total != 1 {
+		t.Fatalf("parcela futura deveria listar 1 anexo; total=%d err=%v", lst.Total, err)
+	}
+}
+
+func TestUploadAttachment_BoletoNeverReplicates(t *testing.T) {
+	svc, docRepo, _ := newAttachmentSvc(t, nil)
+	ws := uuid.New()
+	entries, target, _ := seriesFixture(ws)
+	svc.SetEntryRepo(entries)
+
+	for _, typ := range []dom.AttachmentType{dom.AttachmentBoleto, dom.AttachmentNotaFiscal, dom.AttachmentFatura, dom.AttachmentOutro} {
+		in := baseInput(target, typ, "application/pdf", "pdf")
+		in.WorkspaceID = ws
+		in.ApplyToFuture = true
+		res, err := svc.UploadAttachment(context.Background(), in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.ReplicatedTo != 0 {
+			t.Fatalf("%s não pode replicar mesmo com apply_to=future; got %d", typ, res.ReplicatedTo)
+		}
+	}
+	if len(docRepo.docs) != 4 {
+		t.Fatalf("esperado 4 linhas (uma por upload, sem cópias); got %d", len(docRepo.docs))
+	}
+}
+
+func TestUploadAttachment_ReplicationNoopOutsideSeriesOrWithoutRepo(t *testing.T) {
+	ws := uuid.New()
+
+	// Sem repo de lançamentos: replicação silenciosamente desligada.
+	svc, _, _ := newAttachmentSvc(t, nil)
+	in := baseInput(uuid.New(), dom.AttachmentContrato, "application/pdf", "pdf")
+	in.WorkspaceID = ws
+	in.ApplyToFuture = true
+	res, err := svc.UploadAttachment(context.Background(), in)
+	if err != nil || res.ReplicatedTo != 0 {
+		t.Fatalf("sem repo: replicated=0 esperado; got %d err=%v", res.ReplicatedTo, err)
+	}
+
+	// Lançamento avulso (sem grupo): nada a replicar.
+	svc2, _, _ := newAttachmentSvc(t, nil)
+	entries := newFakeEntryRepo()
+	solo := &dom.FinancialEntry{ID: uuid.New(), WorkspaceID: ws, DueDate: time.Now(), Status: dom.StatusPrevista, Kind: dom.KindDebit}
+	entries.entries[solo.ID] = solo
+	svc2.SetEntryRepo(entries)
+	in = baseInput(solo.ID, dom.AttachmentContrato, "application/pdf", "pdf")
+	in.WorkspaceID = ws
+	in.ApplyToFuture = true
+	res, err = svc2.UploadAttachment(context.Background(), in)
+	if err != nil || res.ReplicatedTo != 0 {
+		t.Fatalf("avulso: replicated=0 esperado; got %d err=%v", res.ReplicatedTo, err)
+	}
+
+	// Lançamento inexistente com apply_to=future: falha antes de gravar.
+	svc3, docRepo3, st3 := newAttachmentSvc(t, nil)
+	svc3.SetEntryRepo(newFakeEntryRepo())
+	in = baseInput(uuid.New(), dom.AttachmentPixQRCode, "application/pdf", "pdf")
+	in.WorkspaceID = ws
+	in.ApplyToFuture = true
+	if _, err := svc3.UploadAttachment(context.Background(), in); !errors.Is(err, dom.ErrNotFound) {
+		t.Fatalf("esperado ErrNotFound; got %v", err)
+	}
+	if len(docRepo3.docs) != 0 || len(st3.objects) != 0 {
+		t.Fatal("nada deveria ter sido gravado")
+	}
+}
+
+func TestUploadAttachment_MarksPixDynamic(t *testing.T) {
+	svc, _, _ := newAttachmentSvc(t, nil)
+	in := baseInput(uuid.New(), dom.AttachmentPixQRCode, "application/pdf", "pdf")
+	in.PaymentCode = pixDynamicPayload
+	res, err := svc.UploadAttachment(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _ := res.Doc.AttachmentMeta()
+	if m.PixDynamic == nil || !*m.PixDynamic {
+		t.Fatalf("pix_dynamic deveria ser true: %+v", m)
+	}
+	in = baseInput(uuid.New(), dom.AttachmentPixQRCode, "application/pdf", "pdf")
+	in.PaymentCode = pixPayload
+	res, _ = svc.UploadAttachment(context.Background(), in)
+	m, _ = res.Doc.AttachmentMeta()
+	if m.PixDynamic == nil || *m.PixDynamic {
+		t.Fatalf("pix_dynamic deveria ser false para estático: %+v", m)
 	}
 }

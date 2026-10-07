@@ -270,7 +270,8 @@ func main() {
 	// chave da imagem quando o usuário não a informa.
 	fiscalQueue := infraqueue.NewInProcess(6, 512, 3, 5*time.Second, log)
 	qrDecoder := qrdecode.New()
-	finDocSvc.SetQRDecoder(qrDecoder) // Pix copia e cola a partir de imagens anexadas
+	finDocSvc.SetQRDecoder(qrDecoder)          // Pix copia e cola a partir de imagens anexadas
+	finDocSvc.SetEntryRepo(financialEntryRepo) // replica QR Pix/contrato às parcelas futuras
 	fiscalKeyReader := extraction.NewKeyReader(extractionCfg)
 	finExtSvc := appf.NewFinanceExtractionService(finExtJobRepo, finDocRepo, extractor, infosimplesClient, entitlementSvc, redisCache, fiscalCategorizer, fiscalQueue, qrDecoder, fiscalKeyReader)
 
