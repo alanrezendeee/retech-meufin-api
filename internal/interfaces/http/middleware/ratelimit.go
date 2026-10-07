@@ -21,7 +21,7 @@ func RateLimitPerIP(max int, window time.Duration) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		now := time.Now()
-		ip := c.ClientIP()
+		ip := ClientIP(c.Request)
 
 		mu.Lock()
 		b, ok := buckets[ip]

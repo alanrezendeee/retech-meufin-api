@@ -25,7 +25,9 @@ browser ──(cookie)──▶ /api/v1/**  ──▶ RequireAuth: cookie → se
 - **Nenhum JWT chega ao JavaScript.** O cookie é um id opaco; vale só com o banco da API.
 - **Refresh é server-side.** O access token do auth pode ficar curto (15 min) sem deslogar ninguém.
 - **Logout real.** `POST /auth/logout` revoga a sessão no banco; o cookie morre na hora.
-- **`Authorization: Bearer` continua aceito** (Postman, integrações). Bearer tem precedência.
+- **`Authorization: Bearer`** só durante o rollout (`AUTH_BEARER_ENABLED=true`). Depois, `false`:
+  a API passa a aceitar **apenas** o cookie e `Authorization` sai do CORS — idêntico ao CashFlowfy.
+  Integrações futuras devem usar credencial própria (API key / client credentials), não o JWT de usuário.
 - **Proxy IAM.** As telas de usuários/roles/permissions falam com o auth via
   `/api/v1/iam/v1/*` — a API injeta o Bearer da sessão. Allowlist: `users`, `roles`, `permissions`.
 
@@ -41,10 +43,11 @@ e diferente do host da API. `GET/HEAD/OPTIONS` e Bearer não passam por isso.
 | Var | Padrão | Nota |
 |-----|--------|------|
 | `SESSION_ENCRYPTION_KEY` | — | base64 de 32 bytes (`openssl rand -base64 32`). Vazia = gateway desligado. **Obrigatória em produção.** |
-| `SESSION_COOKIE_NAME` | `meufin_session` | |
+| `SESSION_COOKIE_NAME` | `meufin_session` | Produção: `__Host-meufin_session` (exige Secure e sem Domain; bloqueia injeção por subdomínio). |
 | `SESSION_COOKIE_SECURE` | `true` | `false` só em dev http. Produção falha no boot se `false`. |
 | `SESSION_COOKIE_DOMAIN` | vazio | Vazio = host da API. Só preencher se admin e API estiverem em subdomínios diferentes sem proxy. |
-| `SESSION_TTL_HOURS` | `168` | Validade absoluta da sessão. Igualar ao `JWT_REFRESH_EXPIRATION_HOURS` do auth. |
+| `SESSION_TTL_HOURS` | `12` | Validade absoluta da sessão (igual ao CashFlowfy). Precisa caber no `JWT_REFRESH_EXPIRATION_HOURS` do auth. |
+| `AUTH_BEARER_ENABLED` | `true` | `false` após o rollout do admin: só cookie. |
 | `APP_APPLICATION_CODE` | `meufin` | `application_code` do `/v1/authenticate`. |
 | `AUTH_API_BASE_URL` | — | Já existia (esqueci a senha). Agora também alimenta login/refresh/me e o proxy IAM. |
 
@@ -65,9 +68,16 @@ Se não houver domínio pai comum, `SameSite=Lax` bloqueia o cookie — use same
    quebra: Bearer continua funcionando, o admin antigo segue logando direto no auth.
 2. Admin: deployar a versão com cookie + `API_UPSTREAM`. Usuários logados caem para a
    tela de login uma vez (a sessão antiga em `localStorage` é descartada).
-3. Auth central: reduzir `JWT_EXPIRATION_HOURS` (ex.: 1, ou 15 min via fração se o auth
-   aceitar). Pré-requisito: **todo** consumidor renova server-side. Hoje só CashFlowfy e
-   MeuFin usam o auth; os dois renovam no servidor após este rollout.
+3. API: `AUTH_BEARER_ENABLED=false`. Fecha a porta Bearer; só cookie.
+4. Auth central: `JWT_EXPIRATION_MINUTES=15`. Pré-requisito: **todo** consumidor renova
+   server-side. Hoje só CashFlowfy e MeuFin usam o auth; os dois renovam no servidor.
+
+## Headers e IP real
+
+- Toda resposta sai com `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`
+  e `Cache-Control: no-store` (igual ao CashFlowfy).
+- Rate limit por IP usa o **último hop** de `X-Forwarded-For` (anexado pelo proxy à frente,
+  não controlado pelo cliente). O nginx do admin repassa o XFF do edge sem anexar o seu.
 
 ## Operação
 

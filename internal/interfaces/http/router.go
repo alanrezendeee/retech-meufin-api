@@ -31,6 +31,7 @@ type RouterDeps struct {
 	JWKS                     *keyfunc.JWKS
 	ApplicationID            string
 	CORSOrigins              []string
+	BearerEnabled            bool // AUTH_BEARER_ENABLED
 	AccountService           *appl.AccountService
 	CategoryService          *appl.CategoryService
 	TransactionService       *appl.TransactionService
@@ -86,7 +87,8 @@ type RouterDeps struct {
 func NewRouter(d RouterDeps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
-	r.Use(middleware.CORS(d.CORSOrigins))
+	r.Use(middleware.SecurityHeaders())
+	r.Use(middleware.CORS(d.CORSOrigins, d.BearerEnabled))
 	r.Use(middleware.RequestID())
 	r.Use(middleware.AccessLog(d.Log))
 
@@ -114,6 +116,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		ApplicationID:  d.ApplicationID,
 		Cookie:         d.SessionCookie,
 		AllowedOrigins: d.CORSOrigins,
+		BearerDisabled: !d.BearerEnabled,
 	}
 	if d.SessionService != nil {
 		authOpts.Sessions = d.SessionService

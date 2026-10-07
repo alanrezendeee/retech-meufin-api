@@ -279,3 +279,30 @@ func TestSessionCookieAtributos(t *testing.T) {
 		}
 	}
 }
+
+func TestBearerDesabilitadoRecusaMesmoTokenValido(t *testing.T) {
+	s := newSigner(t)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	res := &fakeResolver{byToken: map[string]domsess.Session{
+		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, uuid.NewString(), time.Hour)}},
+	}}
+	r.Use(RequireAuth(AuthOptions{
+		JWKS: s.jwks, ApplicationID: "app-1", Sessions: res, BearerDisabled: true,
+		Cookie: SessionCookie{Name: cookieName, Secure: true},
+	}))
+	r.GET("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	w := do(r, http.MethodGet, func(req *http.Request) {
+		req.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), time.Hour))
+	})
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Bearer desabilitada") {
+		t.Fatalf("bearer devia ser recusado: code=%d body=%s", w.Code, w.Body.String())
+	}
+	// Cookie continua funcionando.
+	if w := do(r, http.MethodGet, func(req *http.Request) {
+		req.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
+	}); w.Code != http.StatusOK {
+		t.Fatalf("cookie: code=%d", w.Code)
+	}
+}

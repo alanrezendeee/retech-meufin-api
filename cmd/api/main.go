@@ -363,6 +363,15 @@ func main() {
 	} else {
 		log.Warn("⚠️ Gateway de sessão desabilitado (SESSION_ENCRYPTION_KEY ausente) — API aceita só Authorization: Bearer")
 	}
+	if cfg.AuthBearerEnabled {
+		log.Warn("⚠️ Authorization: Bearer habilitado (AUTH_BEARER_ENABLED). Após o rollout do admin por cookie, desligue para fechar a segunda porta")
+	} else {
+		log.Info("🔒 Authorization: Bearer desabilitado — autenticação só por cookie de sessão")
+	}
+	if !cfg.SessionEnabled() && !cfg.AuthBearerEnabled {
+		log.Error("❌ Sem gateway de sessão e sem Bearer: nenhuma forma de autenticar. Defina SESSION_ENCRYPTION_KEY ou AUTH_BEARER_ENABLED=true")
+		os.Exit(1)
+	}
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
@@ -371,6 +380,7 @@ func main() {
 		JWKS:                     jwks,
 		ApplicationID:            cfg.AppApplicationID,
 		CORSOrigins:              cfg.CORSOrigins,
+		BearerEnabled:            cfg.AuthBearerEnabled,
 		AccountService:           accSvc,
 		CategoryService:          catSvc,
 		TransactionService:       txSvc,

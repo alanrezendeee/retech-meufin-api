@@ -58,7 +58,10 @@ type AuthOptions struct {
 	ApplicationID string
 	// Sessions habilita autenticação por cookie (gateway). Nil = só Bearer.
 	Sessions SessionResolver
-	Cookie   SessionCookie
+	// BearerDisabled recusa `Authorization: Bearer` (401): após o rollout do
+	// admin por cookie, fecha a segunda porta — mesmo padrão do CashFlowfy.
+	BearerDisabled bool
+	Cookie         SessionCookie
 	// AllowedOrigins alimenta a verificação CSRF das requisições por cookie
 	// (normalmente a mesma lista do CORS).
 	AllowedOrigins []string
@@ -133,6 +136,11 @@ func RequireAuth(opts AuthOptions) gin.HandlerFunc {
 // cookie. Em falha, escreve a resposta e devolve ok=false.
 func resolveCredential(c *gin.Context, opts AuthOptions, allowed map[string]struct{}) (jwtRaw, via string, ok bool) {
 	if raw := c.GetHeader("Authorization"); raw != "" {
+		if opts.BearerDisabled {
+			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "autenticação por Bearer desabilitada; use a sessão (cookie)")
+			c.Abort()
+			return "", "", false
+		}
 		parts := strings.SplitN(raw, " ", 2)
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
 			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "formato inválido: use 'Authorization: Bearer <token>'")
