@@ -2,6 +2,7 @@ package finance
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -32,7 +33,67 @@ const (
 	// DocumentFiscal é um cupom/nota fiscal importado para extração de itens
 	// (detalhamento item a item de uma despesa).
 	DocumentFiscal DocumentKind = "fiscal"
+	// DocumentAttachment é um anexo de apoio ao lançamento (boleto, QR Code
+	// Pix, nota, contrato…): não comprova pagamento nem passa por extração.
+	// Tipo e código de pagamento ficam em Metadata (ver AttachmentMeta).
+	DocumentAttachment DocumentKind = "attachment"
 )
+
+// AttachmentType classifica o anexo de um lançamento.
+type AttachmentType string
+
+const (
+	AttachmentBoleto     AttachmentType = "boleto"
+	AttachmentPixQRCode  AttachmentType = "pix_qrcode"
+	AttachmentNotaFiscal AttachmentType = "nota_fiscal"
+	AttachmentContrato   AttachmentType = "contrato"
+	AttachmentFatura     AttachmentType = "fatura"
+	AttachmentOutro      AttachmentType = "outro"
+)
+
+// ValidAttachmentType indica se o tipo de anexo é conhecido.
+func ValidAttachmentType(t AttachmentType) bool {
+	switch t {
+	case AttachmentBoleto, AttachmentPixQRCode, AttachmentNotaFiscal,
+		AttachmentContrato, AttachmentFatura, AttachmentOutro:
+		return true
+	}
+	return false
+}
+
+// AttachmentMeta é o conteúdo de Metadata para kind=attachment.
+type AttachmentMeta struct {
+	Type AttachmentType `json:"attachment_type"`
+	// PaymentCode é o que o usuário copia para pagar: linha digitável do
+	// boleto (47/48 dígitos) ou o payload EMV do Pix ("copia e cola").
+	PaymentCode *string `json:"payment_code,omitempty"`
+	// PaymentCodeSource: "user" (digitado) ou "qrcode" (lido da imagem).
+	PaymentCodeSource *string `json:"payment_code_source,omitempty"`
+	Note              *string `json:"note,omitempty"`
+}
+
+// AttachmentMeta decodifica Metadata quando o documento é um anexo.
+// Retorna ok=false para outros kinds ou metadata ausente/inválida.
+func (d *FinanceDocument) AttachmentMeta() (AttachmentMeta, bool) {
+	if d.Kind != DocumentAttachment || len(d.Metadata) == 0 {
+		return AttachmentMeta{}, false
+	}
+	var m AttachmentMeta
+	if err := json.Unmarshal(d.Metadata, &m); err != nil {
+		return AttachmentMeta{}, false
+	}
+	return m, true
+}
+
+// SetAttachmentMeta serializa a meta em Metadata.
+func (d *FinanceDocument) SetAttachmentMeta(m AttachmentMeta) error {
+	b, err := json.Marshal(m)
+	if err != nil {
+		return err
+	}
+	d.Metadata = b
+	return nil
+}
 
 // FiscalSource é a procedência do detalhamento fiscal.
 const (

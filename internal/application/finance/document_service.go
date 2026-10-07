@@ -42,6 +42,7 @@ type FinanceDocumentService struct {
 	repo           dom.FinanceDocumentRepository
 	storage        storage.ObjectStorage
 	maxUploadBytes int64
+	qr             qrDecoder // opcional; lê Pix copia e cola de imagens de anexo
 }
 
 // NewFinanceDocumentService cria o serviço de documentos financeiros.

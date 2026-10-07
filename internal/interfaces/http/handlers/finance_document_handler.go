@@ -32,12 +32,17 @@ type financeDocumentResponse struct {
 	MimeType         string     `json:"mime_type"`
 	SizeBytes        int64      `json:"size_bytes"`
 	ExtractionStatus string     `json:"extraction_status"`
-	CreatedAt        string     `json:"created_at"`
-	UpdatedAt        string     `json:"updated_at"`
+	// Só em kind=attachment (anexos de apoio ao lançamento).
+	AttachmentType    *string `json:"attachment_type,omitempty"`
+	PaymentCode       *string `json:"payment_code,omitempty"`
+	PaymentCodeSource *string `json:"payment_code_source,omitempty"`
+	Note              *string `json:"note,omitempty"`
+	CreatedAt         string  `json:"created_at"`
+	UpdatedAt         string  `json:"updated_at"`
 }
 
 func mapFinanceDocument(d *dom.FinanceDocument) financeDocumentResponse {
-	return financeDocumentResponse{
+	out := financeDocumentResponse{
 		ID:               d.ID,
 		CardID:           d.CardID,
 		EntryID:          d.EntryID,
@@ -49,6 +54,14 @@ func mapFinanceDocument(d *dom.FinanceDocument) financeDocumentResponse {
 		CreatedAt:        d.CreatedAt.UTC().Format(time.RFC3339Nano),
 		UpdatedAt:        d.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
+	if meta, ok := d.AttachmentMeta(); ok {
+		t := string(meta.Type)
+		out.AttachmentType = &t
+		out.PaymentCode = meta.PaymentCode
+		out.PaymentCodeSource = meta.PaymentCodeSource
+		out.Note = meta.Note
+	}
+	return out
 }
 
 func (h *FinanceDocumentHandler) Upload(c *gin.Context) {
