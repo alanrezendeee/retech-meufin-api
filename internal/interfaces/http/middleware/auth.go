@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -9,16 +11,26 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/retechfin/retechfin-api/internal/appctx"
+	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
 
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/errrespond"
 )
 
 // Chaves de contexto preenchidas pelo middleware de autenticação.
 const (
-	CtxUserID = "user_id"
-	CtxEmail  = "email"
-	CtxRoles  = "roles"
-	CtxPerms  = "perms"
+	CtxUserID      = "user_id"
+	CtxEmail       = "email"
+	CtxRoles       = "roles"
+	CtxPerms       = "perms"
+	CtxAccessToken = "access_token" // JWT do auth em uso nesta requisição (Bearer ou da sessão)
+	CtxSessionID   = "session_id"   // id (hash) da sessão quando autenticado por cookie
+	CtxAuthVia     = "auth_via"     // "bearer" | "cookie"
+)
+
+// Valores de CtxAuthVia.
+const (
+	AuthViaBearer = "bearer"
+	AuthViaCookie = "cookie"
 )
 
 // AuthClaims espelha os claims emitidos pelo retech-auth-api (RS256).
@@ -34,34 +46,54 @@ type AuthClaims struct {
 	jwt.RegisteredClaims
 }
 
-// RequireAuth valida o JWT (Authorization: Bearer) contra o JWKS do auth,
-// confere a aplicação (se applicationID != "") e deriva o workspace do tenant_id.
-func RequireAuth(jwks *keyfunc.JWKS, applicationID string) gin.HandlerFunc {
+// SessionResolver transforma o token do cookie em sessão com access token
+// válido (renovado se preciso). Implementado por application/session.Service.
+type SessionResolver interface {
+	Resolve(ctx context.Context, rawToken string) (domsess.Session, error)
+}
+
+// AuthOptions configura RequireAuth.
+type AuthOptions struct {
+	JWKS          *keyfunc.JWKS
+	ApplicationID string
+	// Sessions habilita autenticação por cookie (gateway). Nil = só Bearer.
+	Sessions SessionResolver
+	Cookie   SessionCookie
+	// AllowedOrigins alimenta a verificação CSRF das requisições por cookie
+	// (normalmente a mesma lista do CORS).
+	AllowedOrigins []string
+}
+
+// RequireAuth autentica a requisição por `Authorization: Bearer` OU pelo
+// cookie de sessão do gateway. Nos dois casos o JWT do auth é validado contra
+// o JWKS, a aplicação é conferida (se applicationID != "") e o workspace é
+// derivado do tenant_id.
+//
+// Bearer tem precedência (clientes não-browser). Pelo cookie, requisições
+// que mudam estado passam ainda pela verificação CSRF (Sec-Fetch-Site/Origin).
+func RequireAuth(opts AuthOptions) gin.HandlerFunc {
+	allowed := originSet(opts.AllowedOrigins)
+
 	return func(c *gin.Context) {
-		raw := c.GetHeader("Authorization")
-		if raw == "" {
-			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "token de autenticação ausente")
-			c.Abort()
-			return
-		}
-		parts := strings.SplitN(raw, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "formato inválido: use 'Authorization: Bearer <token>'")
-			c.Abort()
-			return
+		rawJWT, via, ok := resolveCredential(c, opts, allowed)
+		if !ok {
+			return // resposta já escrita
 		}
 
 		claims := &AuthClaims{}
-		token, err := jwt.ParseWithClaims(parts[1], claims, jwks.Keyfunc,
+		token, err := jwt.ParseWithClaims(rawJWT, claims, opts.JWKS.Keyfunc,
 			jwt.WithValidMethods([]string{"RS256"}))
 		if err != nil || !token.Valid {
+			if via == AuthViaCookie {
+				opts.Cookie.Clear(c)
+			}
 			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "token inválido ou expirado")
 			c.Abort()
 			return
 		}
 
 		// Defesa em profundidade: garante que o token é desta aplicação.
-		if applicationID != "" && claims.ApplicationID != applicationID {
+		if opts.ApplicationID != "" && claims.ApplicationID != opts.ApplicationID {
 			errrespond.Message(c, http.StatusForbidden, errrespond.CodeForbidden, "token não pertence a esta aplicação")
 			c.Abort()
 			return
@@ -85,6 +117,8 @@ func RequireAuth(jwks *keyfunc.JWKS, applicationID string) gin.HandlerFunc {
 		c.Set(CtxEmail, claims.Email)
 		c.Set(CtxRoles, claims.Roles)
 		c.Set(CtxPerms, claims.Perms)
+		c.Set(CtxAccessToken, rawJWT)
+		c.Set(CtxAuthVia, via)
 		// O ator também vai no context da REQUISIÇÃO (não só no do gin) para a
 		// camada de aplicação registrar quem fez a ação (trilha de eventos)
 		// sem precisar plumbar o user_id por todas as assinaturas de serviço.
@@ -93,4 +127,48 @@ func RequireAuth(jwks *keyfunc.JWKS, applicationID string) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// resolveCredential obtém o JWT a validar: do header Bearer ou da sessão do
+// cookie. Em falha, escreve a resposta e devolve ok=false.
+func resolveCredential(c *gin.Context, opts AuthOptions, allowed map[string]struct{}) (jwtRaw, via string, ok bool) {
+	if raw := c.GetHeader("Authorization"); raw != "" {
+		parts := strings.SplitN(raw, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
+			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "formato inválido: use 'Authorization: Bearer <token>'")
+			c.Abort()
+			return "", "", false
+		}
+		return strings.TrimSpace(parts[1]), AuthViaBearer, true
+	}
+
+	cookieToken := opts.Cookie.Read(c)
+	if opts.Sessions == nil || cookieToken == "" {
+		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "token de autenticação ausente")
+		c.Abort()
+		return "", "", false
+	}
+
+	if !safeMethod(c.Request.Method) && crossSiteRequest(c.Request, allowed) {
+		errrespond.Message(c, http.StatusForbidden, errrespond.CodeForbidden, "requisição cross-site recusada")
+		c.Abort()
+		return "", "", false
+	}
+
+	sess, err := opts.Sessions.Resolve(c.Request.Context(), cookieToken)
+	if err != nil {
+		switch {
+		case errors.Is(err, domsess.ErrNotFound), errors.Is(err, domsess.ErrRefreshRejected):
+			opts.Cookie.Clear(c)
+			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "sessão expirada; faça login novamente")
+		case errors.Is(err, domsess.ErrAuthUnavailable):
+			errrespond.Message(c, http.StatusServiceUnavailable, errrespond.CodeInternal, "serviço de autenticação indisponível; tente novamente em instantes")
+		default:
+			errrespond.Message(c, http.StatusInternalServerError, errrespond.CodeInternal, "falha ao validar a sessão")
+		}
+		c.Abort()
+		return "", "", false
+	}
+	c.Set(CtxSessionID, sess.ID)
+	return sess.Tokens.Access, AuthViaCookie, true
 }

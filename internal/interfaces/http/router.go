@@ -15,8 +15,10 @@ import (
 	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
+	appsess "github.com/retechfin/retechfin-api/internal/application/session"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
+	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 	"gorm.io/gorm"
@@ -73,6 +75,12 @@ type RouterDeps struct {
 	HealthPlanService             *apph.PlanService
 	HealthPlanDocumentService     *apph.PlanDocumentService
 	ProfileService                *appacc.ProfileService
+
+	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
+	SessionService *appsess.Service                // nil = desabilitado (só Bearer)
+	SessionAuth    *authclient.PublicAuthenticator // /auth/me e login
+	SessionCookie  middleware.SessionCookie
+	AuthBaseURL    string // base do retech-auth-api para o proxy IAM
 }
 
 func NewRouter(d RouterDeps) *gin.Engine {
@@ -101,9 +109,35 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	txH := handlers.NewTransactionHandler(d.TransactionService)
 	budH := handlers.NewBudgetHandler(d.BudgetService)
 
-	v1 := r.Group("/api/v1")
-	v1.Use(middleware.RequireAuth(d.JWKS, d.ApplicationID))
+	authOpts := middleware.AuthOptions{
+		JWKS:           d.JWKS,
+		ApplicationID:  d.ApplicationID,
+		Cookie:         d.SessionCookie,
+		AllowedOrigins: d.CORSOrigins,
+	}
+	if d.SessionService != nil {
+		authOpts.Sessions = d.SessionService
+	}
+	requireAuth := middleware.RequireAuth(authOpts)
+
+	// Gateway de autenticação do browser: login/logout emitem o cookie opaco;
+	// /me repassa o perfil do auth (funciona com cookie OU Bearer).
+	sessH := handlers.NewSessionHandler(d.SessionService, d.SessionAuth, d.SessionCookie)
+	authG := r.Group("/api/v1/auth")
 	{
+		authG.POST("/login", middleware.RateLimitPerIP(10, time.Minute), sessH.Login)
+		authG.POST("/logout", sessH.Logout)
+		authG.GET("/me", requireAuth, sessH.Me)
+	}
+
+	v1 := r.Group("/api/v1")
+	v1.Use(requireAuth)
+	{
+		// Proxy IAM: telas de usuários/roles/permissions do admin → auth, com o
+		// Bearer da sessão injetado no servidor.
+		iamH := handlers.NewIAMProxyHandler(d.AuthBaseURL, d.Log)
+		v1.Any("/iam/*path", iamH.Proxy)
+
 		// Perfil do usuário logado (só autenticação; sem módulo/permission)
 		meH := handlers.NewMeHandler(d.ProfileService)
 		v1.POST("/me/avatar", meH.UploadAvatar)

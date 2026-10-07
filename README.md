@@ -64,13 +64,23 @@ Migrations rodam automaticamente na subida do processo.
 
 ## API (`/api/v1`)
 
-Todas as rotas versionadas exigem o header:
+Todas as rotas versionadas exigem autenticação, por um de dois caminhos:
 
-```http
-X-Workspace-ID: <uuid>
-```
+- **Cookie de sessão** (`meufin_session`, HttpOnly) — é o que o admin usa. Emitido por
+  `POST /api/v1/auth/login`; o browser nunca vê JWT. Ver `docs/auth-session-gateway.md`.
+- **`Authorization: Bearer <jwt do retech-auth-api>`** — clientes não-browser (Postman, integrações).
 
-Representa o isolamento lógico do workspace (família/organização). Autenticação JWT pode popular esse header via API gateway no futuro.
+Nos dois casos o JWT é validado via JWKS e o workspace vem do claim `tenant_id` do token
+(o header `X-Workspace-ID` é ignorado).
+
+### Autenticação (gateway de sessão)
+
+| Método | Caminho | Descrição |
+|--------|---------|-----------|
+| `POST` | `/api/v1/auth/login` | `{email, password}` → `204` + cookie `meufin_session` (rate limit 10/min por IP) |
+| `POST` | `/api/v1/auth/logout` | Revoga a sessão e limpa o cookie (idempotente) |
+| `GET` | `/api/v1/auth/me` | Perfil + abilities CASL (repasse do `/v1/me` do auth); aceita cookie ou Bearer |
+| `ANY` | `/api/v1/iam/v1/{users,roles,permissions}/*` | Proxy para o auth com o token da sessão (telas de administração) |
 
 ### Endpoints principais
 

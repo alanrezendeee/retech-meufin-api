@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Config agrega todas as variáveis obrigatórias. Qualquer ausência impede o startup.
@@ -22,6 +24,13 @@ type Config struct {
 	AuthJWKSURL      string
 	CORSOrigins      []string
 	AppApplicationID string
+	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
+	SessionEncryptionKey string        // SESSION_ENCRYPTION_KEY: base64 de 32 bytes; vazio = gateway desabilitado (só Bearer)
+	SessionCookieName    string        // SESSION_COOKIE_NAME (padrão meufin_session)
+	SessionCookieSecure  bool          // SESSION_COOKIE_SECURE (padrão true; false só fora de produção)
+	SessionCookieDomain  string        // SESSION_COOKIE_DOMAIN (opcional; vazio = host da API)
+	SessionTTL           time.Duration // SESSION_TTL_HOURS (padrão 168h = validade do refresh token do auth)
+	AppApplicationCode   string        // APP_APPLICATION_CODE: application_code no auth (padrão meufin)
 	// Integrações opcionais
 	FipeBaseURL string // padrão: https://parallelum.com.br/fipe/api/v1
 	RedisURL    string // ex: redis://localhost:6379 (opcional; sem Redis = sem cache FIPE)
@@ -67,10 +76,59 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("APP_ENV inválido: use development, production ou test")
 	}
 
+	if err := loadSession(cfg); err != nil {
+		return nil, err
+	}
+
 	log.Println("✅ Todas as configurações carregadas com sucesso!")
 
 	return cfg, nil
 }
+
+// loadSession lê e valida as variáveis do gateway de sessão.
+func loadSession(cfg *Config) error {
+	cfg.SessionEncryptionKey = strings.TrimSpace(os.Getenv("SESSION_ENCRYPTION_KEY"))
+	cfg.SessionCookieName = strings.TrimSpace(os.Getenv("SESSION_COOKIE_NAME"))
+	if cfg.SessionCookieName == "" {
+		cfg.SessionCookieName = "meufin_session"
+	}
+	cfg.SessionCookieDomain = strings.TrimSpace(os.Getenv("SESSION_COOKIE_DOMAIN"))
+	cfg.AppApplicationCode = strings.TrimSpace(os.Getenv("APP_APPLICATION_CODE"))
+	if cfg.AppApplicationCode == "" {
+		cfg.AppApplicationCode = "meufin"
+	}
+
+	cfg.SessionCookieSecure = true
+	if v := strings.TrimSpace(os.Getenv("SESSION_COOKIE_SECURE")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			return fmt.Errorf("SESSION_COOKIE_SECURE inválido: %q", v)
+		}
+		cfg.SessionCookieSecure = b
+	}
+
+	cfg.SessionTTL = 168 * time.Hour
+	if v := strings.TrimSpace(os.Getenv("SESSION_TTL_HOURS")); v != "" {
+		h, err := strconv.Atoi(v)
+		if err != nil || h < 1 {
+			return fmt.Errorf("SESSION_TTL_HOURS inválido: %q (inteiro >= 1)", v)
+		}
+		cfg.SessionTTL = time.Duration(h) * time.Hour
+	}
+
+	if cfg.AppEnv == "production" {
+		if cfg.SessionEncryptionKey == "" {
+			return fmt.Errorf("SESSION_ENCRYPTION_KEY é obrigatória em produção (openssl rand -base64 32)")
+		}
+		if !cfg.SessionCookieSecure {
+			return fmt.Errorf("SESSION_COOKIE_SECURE=false não é permitido em produção")
+		}
+	}
+	return nil
+}
+
+// SessionEnabled informa se o gateway de sessão (cookie) está ativo.
+func (c *Config) SessionEnabled() bool { return c.SessionEncryptionKey != "" }
 
 // splitAndTrim quebra uma lista separada por vírgula, ignorando itens vazios.
 func splitAndTrim(s string) []string {
