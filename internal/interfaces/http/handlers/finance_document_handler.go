@@ -37,8 +37,14 @@ type financeDocumentResponse struct {
 	PaymentCode       *string `json:"payment_code,omitempty"`
 	PaymentCodeSource *string `json:"payment_code_source,omitempty"`
 	Note              *string `json:"note,omitempty"`
-	CreatedAt         string  `json:"created_at"`
-	UpdatedAt         string  `json:"updated_at"`
+	// PixDynamic: QR Pix dinâmico (uso único, pode expirar).
+	PixDynamic *bool `json:"pix_dynamic,omitempty"`
+	// ReplicatedFromEntryID: esta linha é cópia do anexo enviado naquele lançamento.
+	ReplicatedFromEntryID *uuid.UUID `json:"replicated_from_entry_id,omitempty"`
+	// ReplicatedTo: só na resposta do upload — parcelas futuras que receberam cópia.
+	ReplicatedTo *int   `json:"replicated_to,omitempty"`
+	CreatedAt    string `json:"created_at"`
+	UpdatedAt    string `json:"updated_at"`
 }
 
 func mapFinanceDocument(d *dom.FinanceDocument) financeDocumentResponse {
@@ -60,6 +66,8 @@ func mapFinanceDocument(d *dom.FinanceDocument) financeDocumentResponse {
 		out.PaymentCode = meta.PaymentCode
 		out.PaymentCodeSource = meta.PaymentCodeSource
 		out.Note = meta.Note
+		out.PixDynamic = meta.PixDynamic
+		out.ReplicatedFromEntryID = meta.ReplicatedFromEntryID
 	}
 	return out
 }

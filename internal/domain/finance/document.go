@@ -61,9 +61,23 @@ func ValidAttachmentType(t AttachmentType) bool {
 	return false
 }
 
+// AttachmentReplicable indica se o anexo faz sentido em várias parcelas da
+// mesma série: QR Code Pix (chave do mesmo credor) e contrato (vale para a
+// série toda). Boleto, nota e fatura são de uma ocorrência só — cada parcela
+// tem o seu — e nunca replicam, mesmo com "aplicar às futuras" marcado.
+func AttachmentReplicable(t AttachmentType) bool {
+	return t == AttachmentPixQRCode || t == AttachmentContrato
+}
+
 // AttachmentMeta é o conteúdo de Metadata para kind=attachment.
 type AttachmentMeta struct {
 	Type AttachmentType `json:"attachment_type"`
+	// ReplicatedFromEntryID: lançamento onde o anexo foi enviado, quando esta
+	// linha nasceu por replicação para uma parcela futura (mesmo objeto no storage).
+	ReplicatedFromEntryID *uuid.UUID `json:"replicated_from_entry_id,omitempty"`
+	// PixDynamic: payload Pix com Point of Initiation "12" (QR dinâmico, de
+	// uso único e com validade) — a UI avisa que pode expirar nas parcelas futuras.
+	PixDynamic *bool `json:"pix_dynamic,omitempty"`
 	// PaymentCode é o que o usuário copia para pagar: linha digitável do
 	// boleto (47/48 dígitos) ou o payload EMV do Pix ("copia e cola").
 	PaymentCode *string `json:"payment_code,omitempty"`

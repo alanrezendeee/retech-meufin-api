@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +24,10 @@ import (
 // leitura automática do Pix copia e cola em imagens).
 func (s *FinanceDocumentService) SetQRDecoder(qr qrDecoder) { s.qr = qr }
 
+// SetEntryRepo injeta o repositório de lançamentos, necessário para replicar
+// anexos às parcelas futuras da série (opcional; nil = sem replicação).
+func (s *FinanceDocumentService) SetEntryRepo(r dom.FinancialEntryRepository) { s.entries = r }
+
 // UploadAttachmentInput é a entrada do upload de anexo de lançamento.
 type UploadAttachmentInput struct {
 	WorkspaceID      uuid.UUID
@@ -37,11 +42,22 @@ type UploadAttachmentInput struct {
 	MimeType         string
 	Size             int64
 	Content          io.Reader
+	// ApplyToFuture replica o anexo às parcelas futuras previstas da mesma
+	// série. Só vale para tipos replicáveis (dom.AttachmentReplicable); para
+	// boleto/nota/fatura/outro é ignorado — cada parcela tem o seu.
+	ApplyToFuture bool
+}
+
+// UploadAttachmentResult é o anexo criado no lançamento alvo e quantas
+// parcelas futuras receberam uma cópia (mesmo objeto no storage).
+type UploadAttachmentResult struct {
+	Doc          *dom.FinanceDocument
+	ReplicatedTo int
 }
 
 // UploadAttachment anexa um documento de apoio ao lançamento. A existência do
 // lançamento no workspace deve ser validada pelo chamador.
-func (s *FinanceDocumentService) UploadAttachment(ctx context.Context, in UploadAttachmentInput) (*dom.FinanceDocument, error) {
+func (s *FinanceDocumentService) UploadAttachment(ctx context.Context, in UploadAttachmentInput) (*UploadAttachmentResult, error) {
 	if !s.storage.Enabled() {
 		return nil, &dom.ValidationError{Msg: "armazenamento de documentos indisponível (storage não configurado)"}
 	}
@@ -60,6 +76,15 @@ func (s *FinanceDocumentService) UploadAttachment(ctx context.Context, in Upload
 	mime := strings.ToLower(strings.TrimSpace(in.MimeType))
 	if !receiptAllowedMimes[mime] {
 		return nil, &dom.ValidationError{Msg: "tipo de arquivo não permitido para anexo (PDF, imagem ou DOC)"}
+	}
+	// Alvos da replicação resolvidos antes do upload: se a série não existe,
+	// falha cedo sem gravar nada.
+	var futures []dom.FinancialEntry
+	if in.ApplyToFuture && dom.AttachmentReplicable(in.Type) {
+		var err error
+		if futures, err = s.futureSiblings(ctx, in.WorkspaceID, in.EntryID); err != nil {
+			return nil, err
+		}
 	}
 
 	meta := dom.AttachmentMeta{Type: in.Type}
@@ -96,6 +121,10 @@ func (s *FinanceDocumentService) UploadAttachment(ctx context.Context, in Upload
 		if meta.PaymentCodeSource == nil {
 			src := "user"
 			meta.PaymentCodeSource = &src
+		}
+		if IsPixPayload(code) {
+			dyn := PixIsDynamic(code)
+			meta.PixDynamic = &dyn
 		}
 	}
 
@@ -134,7 +163,79 @@ func (s *FinanceDocumentService) UploadAttachment(ctx context.Context, in Upload
 	if err := s.repo.Create(ctx, doc); err != nil {
 		return nil, err
 	}
-	return doc, nil
+
+	// Replicação: uma linha por parcela futura apontando para o MESMO objeto
+	// (sem duplicar bytes). Soft-delete de uma cópia não afeta as demais.
+	replicated := 0
+	for i := range futures {
+		sibID := futures[i].ID
+		cp := *doc
+		cp.ID = uuid.New()
+		cp.EntryID = &sibID
+		cp.Metadata = nil
+		m := meta
+		m.ReplicatedFromEntryID = &entryID
+		if err := cp.SetAttachmentMeta(m); err != nil {
+			return nil, err
+		}
+		if err := s.repo.Create(ctx, &cp); err != nil {
+			return nil, fmt.Errorf("anexo criado em %s, mas falhou ao replicar para a parcela %s: %w", entryID, sibID, err)
+		}
+		replicated++
+	}
+	return &UploadAttachmentResult{Doc: doc, ReplicatedTo: replicated}, nil
+}
+
+// futureSiblings devolve as parcelas previstas da série com vencimento
+// posterior ao lançamento alvo. Lançamento fora de série = nenhuma.
+func (s *FinanceDocumentService) futureSiblings(ctx context.Context, workspaceID, entryID uuid.UUID) ([]dom.FinancialEntry, error) {
+	if s.entries == nil {
+		return nil, nil
+	}
+	e, err := s.entries.GetByID(ctx, workspaceID, entryID)
+	if err != nil {
+		return nil, err
+	}
+	if e.RecurrenceGroupID == nil {
+		return nil, nil
+	}
+	sibs, err := s.entries.ListGroupSiblings(ctx, workspaceID, *e.RecurrenceGroupID, e.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := sibs[:0]
+	for i := range sibs {
+		if sibs[i].Status == dom.StatusPrevista && sibs[i].DueDate.After(e.DueDate) {
+			out = append(out, sibs[i])
+		}
+	}
+	return out, nil
+}
+
+// PixIsDynamic lê o campo 01 (Point of Initiation Method) do payload EMV:
+// "12" = QR dinâmico (uso único, com validade); "11" ou ausente = estático,
+// reutilizável — o caso que faz sentido replicar para as parcelas.
+func PixIsDynamic(payload string) bool {
+	v, ok := emvField(payload, "01")
+	return ok && v == "12"
+}
+
+// emvField percorre o TLV raiz (id 2 dígitos + tamanho 2 dígitos + valor) e
+// devolve o valor do id pedido. Para a lookup, para antes do CRC (63).
+func emvField(payload, id string) (string, bool) {
+	p := strings.TrimSpace(payload)
+	for i := 0; i+4 <= len(p); {
+		tag := p[i : i+2]
+		n, err := strconv.Atoi(p[i+2 : i+4])
+		if err != nil || n < 0 || i+4+n > len(p) {
+			return "", false
+		}
+		if tag == id {
+			return p[i+4 : i+4+n], true
+		}
+		i += 4 + n
+	}
+	return "", false
 }
 
 // ListAttachments lista os anexos de apoio de um lançamento.
