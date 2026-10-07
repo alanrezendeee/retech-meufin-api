@@ -333,6 +333,13 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		finance.GET("/entries/:id/receipts/:receiptId/download-url", receiptH.DownloadURL)
 		finance.DELETE("/entries/:id/receipts/:receiptId", receiptH.Delete)
 
+		// Anexos de apoio ao lançamento (boleto, QR Code Pix, nota, contrato…).
+		attachH := handlers.NewFinanceAttachmentHandler(d.FinanceDocumentService, d.FinancialEntryService)
+		finance.POST("/entries/:id/attachments", attachH.Upload)
+		finance.GET("/entries/:id/attachments", attachH.List)
+		finance.GET("/entries/:id/attachments/:attachmentId/download-url", attachH.DownloadURL)
+		finance.DELETE("/entries/:id/attachments/:attachmentId", attachH.Delete)
+
 		// Dashboard financeira (agregados; valores em cents).
 		finDashH := handlers.NewFinanceDashboardHandler(d.FinanceDashboardService)
 		finance.GET("/dashboard", finDashH.Summary)
