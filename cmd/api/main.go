@@ -25,9 +25,11 @@ import (
 	apphs "github.com/retechfin/retechfin-api/internal/application/homesafety"
 	appl "github.com/retechfin/retechfin-api/internal/application/ledger"
 	appp "github.com/retechfin/retechfin-api/internal/application/patrimony"
+	appsess "github.com/retechfin/retechfin-api/internal/application/session"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
 	domfinance "github.com/retechfin/retechfin-api/internal/domain/finance"
+	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
@@ -338,6 +340,30 @@ func main() {
 	authClient := authclient.New(authclient.ConfigFromEnv())
 	passwordResetSvc := appacc.NewPasswordResetService(authClient, mailer, log)
 
+	// Gateway de sessão (cookie HttpOnly): tokens do auth ficam no banco,
+	// cifrados; o browser só vê um id opaco. docs/auth-session-gateway.md
+	sessionAuth := authclient.NewPublicAuthenticator(authClient, cfg.AppApplicationCode)
+	sessionCookie := middleware.SessionCookie{
+		Name: cfg.SessionCookieName, Secure: cfg.SessionCookieSecure,
+		Domain: cfg.SessionCookieDomain, MaxAge: int(cfg.SessionTTL.Seconds()),
+	}
+	var sessionSvc *appsess.Service
+	if cfg.SessionEnabled() {
+		if !sessionAuth.Configured() {
+			log.Error("❌ SESSION_ENCRYPTION_KEY definida mas AUTH_API_BASE_URL ausente — o gateway de sessão precisa do auth")
+			os.Exit(1)
+		}
+		sessionCipher, err := domsess.NewCipher(cfg.SessionEncryptionKey)
+		if err != nil {
+			log.Error("❌ SESSION_ENCRYPTION_KEY inválida", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+		sessionSvc = appsess.NewService(sessionAuth, persistence.NewAuthSessionRepository(db, sessionCipher), cfg.SessionTTL, log)
+		log.Info(fmt.Sprintf("✅ Gateway de sessão ativo! cookie=%s secure=%t ttl=%s", cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionTTL))
+	} else {
+		log.Warn("⚠️ Gateway de sessão desabilitado (SESSION_ENCRYPTION_KEY ausente) — API aceita só Authorization: Bearer")
+	}
+
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
 		DB:                       db,
@@ -388,7 +414,33 @@ func main() {
 		HealthPlanService:             healthPlanSvc,
 		HealthPlanDocumentService:     healthPlanDocSvc,
 		ProfileService:                profileSvc,
+
+		SessionService: sessionSvc,
+		SessionAuth:    sessionAuth,
+		SessionCookie:  sessionCookie,
+		AuthBaseURL:    authClient.BaseURL(),
 	})
+
+	// Limpeza de sessões expiradas/revogadas (retidas 7 dias para auditoria).
+	if sessionSvc != nil {
+		go func() {
+			purge := func() {
+				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+				defer cancel()
+				if n, err := sessionSvc.PurgeExpired(ctx, 7*24*time.Hour); err != nil {
+					log.Warn("⚠️ Limpeza de sessões falhou", slog.String("error", err.Error()))
+				} else if n > 0 {
+					log.Info(fmt.Sprintf("🧹 Sessões antigas removidas: %d", n))
+				}
+			}
+			purge()
+			ticker := time.NewTicker(6 * time.Hour)
+			defer ticker.Stop()
+			for range ticker.C {
+				purge()
+			}
+		}()
+	}
 
 	// Sweeper de ingestão fiscal: reenfileira jobs travados (pending/processing
 	// antigos) no boot e periodicamente — recuperação após restart/crash.
