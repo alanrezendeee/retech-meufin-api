@@ -347,31 +347,17 @@ func main() {
 		Name: cfg.SessionCookieName, Secure: cfg.SessionCookieSecure,
 		Domain: cfg.SessionCookieDomain, MaxAge: int(cfg.SessionTTL.Seconds()),
 	}
-	var sessionSvc *appsess.Service
-	if cfg.SessionEnabled() {
-		if !sessionAuth.Configured() {
-			log.Error("❌ SESSION_ENCRYPTION_KEY definida mas AUTH_API_BASE_URL ausente — o gateway de sessão precisa do auth")
-			os.Exit(1)
-		}
-		sessionCipher, err := domsess.NewCipher(cfg.SessionEncryptionKey)
-		if err != nil {
-			log.Error("❌ SESSION_ENCRYPTION_KEY inválida", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-		sessionSvc = appsess.NewService(sessionAuth, persistence.NewAuthSessionRepository(db, sessionCipher), cfg.SessionTTL, log)
-		log.Info(fmt.Sprintf("✅ Gateway de sessão ativo! cookie=%s secure=%t ttl=%s", cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionTTL))
-	} else {
-		log.Warn("⚠️ Gateway de sessão desabilitado (SESSION_ENCRYPTION_KEY ausente) — API aceita só Authorization: Bearer")
-	}
-	if cfg.AuthBearerEnabled {
-		log.Warn("⚠️ Authorization: Bearer habilitado (AUTH_BEARER_ENABLED). Após o rollout do admin por cookie, desligue para fechar a segunda porta")
-	} else {
-		log.Info("🔒 Authorization: Bearer desabilitado — autenticação só por cookie de sessão")
-	}
-	if !cfg.SessionEnabled() && !cfg.AuthBearerEnabled {
-		log.Error("❌ Sem gateway de sessão e sem Bearer: nenhuma forma de autenticar. Defina SESSION_ENCRYPTION_KEY ou AUTH_BEARER_ENABLED=true")
+	if !sessionAuth.Configured() {
+		log.Error("❌ AUTH_API_BASE_URL ausente — o gateway de sessão precisa do auth")
 		os.Exit(1)
 	}
+	sessionCipher, err := domsess.NewCipher(cfg.SessionEncryptionKey)
+	if err != nil {
+		log.Error("❌ SESSION_ENCRYPTION_KEY inválida", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	sessionSvc := appsess.NewService(sessionAuth, persistence.NewAuthSessionRepository(db, sessionCipher), cfg.SessionTTL, log)
+	log.Info(fmt.Sprintf("🔒 Gateway de sessão ativo (única autenticação; sem Bearer). cookie=%s secure=%t ttl=%s", cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionTTL))
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
@@ -380,7 +366,6 @@ func main() {
 		JWKS:                     jwks,
 		ApplicationID:            cfg.AppApplicationID,
 		CORSOrigins:              cfg.CORSOrigins,
-		BearerEnabled:            cfg.AuthBearerEnabled,
 		AccountService:           accSvc,
 		CategoryService:          catSvc,
 		TransactionService:       txSvc,
@@ -432,7 +417,7 @@ func main() {
 	})
 
 	// Limpeza de sessões expiradas/revogadas (retidas 7 dias para auditoria).
-	if sessionSvc != nil {
+	{
 		go func() {
 			purge := func() {
 				ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

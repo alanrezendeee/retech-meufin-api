@@ -6,7 +6,6 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -21,8 +20,6 @@ import (
 	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
 )
 
-// ---- infra de teste: chave RSA + JWKS em memória ----
-
 type signer struct {
 	key  *rsa.PrivateKey
 	jwks *keyfunc.JWKS
@@ -35,14 +32,11 @@ func newSigner(t *testing.T) *signer {
 		t.Fatal(err)
 	}
 	pub := key.PublicKey
-	jwk := map[string]any{
-		"keys": []map[string]any{{
-			"kty": "RSA", "kid": "test", "alg": "RS256", "use": "sig",
-			"n": base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-			"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
-		}},
-	}
-	raw, _ := json.Marshal(jwk)
+	raw, _ := json.Marshal(map[string]any{"keys": []map[string]any{{
+		"kty": "RSA", "kid": "test", "alg": "RS256", "use": "sig",
+		"n": base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
+		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
+	}}})
 	jwks, err := keyfunc.NewJSON(raw)
 	if err != nil {
 		t.Fatal(err)
@@ -96,7 +90,7 @@ func newApp(t *testing.T, s *signer, resolver SessionResolver) *gin.Engine {
 		AllowedOrigins: []string{"https://admin.meufin.app"},
 	}))
 	handler := func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"via": c.GetString(CtxAuthVia), "ws": c.MustGet(CtxWorkspaceID).(uuid.UUID).String()})
+		c.JSON(http.StatusOK, gin.H{"ws": c.MustGet(CtxWorkspaceID).(uuid.UUID).String(), "sid": c.GetString(CtxSessionID)})
 	}
 	r.GET("/x", handler)
 	r.POST("/x", handler)
@@ -114,58 +108,66 @@ func do(r *gin.Engine, method string, mutate func(*http.Request)) *httptest.Resp
 	return w
 }
 
-// ---- Bearer (comportamento legado preservado) ----
-
-func TestBearerValido(t *testing.T) {
-	s := newSigner(t)
-	tenant := uuid.NewString()
-	w := do(newApp(t, s, nil), http.MethodGet, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+s.token(t, tenant, time.Hour))
-	})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"via":"bearer"`) || !strings.Contains(w.Body.String(), tenant) {
-		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
-	}
+func withSession(t *testing.T, s *signer, tenant string, exp time.Duration) *fakeResolver {
+	t.Helper()
+	return &fakeResolver{byToken: map[string]domsess.Session{
+		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, tenant, exp)}},
+	}}
 }
 
-func TestBearerExpiradoOuSemTenant(t *testing.T) {
-	s := newSigner(t)
-	app := newApp(t, s, nil)
-	if w := do(app, http.MethodGet, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), -time.Minute))
-	}); w.Code != http.StatusUnauthorized {
-		t.Fatalf("expirado code=%d", w.Code)
-	}
-	if w := do(app, http.MethodGet, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+s.token(t, "", time.Hour))
-	}); w.Code != http.StatusForbidden {
-		t.Fatalf("sem tenant code=%d", w.Code)
-	}
-	if w := do(app, http.MethodGet, nil); w.Code != http.StatusUnauthorized {
-		t.Fatalf("sem credencial code=%d", w.Code)
-	}
-}
+func cookie(r *http.Request) { r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"}) }
 
-// ---- Cookie de sessão ----
+// ---- Cookie de sessão: única autenticação ----
 
 func TestCookieSessaoValida(t *testing.T) {
 	s := newSigner(t)
 	tenant := uuid.NewString()
-	res := &fakeResolver{byToken: map[string]domsess.Session{
-		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, tenant, time.Hour)}},
-	}}
-	w := do(newApp(t, s, res), http.MethodGet, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
-	})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"via":"cookie"`) {
+	w := do(newApp(t, s, withSession(t, s, tenant, time.Hour)), http.MethodGet, cookie)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), tenant) || !strings.Contains(w.Body.String(), `"sid":"sid"`) {
 		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
+func TestSemCookie401(t *testing.T) {
+	s := newSigner(t)
+	if w := do(newApp(t, s, withSession(t, s, uuid.NewString(), time.Hour)), http.MethodGet, nil); w.Code != http.StatusUnauthorized {
+		t.Fatalf("code=%d", w.Code)
+	}
+}
+
+func TestBearerSempreRecusado(t *testing.T) {
+	s := newSigner(t)
+	app := newApp(t, s, withSession(t, s, uuid.NewString(), time.Hour))
+	w := do(app, http.MethodGet, func(r *http.Request) {
+		r.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), time.Hour))
+	})
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "não aceita Authorization") {
+		t.Fatalf("jwt válido no header devia ser recusado: code=%d body=%s", w.Code, w.Body.String())
+	}
+	// Header presente derruba mesmo com cookie válido junto: não há fallback.
+	w = do(app, http.MethodGet, func(r *http.Request) {
+		cookie(r)
+		r.Header.Set("Authorization", "Bearer x")
+	})
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("header+cookie: code=%d", w.Code)
+	}
+}
+
+func TestJWTDaSessaoExpiradoOuSemTenant(t *testing.T) {
+	s := newSigner(t)
+	w := do(newApp(t, s, withSession(t, s, uuid.NewString(), -time.Minute)), http.MethodGet, cookie)
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Header().Get("Set-Cookie"), "Max-Age=0") {
+		t.Fatalf("expirado: code=%d set-cookie=%q", w.Code, w.Header().Get("Set-Cookie"))
+	}
+	if w := do(newApp(t, s, withSession(t, s, "", time.Hour)), http.MethodGet, cookie); w.Code != http.StatusForbidden {
+		t.Fatalf("sem tenant: code=%d", w.Code)
 	}
 }
 
 func TestCookieSessaoDesconhecidaLimpaCookie(t *testing.T) {
 	s := newSigner(t)
-	w := do(newApp(t, s, &fakeResolver{byToken: map[string]domsess.Session{}}), http.MethodGet, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "nao-existe"})
-	})
+	w := do(newApp(t, s, &fakeResolver{byToken: map[string]domsess.Session{}}), http.MethodGet, cookie)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("code=%d", w.Code)
 	}
@@ -177,9 +179,7 @@ func TestCookieSessaoDesconhecidaLimpaCookie(t *testing.T) {
 
 func TestCookieAuthIndisponivelDa503SemLimparCookie(t *testing.T) {
 	s := newSigner(t)
-	w := do(newApp(t, s, &fakeResolver{err: domsess.ErrAuthUnavailable}), http.MethodGet, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
-	})
+	w := do(newApp(t, s, &fakeResolver{err: domsess.ErrAuthUnavailable}), http.MethodGet, cookie)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("code=%d", w.Code)
 	}
@@ -188,50 +188,23 @@ func TestCookieAuthIndisponivelDa503SemLimparCookie(t *testing.T) {
 	}
 }
 
-func TestCookieIgnoradoQuandoGatewayDesabilitado(t *testing.T) {
-	s := newSigner(t)
-	w := do(newApp(t, s, nil), http.MethodGet, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
-	})
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("code=%d", w.Code)
-	}
-}
-
-func TestBearerTemPrecedenciaSobreCookie(t *testing.T) {
-	s := newSigner(t)
-	res := &fakeResolver{err: errors.New("não devia ser chamado")}
-	w := do(newApp(t, s, res), http.MethodGet, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), time.Hour))
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
-	})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"via":"bearer"`) {
-		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())
-	}
-}
-
-// ---- CSRF (só para requisições autenticadas por cookie) ----
+// ---- CSRF ----
 
 func TestCSRFPostCrossSiteRecusado(t *testing.T) {
 	s := newSigner(t)
-	res := &fakeResolver{byToken: map[string]domsess.Session{
-		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, uuid.NewString(), time.Hour)}},
-	}}
-	app := newApp(t, s, res)
-	withCookie := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"}) }
-
+	app := newApp(t, s, withSession(t, s, uuid.NewString(), time.Hour))
 	cases := []struct {
 		name   string
 		mutate func(*http.Request)
 		want   int
 	}{
-		{"Sec-Fetch-Site cross-site", func(r *http.Request) { withCookie(r); r.Header.Set("Sec-Fetch-Site", "cross-site") }, http.StatusForbidden},
-		{"Origin estranha", func(r *http.Request) { withCookie(r); r.Header.Set("Origin", "https://evil.example") }, http.StatusForbidden},
-		{"Origin null", func(r *http.Request) { withCookie(r); r.Header.Set("Origin", "null") }, http.StatusForbidden},
-		{"Origin do admin (CORS)", func(r *http.Request) { withCookie(r); r.Header.Set("Origin", "https://admin.meufin.app") }, http.StatusOK},
-		{"Origin da própria API (same-origin via proxy)", func(r *http.Request) { withCookie(r); r.Header.Set("Origin", "https://api.meufin.app") }, http.StatusOK},
-		{"Sec-Fetch-Site same-origin", func(r *http.Request) { withCookie(r); r.Header.Set("Sec-Fetch-Site", "same-origin") }, http.StatusOK},
-		{"sem headers (cliente não-browser)", withCookie, http.StatusOK},
+		{"Sec-Fetch-Site cross-site", func(r *http.Request) { cookie(r); r.Header.Set("Sec-Fetch-Site", "cross-site") }, http.StatusForbidden},
+		{"Origin estranha", func(r *http.Request) { cookie(r); r.Header.Set("Origin", "https://evil.example") }, http.StatusForbidden},
+		{"Origin null", func(r *http.Request) { cookie(r); r.Header.Set("Origin", "null") }, http.StatusForbidden},
+		{"Origin do admin (CORS)", func(r *http.Request) { cookie(r); r.Header.Set("Origin", "https://admin.meufin.app") }, http.StatusOK},
+		{"Origin da própria API (same-origin via proxy)", func(r *http.Request) { cookie(r); r.Header.Set("Origin", "https://api.meufin.app") }, http.StatusOK},
+		{"Sec-Fetch-Site same-origin", func(r *http.Request) { cookie(r); r.Header.Set("Sec-Fetch-Site", "same-origin") }, http.StatusOK},
+		{"sem headers (cliente não-browser)", cookie, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -244,26 +217,12 @@ func TestCSRFPostCrossSiteRecusado(t *testing.T) {
 
 func TestCSRFGetCrossSiteNaoBloqueia(t *testing.T) {
 	s := newSigner(t)
-	res := &fakeResolver{byToken: map[string]domsess.Session{
-		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, uuid.NewString(), time.Hour)}},
-	}}
-	w := do(newApp(t, s, res), http.MethodGet, func(r *http.Request) {
-		r.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
+	w := do(newApp(t, s, withSession(t, s, uuid.NewString(), time.Hour)), http.MethodGet, func(r *http.Request) {
+		cookie(r)
 		r.Header.Set("Sec-Fetch-Site", "cross-site")
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET não muda estado; code=%d", w.Code)
-	}
-}
-
-func TestCSRFNaoSeAplicaAoBearer(t *testing.T) {
-	s := newSigner(t)
-	w := do(newApp(t, s, nil), http.MethodPost, func(r *http.Request) {
-		r.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), time.Hour))
-		r.Header.Set("Origin", "https://evil.example")
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("Bearer não é vulnerável a CSRF; code=%d", w.Code)
 	}
 }
 
@@ -277,32 +236,5 @@ func TestSessionCookieAtributos(t *testing.T) {
 		if !strings.Contains(sc, want) {
 			t.Errorf("Set-Cookie sem %q: %s", want, sc)
 		}
-	}
-}
-
-func TestBearerDesabilitadoRecusaMesmoTokenValido(t *testing.T) {
-	s := newSigner(t)
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	res := &fakeResolver{byToken: map[string]domsess.Session{
-		"tok": {ID: "sid", Tokens: domsess.Tokens{Access: s.token(t, uuid.NewString(), time.Hour)}},
-	}}
-	r.Use(RequireAuth(AuthOptions{
-		JWKS: s.jwks, ApplicationID: "app-1", Sessions: res, BearerDisabled: true,
-		Cookie: SessionCookie{Name: cookieName, Secure: true},
-	}))
-	r.GET("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
-
-	w := do(r, http.MethodGet, func(req *http.Request) {
-		req.Header.Set("Authorization", "Bearer "+s.token(t, uuid.NewString(), time.Hour))
-	})
-	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "Bearer desabilitada") {
-		t.Fatalf("bearer devia ser recusado: code=%d body=%s", w.Code, w.Body.String())
-	}
-	// Cookie continua funcionando.
-	if w := do(r, http.MethodGet, func(req *http.Request) {
-		req.AddCookie(&http.Cookie{Name: cookieName, Value: "tok"})
-	}); w.Code != http.StatusOK {
-		t.Fatalf("cookie: code=%d", w.Code)
 	}
 }

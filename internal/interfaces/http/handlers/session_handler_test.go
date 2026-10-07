@@ -204,7 +204,7 @@ func newGatewayApp(t *testing.T) (*gin.Engine, *fakeAuthServer, *memStore) {
 	a.GET("/me", requireAuth, h.Me)
 	v1 := r.Group("/api/v1", requireAuth)
 	v1.GET("/ping", func(c *gin.Context) {
-		c.JSON(200, gin.H{"ws": c.MustGet(middleware.CtxWorkspaceID).(uuid.UUID).String(), "via": c.GetString(middleware.CtxAuthVia)})
+		c.JSON(200, gin.H{"ws": c.MustGet(middleware.CtxWorkspaceID).(uuid.UUID).String()})
 	})
 	v1.POST("/ping", func(c *gin.Context) { c.Status(204) })
 	return r, fake, store
@@ -274,7 +274,7 @@ func TestGatewayFluxoCompleto(t *testing.T) {
 
 	// Rota protegida via cookie resolve workspace do tenant_id.
 	w = call(r, http.MethodGet, "/api/v1/ping", "", ck)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), fake.tenant) || !strings.Contains(w.Body.String(), `"via":"cookie"`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), fake.tenant) {
 		t.Fatalf("ping: code=%d body=%s", w.Code, w.Body.String())
 	}
 
@@ -333,9 +333,9 @@ func TestGatewayFluxoCompleto(t *testing.T) {
 	}
 }
 
-func TestGatewayBearerContinuaFuncionando(t *testing.T) {
+// Sem Bearer: um JWT válido do auth no header é recusado — a única porta é o cookie.
+func TestGatewayRecusaBearerMesmoValido(t *testing.T) {
 	r, fake, _ := newGatewayApp(t)
-	// Obtém um JWT "de fora" (cliente não-browser) direto do auth falso.
 	w := httptest.NewRecorder()
 	fake.writeTokens(w)
 	var tr struct {
@@ -347,7 +347,7 @@ func TestGatewayBearerContinuaFuncionando(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tr.AccessToken)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"via":"bearer"`) {
+	if w.Code != http.StatusUnauthorized || !strings.Contains(w.Body.String(), "não aceita Authorization") {
 		t.Fatalf("bearer: code=%d body=%s", w.Code, w.Body.String())
 	}
 }
@@ -358,20 +358,6 @@ func TestGatewayLoginValidacaoERateLimitShape(t *testing.T) {
 		if w := call(r, http.MethodPost, "/api/v1/auth/login", body); w.Code != http.StatusBadRequest {
 			t.Errorf("body %s: code=%d", body, w.Code)
 		}
-	}
-}
-
-func TestGatewayDesabilitado(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	h := NewSessionHandler(nil, nil, middleware.SessionCookie{Name: "s"})
-	r.POST("/login", h.Login)
-	r.POST("/logout", h.Logout)
-	if w := call(r, http.MethodPost, "/login", loginBody("a@b.c", "123456")); w.Code != http.StatusServiceUnavailable {
-		t.Fatalf("login desabilitado: code=%d", w.Code)
-	}
-	if w := call(r, http.MethodPost, "/logout", ""); w.Code != http.StatusNoContent {
-		t.Fatalf("logout desabilitado: code=%d", w.Code)
 	}
 }
 

@@ -13,7 +13,7 @@ func preflight(t *testing.T, origin string) *httptest.ResponseRecorder {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.Use(CORS([]string{"https://admin.meufin.app"}, true))
+	r.Use(CORS([]string{"https://admin.meufin.app"}))
 	r.PUT("/x", func(c *gin.Context) { c.Status(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodOptions, "/x", nil)

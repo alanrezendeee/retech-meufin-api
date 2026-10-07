@@ -20,8 +20,7 @@ func TestLoadSessionHostPrefixExigeSecureSemDomain(t *testing.T) {
 			t.Setenv("SESSION_COOKIE_NAME", tc.cookie)
 			t.Setenv("SESSION_COOKIE_SECURE", tc.secure)
 			t.Setenv("SESSION_COOKIE_DOMAIN", tc.domain)
-			t.Setenv("SESSION_ENCRYPTION_KEY", "")
-			t.Setenv("AUTH_BEARER_ENABLED", "")
+			t.Setenv("SESSION_ENCRYPTION_KEY", "x")
 			cfg := &Config{AppEnv: "development"}
 			err := loadSession(cfg)
 			if (err != nil) != tc.wantErr {
@@ -34,11 +33,14 @@ func TestLoadSessionHostPrefixExigeSecureSemDomain(t *testing.T) {
 	}
 }
 
-func TestLoadSessionProducaoExigeChaveESecure(t *testing.T) {
+func TestLoadSessionExigeChaveEmQualquerAmbienteESecureEmProducao(t *testing.T) {
 	t.Setenv("SESSION_COOKIE_NAME", "")
 	t.Setenv("SESSION_COOKIE_DOMAIN", "")
-	t.Setenv("AUTH_BEARER_ENABLED", "")
 	t.Setenv("SESSION_ENCRYPTION_KEY", "")
+	t.Setenv("SESSION_COOKIE_SECURE", "false")
+	if err := loadSession(&Config{AppEnv: "development"}); err == nil {
+		t.Fatal("sem SESSION_ENCRYPTION_KEY não há como autenticar; devia falhar mesmo em dev")
+	}
 	t.Setenv("SESSION_COOKIE_SECURE", "true")
 	if err := loadSession(&Config{AppEnv: "production"}); err == nil {
 		t.Fatal("produção sem SESSION_ENCRYPTION_KEY devia falhar")
@@ -53,7 +55,7 @@ func TestLoadSessionProducaoExigeChaveESecure(t *testing.T) {
 	if err := loadSession(cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.AuthBearerEnabled || cfg.SessionTTL.Hours() != 12 {
-		t.Fatalf("defaults: bearer=%v ttl=%s", cfg.AuthBearerEnabled, cfg.SessionTTL)
+	if cfg.SessionTTL.Hours() != 12 || cfg.SessionCookieName != "meufin_session" || cfg.AppApplicationCode != "meufin" {
+		t.Fatalf("defaults: ttl=%s cookie=%s app=%s", cfg.SessionTTL, cfg.SessionCookieName, cfg.AppApplicationCode)
 	}
 }

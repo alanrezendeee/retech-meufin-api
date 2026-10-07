@@ -22,15 +22,8 @@ const (
 	CtxEmail       = "email"
 	CtxRoles       = "roles"
 	CtxPerms       = "perms"
-	CtxAccessToken = "access_token" // JWT do auth em uso nesta requisição (Bearer ou da sessão)
-	CtxSessionID   = "session_id"   // id (hash) da sessão quando autenticado por cookie
-	CtxAuthVia     = "auth_via"     // "bearer" | "cookie"
-)
-
-// Valores de CtxAuthVia.
-const (
-	AuthViaBearer = "bearer"
-	AuthViaCookie = "cookie"
+	CtxAccessToken = "access_token" // JWT do auth da sessão desta requisição (usado por /auth/me e proxy IAM)
+	CtxSessionID   = "session_id"   // id (hash) da sessão
 )
 
 // AuthClaims espelha os claims emitidos pelo retech-auth-api (RS256).
@@ -56,29 +49,25 @@ type SessionResolver interface {
 type AuthOptions struct {
 	JWKS          *keyfunc.JWKS
 	ApplicationID string
-	// Sessions habilita autenticação por cookie (gateway). Nil = só Bearer.
+	// Sessions resolve o cookie em sessão (application/session.Service).
 	Sessions SessionResolver
-	// BearerDisabled recusa `Authorization: Bearer` (401): após o rollout do
-	// admin por cookie, fecha a segunda porta — mesmo padrão do CashFlowfy.
-	BearerDisabled bool
-	Cookie         SessionCookie
+	Cookie   SessionCookie
 	// AllowedOrigins alimenta a verificação CSRF das requisições por cookie
 	// (normalmente a mesma lista do CORS).
 	AllowedOrigins []string
 }
 
-// RequireAuth autentica a requisição por `Authorization: Bearer` OU pelo
-// cookie de sessão do gateway. Nos dois casos o JWT do auth é validado contra
-// o JWKS, a aplicação é conferida (se applicationID != "") e o workspace é
-// derivado do tenant_id.
-//
-// Bearer tem precedência (clientes não-browser). Pelo cookie, requisições
-// que mudam estado passam ainda pela verificação CSRF (Sec-Fetch-Site/Origin).
+// RequireAuth autentica a requisição pelo cookie de sessão do gateway — a
+// ÚNICA forma de autenticação (não há `Authorization: Bearer`; JWT nunca sai
+// do servidor). O cookie vira sessão → access token do auth (renovado se
+// preciso) → JWT validado contra o JWKS → aplicação conferida (se
+// applicationID != "") → workspace derivado do tenant_id. Requisições que
+// mudam estado passam ainda pela verificação CSRF (Sec-Fetch-Site/Origin).
 func RequireAuth(opts AuthOptions) gin.HandlerFunc {
 	allowed := originSet(opts.AllowedOrigins)
 
 	return func(c *gin.Context) {
-		rawJWT, via, ok := resolveCredential(c, opts, allowed)
+		rawJWT, ok := resolveCredential(c, opts, allowed)
 		if !ok {
 			return // resposta já escrita
 		}
@@ -87,9 +76,7 @@ func RequireAuth(opts AuthOptions) gin.HandlerFunc {
 		token, err := jwt.ParseWithClaims(rawJWT, claims, opts.JWKS.Keyfunc,
 			jwt.WithValidMethods([]string{"RS256"}))
 		if err != nil || !token.Valid {
-			if via == AuthViaCookie {
-				opts.Cookie.Clear(c)
-			}
+			opts.Cookie.Clear(c)
 			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "token inválido ou expirado")
 			c.Abort()
 			return
@@ -121,7 +108,6 @@ func RequireAuth(opts AuthOptions) gin.HandlerFunc {
 		c.Set(CtxRoles, claims.Roles)
 		c.Set(CtxPerms, claims.Perms)
 		c.Set(CtxAccessToken, rawJWT)
-		c.Set(CtxAuthVia, via)
 		// O ator também vai no context da REQUISIÇÃO (não só no do gin) para a
 		// camada de aplicação registrar quem fez a ação (trilha de eventos)
 		// sem precisar plumbar o user_id por todas as assinaturas de serviço.
@@ -132,35 +118,26 @@ func RequireAuth(opts AuthOptions) gin.HandlerFunc {
 	}
 }
 
-// resolveCredential obtém o JWT a validar: do header Bearer ou da sessão do
-// cookie. Em falha, escreve a resposta e devolve ok=false.
-func resolveCredential(c *gin.Context, opts AuthOptions, allowed map[string]struct{}) (jwtRaw, via string, ok bool) {
-	if raw := c.GetHeader("Authorization"); raw != "" {
-		if opts.BearerDisabled {
-			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "autenticação por Bearer desabilitada; use a sessão (cookie)")
-			c.Abort()
-			return "", "", false
-		}
-		parts := strings.SplitN(raw, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
-			errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "formato inválido: use 'Authorization: Bearer <token>'")
-			c.Abort()
-			return "", "", false
-		}
-		return strings.TrimSpace(parts[1]), AuthViaBearer, true
+// resolveCredential obtém o JWT da sessão do cookie. Em falha, escreve a
+// resposta e devolve ok=false.
+func resolveCredential(c *gin.Context, opts AuthOptions, allowed map[string]struct{}) (jwtRaw string, ok bool) {
+	if c.GetHeader("Authorization") != "" {
+		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "esta API não aceita Authorization: Bearer; autentique via POST /api/v1/auth/login (cookie de sessão)")
+		c.Abort()
+		return "", false
 	}
 
 	cookieToken := opts.Cookie.Read(c)
 	if opts.Sessions == nil || cookieToken == "" {
-		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "token de autenticação ausente")
+		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "sessão ausente; faça login")
 		c.Abort()
-		return "", "", false
+		return "", false
 	}
 
 	if !safeMethod(c.Request.Method) && crossSiteRequest(c.Request, allowed) {
 		errrespond.Message(c, http.StatusForbidden, errrespond.CodeForbidden, "requisição cross-site recusada")
 		c.Abort()
-		return "", "", false
+		return "", false
 	}
 
 	sess, err := opts.Sessions.Resolve(c.Request.Context(), cookieToken)
@@ -175,8 +152,8 @@ func resolveCredential(c *gin.Context, opts AuthOptions, allowed map[string]stru
 			errrespond.Message(c, http.StatusInternalServerError, errrespond.CodeInternal, "falha ao validar a sessão")
 		}
 		c.Abort()
-		return "", "", false
+		return "", false
 	}
 	c.Set(CtxSessionID, sess.ID)
-	return sess.Tokens.Access, AuthViaCookie, true
+	return sess.Tokens.Access, true
 }

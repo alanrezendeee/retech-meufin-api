@@ -25,13 +25,12 @@ type Config struct {
 	CORSOrigins      []string
 	AppApplicationID string
 	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
-	SessionEncryptionKey string        // SESSION_ENCRYPTION_KEY: base64 de 32 bytes; vazio = gateway desabilitado (só Bearer)
+	SessionEncryptionKey string        // SESSION_ENCRYPTION_KEY: base64 de 32 bytes (obrigatória)
 	SessionCookieName    string        // SESSION_COOKIE_NAME (padrão meufin_session)
 	SessionCookieSecure  bool          // SESSION_COOKIE_SECURE (padrão true; false só fora de produção)
 	SessionCookieDomain  string        // SESSION_COOKIE_DOMAIN (opcional; vazio = host da API)
 	SessionTTL           time.Duration // SESSION_TTL_HOURS (padrão 12h, igual ao CashFlowfy)
 	AppApplicationCode   string        // APP_APPLICATION_CODE: application_code no auth (padrão meufin)
-	AuthBearerEnabled    bool          // AUTH_BEARER_ENABLED: aceitar Authorization: Bearer além do cookie (padrão true; desligar após o rollout do admin)
 	// Integrações opcionais
 	FipeBaseURL string // padrão: https://parallelum.com.br/fipe/api/v1
 	RedisURL    string // ex: redis://localhost:6379 (opcional; sem Redis = sem cache FIPE)
@@ -117,34 +116,21 @@ func loadSession(cfg *Config) error {
 		cfg.SessionTTL = time.Duration(h) * time.Hour
 	}
 
-	cfg.AuthBearerEnabled = true
-	if v := strings.TrimSpace(os.Getenv("AUTH_BEARER_ENABLED")); v != "" {
-		b, err := strconv.ParseBool(v)
-		if err != nil {
-			return fmt.Errorf("AUTH_BEARER_ENABLED inválido: %q", v)
-		}
-		cfg.AuthBearerEnabled = b
-	}
-
 	// Prefixo __Host- (RFC 6265bis): o browser só aceita com Secure, Path=/ e sem
 	// Domain — impede que um subdomínio comprometido injete/sobrescreva o cookie.
 	if strings.HasPrefix(cfg.SessionCookieName, "__Host-") && (!cfg.SessionCookieSecure || cfg.SessionCookieDomain != "") {
 		return fmt.Errorf("SESSION_COOKIE_NAME com prefixo __Host- exige SESSION_COOKIE_SECURE=true e SESSION_COOKIE_DOMAIN vazio")
 	}
 
-	if cfg.AppEnv == "production" {
-		if cfg.SessionEncryptionKey == "" {
-			return fmt.Errorf("SESSION_ENCRYPTION_KEY é obrigatória em produção (openssl rand -base64 32)")
-		}
-		if !cfg.SessionCookieSecure {
-			return fmt.Errorf("SESSION_COOKIE_SECURE=false não é permitido em produção")
-		}
+	// A única forma de autenticar é o cookie de sessão: sem chave, não há API.
+	if cfg.SessionEncryptionKey == "" {
+		return fmt.Errorf("SESSION_ENCRYPTION_KEY é obrigatória (openssl rand -base64 32)")
+	}
+	if cfg.AppEnv == "production" && !cfg.SessionCookieSecure {
+		return fmt.Errorf("SESSION_COOKIE_SECURE=false não é permitido em produção")
 	}
 	return nil
 }
-
-// SessionEnabled informa se o gateway de sessão (cookie) está ativo.
-func (c *Config) SessionEnabled() bool { return c.SessionEncryptionKey != "" }
 
 // splitAndTrim quebra uma lista separada por vírgula, ignorando itens vazios.
 func splitAndTrim(s string) []string {
