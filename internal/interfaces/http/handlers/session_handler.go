@@ -6,10 +6,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/theretechlabs/retech-authkit/authclient"
+	"github.com/theretechlabs/retech-authkit/clientip"
+	"github.com/theretechlabs/retech-authkit/cookie"
 
 	appsess "github.com/retechfin/retechfin-api/internal/application/session"
 	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
-	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/errrespond"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 )
@@ -18,11 +20,11 @@ import (
 // POST /auth/login, POST /auth/logout (cookie HttpOnly) e GET /auth/me.
 type SessionHandler struct {
 	svc    *appsess.Service
-	auth   *authclient.PublicAuthenticator
-	cookie middleware.SessionCookie
+	auth   *authclient.Client
+	cookie cookie.Config
 }
 
-func NewSessionHandler(svc *appsess.Service, auth *authclient.PublicAuthenticator, cookie middleware.SessionCookie) *SessionHandler {
+func NewSessionHandler(svc *appsess.Service, auth *authclient.Client, cookie cookie.Config) *SessionHandler {
 	return &SessionHandler{svc: svc, auth: auth, cookie: cookie}
 }
 
@@ -39,11 +41,11 @@ func (h *SessionHandler) Login(c *gin.Context) {
 		errrespond.Message(c, http.StatusBadRequest, errrespond.CodeValidation, "informe e-mail válido e senha (mínimo 6 caracteres)")
 		return
 	}
-	meta := appsess.ClientMeta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()}
+	meta := appsess.ClientMeta{IP: clientip.FromRequest(c.Request), UserAgent: c.Request.UserAgent()}
 	raw, _, err := h.svc.Login(c.Request.Context(), strings.TrimSpace(body.Email), body.Password, meta)
 	switch {
 	case err == nil:
-		h.cookie.Set(c, raw)
+		h.cookie.Set(c.Writer, raw)
 		c.Status(http.StatusNoContent)
 	case errors.Is(err, domsess.ErrInvalidCredentials):
 		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "e-mail ou senha incorretos")
@@ -58,14 +60,14 @@ func (h *SessionHandler) Login(c *gin.Context) {
 
 // Logout revoga a sessão e limpa o cookie. Idempotente.
 func (h *SessionHandler) Logout(c *gin.Context) {
-	raw := h.cookie.Read(c)
+	raw := h.cookie.Read(c.Request)
 	if raw != "" {
 		if err := h.svc.Logout(c.Request.Context(), raw); err != nil {
 			errrespond.Message(c, http.StatusInternalServerError, errrespond.CodeInternal, "não foi possível encerrar a sessão")
 			return
 		}
 	}
-	h.cookie.Clear(c)
+	h.cookie.Clear(c.Writer)
 	c.Status(http.StatusNoContent)
 }
 
@@ -86,7 +88,7 @@ func (h *SessionHandler) Me(c *gin.Context) {
 	case http.StatusOK:
 		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
 	case http.StatusUnauthorized, http.StatusForbidden:
-		h.cookie.Clear(c)
+		h.cookie.Clear(c.Writer)
 		errrespond.Message(c, http.StatusUnauthorized, errrespond.CodeUnauthorized, "sessão inválida; faça login novamente")
 	default:
 		errrespond.Message(c, http.StatusBadGateway, errrespond.CodeInternal, "auth respondeu com erro ao carregar o perfil")

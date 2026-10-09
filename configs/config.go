@@ -7,29 +7,34 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/theretechlabs/retech-authkit/cookie"
 )
 
 // Config agrega todas as variáveis obrigatórias. Qualquer ausência impede o startup.
 type Config struct {
-	DBHost           string
-	DBPort           string
-	DBUser           string
-	DBPassword       string
-	DBName           string
-	DBSSLMode        string
-	AppPort          string
-	AppEnv           string
-	LogLevel         string
-	MigrationsPath   string
-	AuthJWKSURL      string
-	CORSOrigins      []string
-	AppApplicationID string
+	DBHost         string
+	DBPort         string
+	DBUser         string
+	DBPassword     string
+	DBName         string
+	DBSSLMode      string
+	AppPort        string
+	AppEnv         string
+	LogLevel       string
+	MigrationsPath string
+	CORSOrigins    []string
+	// Auth central (retech-auth-api) — padrão de envs compartilhado com o CashFlowfy.
+	AuthAPIBaseURL      string // AUTH_API_BASE_URL (obrigatória)
+	AuthJWKSURL         string // AUTH_JWKS_URL (opcional; padrão AUTH_API_BASE_URL/.well-known/jwks.json)
+	AuthBootstrapSecret string // AUTH_BOOTSTRAP_SECRET (obrigatória: authsync e password-reset)
+	AuthIssuer          string // AUTH_ISSUER (opcional; padrão retech-auth-api)
 	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
 	SessionEncryptionKey string        // SESSION_ENCRYPTION_KEY: base64 de 32 bytes (obrigatória)
 	SessionCookieName    string        // SESSION_COOKIE_NAME (padrão meufin_session)
 	SessionCookieSecure  bool          // SESSION_COOKIE_SECURE (padrão true; false só fora de produção)
 	SessionCookieDomain  string        // SESSION_COOKIE_DOMAIN (opcional; vazio = host da API)
-	SessionTTL           time.Duration // SESSION_TTL_HOURS (padrão 12h, igual ao CashFlowfy)
+	SessionTTL           time.Duration // SESSION_TTL (duração; padrão 12h, igual ao CashFlowfy)
 	AppApplicationCode   string        // APP_APPLICATION_CODE: application_code no auth (padrão meufin)
 	// Integrações opcionais
 	FipeBaseURL string // padrão: https://parallelum.com.br/fipe/api/v1
@@ -42,7 +47,7 @@ func Load() (*Config, error) {
 	keys := []string{
 		"DB_HOST", "DB_PORT", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_SSLMODE",
 		"APP_PORT", "APP_ENV", "LOG_LEVEL", "MIGRATIONS_PATH",
-		"AUTH_JWKS_URL", "CORS_ALLOWED_ORIGINS",
+		"AUTH_API_BASE_URL", "AUTH_BOOTSTRAP_SECRET", "CORS_ALLOWED_ORIGINS",
 	}
 	missing := make([]string, 0)
 	for _, k := range keys {
@@ -55,25 +60,33 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		DBHost:           os.Getenv("DB_HOST"),
-		DBPort:           os.Getenv("DB_PORT"),
-		DBUser:           os.Getenv("DB_USER"),
-		DBPassword:       os.Getenv("DB_PASSWORD"),
-		DBName:           os.Getenv("DB_NAME"),
-		DBSSLMode:        os.Getenv("DB_SSLMODE"),
-		AppPort:          os.Getenv("APP_PORT"),
-		AppEnv:           os.Getenv("APP_ENV"),
-		LogLevel:         os.Getenv("LOG_LEVEL"),
-		MigrationsPath:   os.Getenv("MIGRATIONS_PATH"),
-		AuthJWKSURL:      os.Getenv("AUTH_JWKS_URL"),
-		CORSOrigins:      splitAndTrim(os.Getenv("CORS_ALLOWED_ORIGINS")),
-		AppApplicationID: strings.TrimSpace(os.Getenv("APP_APPLICATION_ID")),
-		FipeBaseURL:      strings.TrimSpace(os.Getenv("FIPE_BASE_URL")),
-		RedisURL:         strings.TrimSpace(os.Getenv("REDIS_URL")),
+		DBHost:              os.Getenv("DB_HOST"),
+		DBPort:              os.Getenv("DB_PORT"),
+		DBUser:              os.Getenv("DB_USER"),
+		DBPassword:          os.Getenv("DB_PASSWORD"),
+		DBName:              os.Getenv("DB_NAME"),
+		DBSSLMode:           os.Getenv("DB_SSLMODE"),
+		AppPort:             os.Getenv("APP_PORT"),
+		AppEnv:              os.Getenv("APP_ENV"),
+		LogLevel:            os.Getenv("LOG_LEVEL"),
+		MigrationsPath:      os.Getenv("MIGRATIONS_PATH"),
+		CORSOrigins:         splitAndTrim(os.Getenv("CORS_ALLOWED_ORIGINS")),
+		AuthAPIBaseURL:      strings.TrimRight(strings.TrimSpace(os.Getenv("AUTH_API_BASE_URL")), "/"),
+		AuthJWKSURL:         strings.TrimSpace(os.Getenv("AUTH_JWKS_URL")),
+		AuthBootstrapSecret: strings.TrimSpace(os.Getenv("AUTH_BOOTSTRAP_SECRET")),
+		AuthIssuer:          strings.TrimSpace(os.Getenv("AUTH_ISSUER")),
+		FipeBaseURL:         strings.TrimSpace(os.Getenv("FIPE_BASE_URL")),
+		RedisURL:            strings.TrimSpace(os.Getenv("REDIS_URL")),
 	}
 
 	if cfg.AppEnv != "development" && cfg.AppEnv != "production" && cfg.AppEnv != "test" {
 		return nil, fmt.Errorf("APP_ENV inválido: use development, production ou test")
+	}
+	if cfg.AuthJWKSURL == "" {
+		cfg.AuthJWKSURL = cfg.AuthAPIBaseURL + "/.well-known/jwks.json"
+	}
+	if cfg.AuthIssuer == "" {
+		cfg.AuthIssuer = "retech-auth-api"
 	}
 
 	if err := loadSession(cfg); err != nil {
@@ -108,28 +121,30 @@ func loadSession(cfg *Config) error {
 	}
 
 	cfg.SessionTTL = 12 * time.Hour
-	if v := strings.TrimSpace(os.Getenv("SESSION_TTL_HOURS")); v != "" {
-		h, err := strconv.Atoi(v)
-		if err != nil || h < 1 {
-			return fmt.Errorf("SESSION_TTL_HOURS inválido: %q (inteiro >= 1)", v)
+	if v := strings.TrimSpace(os.Getenv("SESSION_TTL")); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("SESSION_TTL inválido: %q (duração, ex.: 12h)", v)
 		}
-		cfg.SessionTTL = time.Duration(h) * time.Hour
+		cfg.SessionTTL = d
 	}
 
-	// Prefixo __Host- (RFC 6265bis): o browser só aceita com Secure, Path=/ e sem
-	// Domain — impede que um subdomínio comprometido injete/sobrescreva o cookie.
-	if strings.HasPrefix(cfg.SessionCookieName, "__Host-") && (!cfg.SessionCookieSecure || cfg.SessionCookieDomain != "") {
-		return fmt.Errorf("SESSION_COOKIE_NAME com prefixo __Host- exige SESSION_COOKIE_SECURE=true e SESSION_COOKIE_DOMAIN vazio")
+	// Cookie: __Host- só com Secure e sem Domain; Secure obrigatório em produção;
+	// TTL mínimo — mesmas regras do CashFlowfy (retech-authkit/cookie).
+	if err := cfg.SessionCookie().Validate(cfg.AppEnv == "production"); err != nil {
+		return err
 	}
 
 	// A única forma de autenticar é o cookie de sessão: sem chave, não há API.
 	if cfg.SessionEncryptionKey == "" {
 		return fmt.Errorf("SESSION_ENCRYPTION_KEY é obrigatória (openssl rand -base64 32)")
 	}
-	if cfg.AppEnv == "production" && !cfg.SessionCookieSecure {
-		return fmt.Errorf("SESSION_COOKIE_SECURE=false não é permitido em produção")
-	}
 	return nil
+}
+
+// SessionCookie devolve a configuração do cookie de sessão.
+func (c *Config) SessionCookie() cookie.Config {
+	return cookie.Config{Name: c.SessionCookieName, Secure: c.SessionCookieSecure, Domain: c.SessionCookieDomain, TTL: c.SessionTTL}
 }
 
 // splitAndTrim quebra uma lista separada por vírgula, ignorando itens vazios.

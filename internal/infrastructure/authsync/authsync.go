@@ -1,72 +1,25 @@
 // Package authsync sincroniza o manifesto de permissions do MeuFin com o
-// retech-auth-api no boot. Tela nova no admin = entra no manifesto aqui =
-// permission aparece no banco do auth no próximo deploy — sem SQL manual.
+// retech-auth-api no boot (retech-authkit/authsync). Tela nova no admin = entra
+// no manifesto aqui = permission aparece no banco do auth no próximo deploy.
 package authsync
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"strings"
-	"time"
+
+	"github.com/theretechlabs/retech-authkit/authclient"
+	"github.com/theretechlabs/retech-authkit/authsync"
 )
 
-// Config vem das envs:
-//
-//	AUTH_SYNC_URL          URL completa do endpoint (ex.: https://auth.../v1/applications/sync)
-//	AUTH_BOOTSTRAP_SECRET  secret compartilhado do HMAC (mesmo BOOTSTRAP_SECRET do auth)
-type Config struct {
-	URL    string
-	Secret string
-}
-
-func ConfigFromEnv() Config {
-	return Config{
-		URL:    strings.TrimSpace(os.Getenv("AUTH_SYNC_URL")),
-		Secret: strings.TrimSpace(os.Getenv("AUTH_BOOTSTRAP_SECRET")),
-	}
-}
-
-// Enabled indica se o sync está configurado.
-func (c Config) Enabled() bool { return c.URL != "" && c.Secret != "" }
-
-type permission struct {
-	Code        string `json:"code"`
-	Subject     string `json:"subject"`
-	Action      string `json:"action"`
-	Description string `json:"description,omitempty"`
-}
-
-type manifest struct {
-	Application struct {
-		Code        string `json:"code"`
-		Name        string `json:"name"`
-		Description string `json:"description,omitempty"`
-	} `json:"application"`
-	Permissions []permission `json:"permissions"`
-	Roles       []any        `json:"roles"`
-}
+type permission = authsync.Permission
 
 func perm(subject, action, description string) permission {
-	return permission{Code: subject + ":" + action, Subject: subject, Action: action, Description: description}
+	return authsync.Perm(subject, action, description)
 }
 
 // buildManifest é a lista canônica de subjects do MeuFin — espelho do que o
 // front referencia (rotas guarded + menu). Tela nova => adicionar aqui.
-func buildManifest() manifest {
-	var m manifest
-	m.Application.Code = "meufin"
-	m.Application.Name = "Meu Fin"
-	m.Application.Description = "Gestão financeira e de saúde familiar"
-	m.Roles = []any{}
+func buildManifest() authsync.Manifest {
+	m := authsync.NewManifest("meufin", "Meu Fin", "Gestão financeira e de saúde familiar")
 	m.Permissions = []permission{
 		// Home
 		perm("retechfin.dashboard", "view", "Home do painel"),
@@ -161,62 +114,11 @@ func buildManifest() manifest {
 	return m
 }
 
-// Sync envia o manifesto ao auth com assinatura HMAC-SHA256(body+timestamp).
-// Retorna o resumo (criadas/existentes) para log.
-func Sync(ctx context.Context, cfg Config) (string, error) {
-	body, err := json.Marshal(buildManifest())
+// Sync envia o manifesto assinado (HMAC + nonce) ao auth. Retorna o resumo para log.
+func Sync(ctx context.Context, c *authclient.Client) (string, error) {
+	res, err := authsync.Sync(ctx, c, buildManifest())
 	if err != nil {
-		return "", fmt.Errorf("serializar manifesto: %w", err)
+		return "", err
 	}
-
-	timestamp := time.Now().Unix()
-	var nb [16]byte
-	if _, err := rand.Read(nb[:]); err != nil {
-		return "", fmt.Errorf("nonce: %w", err)
-	}
-	nonce := hex.EncodeToString(nb[:])
-	// HMAC-SHA256(body || timestamp || nonce): o nonce é aceito uma vez pelo auth (anti-replay).
-	mac := hmac.New(sha256.New, []byte(cfg.Secret))
-	mac.Write(body)
-	mac.Write([]byte(fmt.Sprintf("%d", timestamp)))
-	mac.Write([]byte(nonce))
-	signature := hex.EncodeToString(mac.Sum(nil))
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
-	if err != nil {
-		return "", fmt.Errorf("montar requisição: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Signature", signature)
-	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", timestamp))
-	req.Header.Set("X-Nonce", nonce)
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("chamada ao auth: %w", err)
-	}
-	defer resp.Body.Close()
-
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("auth respondeu %d: %s", resp.StatusCode, string(raw))
-	}
-
-	// Resumo compacto pro log: quantas permissions criadas vs já existentes.
-	var parsed struct {
-		Permissions []struct {
-			Action string `json:"action"`
-		} `json:"permissions"`
-	}
-	created := 0
-	if err := json.Unmarshal(raw, &parsed); err == nil {
-		for _, p := range parsed.Permissions {
-			if p.Action == "created" {
-				created++
-			}
-		}
-		return fmt.Sprintf("%d permissions no manifesto, %d criadas agora", len(parsed.Permissions), created), nil
-	}
-	return "sincronizado", nil
+	return res.String(), nil
 }

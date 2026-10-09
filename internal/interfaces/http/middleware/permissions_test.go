@@ -23,19 +23,3 @@ func TestHasModuleAccess(t *testing.T) {
 		}
 	}
 }
-
-func TestEnforcementModeFromEnv(t *testing.T) {
-	cases := map[string]EnforcementMode{
-		"off":    EnforcementOff,
-		"STRICT": EnforcementStrict,
-		"warn":   EnforcementWarn,
-		"":       EnforcementWarn,
-		"banana": EnforcementWarn,
-	}
-	for val, want := range cases {
-		t.Setenv("PERMS_ENFORCEMENT", val)
-		if got := EnforcementModeFromEnv(); got != want {
-			t.Errorf("PERMS_ENFORCEMENT=%q → %s, quer %s", val, got, want)
-		}
-	}
-}

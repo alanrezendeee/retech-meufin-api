@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/notification"
+	"github.com/theretechlabs/retech-authkit/authclient"
 )
 
 // Erros expostos ao handler.
@@ -53,7 +53,7 @@ func (s *PasswordResetService) Request(ctx context.Context, email string) error 
 
 	result, err := s.auth.PasswordResetRequest(ctx, email)
 	if err != nil {
-		if errors.Is(err, authclient.ErrUserNotFound) {
+		if errors.Is(err, authclient.ErrNotFound) {
 			s.log.Info("🔐 reset de senha solicitado para e-mail não cadastrado (resposta genérica)",
 				slog.String("email", email))
 			return nil
@@ -92,7 +92,7 @@ func (s *PasswordResetService) Confirm(ctx context.Context, token, newPassword s
 		return nil
 	case errors.Is(err, authclient.ErrWeakPassword):
 		return ErrWeakPassword
-	case errors.Is(err, authclient.ErrTokenInvalid):
+	case errors.Is(err, authclient.ErrResetTokenInvalid):
 		return ErrTokenInvalid
 	default:
 		return err
