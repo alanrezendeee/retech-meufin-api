@@ -12,6 +12,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -77,9 +78,15 @@ func (c *Client) post(ctx context.Context, path string, payload any) (*http.Resp
 	}
 
 	timestamp := time.Now().Unix()
+	nonce, err := newNonce()
+	if err != nil {
+		return nil, fmt.Errorf("authclient: nonce: %w", err)
+	}
+	// HMAC-SHA256(body || timestamp || nonce): o nonce é aceito uma vez pelo auth (anti-replay).
 	mac := hmac.New(sha256.New, []byte(c.cfg.Secret))
 	mac.Write(body)
 	mac.Write([]byte(fmt.Sprintf("%d", timestamp)))
+	mac.Write([]byte(nonce))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+path, bytes.NewReader(body))
@@ -89,6 +96,7 @@ func (c *Client) post(ctx context.Context, path string, payload any) (*http.Resp
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Signature", signature)
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("X-Nonce", nonce)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -150,4 +158,13 @@ func (c *Client) PasswordResetConfirm(ctx context.Context, token, newPassword st
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("authclient: auth respondeu %d: %s", resp.StatusCode, string(raw))
 	}
+}
+
+// newNonce gera 16 bytes aleatórios em hex (32 chars) para o header X-Nonce.
+func newNonce() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b[:]), nil
 }
