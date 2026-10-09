@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -169,9 +170,16 @@ func Sync(ctx context.Context, cfg Config) (string, error) {
 	}
 
 	timestamp := time.Now().Unix()
+	var nb [16]byte
+	if _, err := rand.Read(nb[:]); err != nil {
+		return "", fmt.Errorf("nonce: %w", err)
+	}
+	nonce := hex.EncodeToString(nb[:])
+	// HMAC-SHA256(body || timestamp || nonce): o nonce é aceito uma vez pelo auth (anti-replay).
 	mac := hmac.New(sha256.New, []byte(cfg.Secret))
 	mac.Write(body)
 	mac.Write([]byte(fmt.Sprintf("%d", timestamp)))
+	mac.Write([]byte(nonce))
 	signature := hex.EncodeToString(mac.Sum(nil))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, cfg.URL, bytes.NewReader(body))
@@ -181,6 +189,7 @@ func Sync(ctx context.Context, cfg Config) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Signature", signature)
 	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", timestamp))
+	req.Header.Set("X-Nonce", nonce)
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	resp, err := client.Do(req)
