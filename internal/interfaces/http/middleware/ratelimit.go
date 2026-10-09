@@ -2,47 +2,22 @@ package middleware
 
 import (
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/theretechlabs/retech-authkit/clientip"
+	"github.com/theretechlabs/retech-authkit/ratelimit"
 )
 
-// RateLimitPerIP limita requisições por IP em janela fixa (in-memory).
-// Suficiente para proteger endpoints públicos (ex.: share-links) de abuso;
-// para múltiplas réplicas o limite vale por instância — aceitável no MVP.
+// RateLimitPerIP limita requisições por IP (último hop do X-Forwarded-For) em
+// janela fixa, em memória (retech-authkit/ratelimit). Com réplicas o limite
+// vale por instância.
 func RateLimitPerIP(max int, window time.Duration) gin.HandlerFunc {
-	type bucket struct {
-		count int
-		reset time.Time
-	}
-	var mu sync.Mutex
-	buckets := map[string]*bucket{}
-
+	l := ratelimit.New(max, window)
 	return func(c *gin.Context) {
-		now := time.Now()
-		ip := ClientIP(c.Request)
-
-		mu.Lock()
-		b, ok := buckets[ip]
-		if !ok || now.After(b.reset) {
-			// Janela nova; aproveita para varrer entradas velhas de vez em
-			// quando (mapa não cresce sem limite).
-			if len(buckets) > 10_000 {
-				for k, v := range buckets {
-					if now.After(v.reset) {
-						delete(buckets, k)
-					}
-				}
-			}
-			b = &bucket{reset: now.Add(window)}
-			buckets[ip] = b
-		}
-		b.count++
-		over := b.count > max
-		mu.Unlock()
-
-		if over {
+		ok, retry := l.Allow(clientip.FromRequest(c.Request))
+		if !ok {
+			c.Header("Retry-After", ratelimit.RetryAfterSeconds(retry))
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
 				"error": gin.H{"code": "RATE_LIMITED", "message": "muitas requisições — tente novamente em instantes"},
 			})
@@ -51,3 +26,6 @@ func RateLimitPerIP(max int, window time.Duration) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// ClientIP devolve o IP do cliente pelo último hop do X-Forwarded-For.
+func ClientIP(r *http.Request) string { return clientip.FromRequest(r) }

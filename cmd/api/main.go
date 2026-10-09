@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/retechfin/retechfin-api/configs"
@@ -29,8 +28,6 @@ import (
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
 	domfinance "github.com/retechfin/retechfin-api/internal/domain/finance"
-	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
-	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/authsync"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/cache"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/extraction"
@@ -42,8 +39,10 @@ import (
 	infraqueue "github.com/retechfin/retechfin-api/internal/infrastructure/queue"
 	"github.com/retechfin/retechfin-api/internal/infrastructure/storage"
 	httprouter "github.com/retechfin/retechfin-api/internal/interfaces/http"
-	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 	"github.com/retechfin/retechfin-api/pkg/logger"
+	"github.com/theretechlabs/retech-authkit/authclient"
+	"github.com/theretechlabs/retech-authkit/jwtverify"
+	"github.com/theretechlabs/retech-authkit/sessioncrypto"
 	gormlogger "gorm.io/gorm/logger"
 )
 
@@ -126,40 +125,33 @@ func main() {
 	}
 	log.Info("✅ Migrations verificadas e aplicadas!")
 
-	log.Info("🔐 Carregando JWKS do auth...", slog.String("url", cfg.AuthJWKSURL))
-	jwks, err := keyfunc.Get(cfg.AuthJWKSURL, keyfunc.Options{
-		RefreshInterval:   time.Hour,
-		RefreshUnknownKID: true,
-		RefreshErrorHandler: func(err error) {
-			log.Error("⚠️ Falha ao atualizar JWKS", slog.String("error", err.Error()))
-		},
+	// Auth central (retech-authkit): client HTTP, verificador de JWT (JWKS em
+	// background; a primeira busca falhando não derruba o boot) e manifesto.
+	authClient := authclient.New(authclient.Config{
+		BaseURL: cfg.AuthAPIBaseURL, Secret: cfg.AuthBootstrapSecret, ApplicationCode: cfg.AppApplicationCode,
+	}, nil)
+	rootCtx, stopRoot := context.WithCancel(context.Background())
+	defer stopRoot()
+	jwtVerifier, err := jwtverify.New(rootCtx, cfg.AuthJWKSURL, jwtverify.Options{
+		Issuer: cfg.AuthIssuer, Audience: cfg.AppApplicationCode, RequireTyp: jwtverify.TypAccess, RequireTenant: true,
 	})
 	if err != nil {
-		log.Error("❌ Falha ao carregar JWKS do auth", slog.String("error", err.Error()))
+		log.Error("❌ Falha ao configurar o verificador de JWT", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	log.Info("✅ JWKS carregado!")
-
-	// Autorização por módulo: lê o claim perms do token (emitido pelo auth).
-	permsMode := middleware.EnforcementModeFromEnv()
-	log.Info(fmt.Sprintf("🛡️ Autorização por módulo: %s (PERMS_ENFORCEMENT)", permsMode))
+	log.Info("🔐 JWT do auth verificado a cada requisição", slog.String("jwks", cfg.AuthJWKSURL), slog.String("aud", cfg.AppApplicationCode))
 
 	// Manifesto de permissions → auth (SyncManifest): telas novas viram
 	// permissions no banco do auth automaticamente a cada deploy.
-	syncCfg := authsync.ConfigFromEnv()
-	if syncCfg.Enabled() {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if summary, err := authsync.Sync(ctx, syncCfg); err != nil {
-				log.Warn("⚠️ Sync do manifesto de permissions falhou", slog.String("error", err.Error()))
-			} else {
-				log.Info(fmt.Sprintf("✅ Manifesto de permissions sincronizado com o auth! %s", summary))
-			}
-		}()
-	} else {
-		log.Warn("⚠️ Sync do manifesto de permissions desabilitado (AUTH_SYNC_URL, AUTH_BOOTSTRAP_SECRET)")
-	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if summary, err := authsync.Sync(ctx, authClient); err != nil {
+			log.Warn("⚠️ Sync do manifesto de permissions falhou", slog.String("error", err.Error()))
+		} else {
+			log.Info(fmt.Sprintf("✅ Manifesto de permissions sincronizado com o auth! %s", summary))
+		}
+	}()
 
 	accRepo := persistence.NewAccountRepository(db)
 	catRepo := persistence.NewCategoryRepository(db)
@@ -337,34 +329,23 @@ func main() {
 	} else {
 		log.Warn("⚠️ Canal de e-mail desabilitado — configure USESEND_BASE_URL, USESEND_API_KEY e MAIL_FROM_EMAIL")
 	}
-	authClient := authclient.New(authclient.ConfigFromEnv())
 	passwordResetSvc := appacc.NewPasswordResetService(authClient, mailer, log)
 
 	// Gateway de sessão (cookie HttpOnly): tokens do auth ficam no banco,
 	// cifrados; o browser só vê um id opaco. docs/auth-session-gateway.md
-	sessionAuth := authclient.NewPublicAuthenticator(authClient, cfg.AppApplicationCode)
-	sessionCookie := middleware.SessionCookie{
-		Name: cfg.SessionCookieName, Secure: cfg.SessionCookieSecure,
-		Domain: cfg.SessionCookieDomain, MaxAge: int(cfg.SessionTTL.Seconds()),
-	}
-	if !sessionAuth.Configured() {
-		log.Error("❌ AUTH_API_BASE_URL ausente — o gateway de sessão precisa do auth")
-		os.Exit(1)
-	}
-	sessionCipher, err := domsess.NewCipher(cfg.SessionEncryptionKey)
+	sessionCookie := cfg.SessionCookie()
+	sessionCipher, err := sessioncrypto.NewCipher(cfg.SessionEncryptionKey)
 	if err != nil {
 		log.Error("❌ SESSION_ENCRYPTION_KEY inválida", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	sessionSvc := appsess.NewService(sessionAuth, persistence.NewAuthSessionRepository(db, sessionCipher), cfg.SessionTTL, log)
+	sessionSvc := appsess.NewService(authClient, persistence.NewAuthSessionRepository(db, sessionCipher), jwtVerifier, cfg.SessionTTL, log)
 	log.Info(fmt.Sprintf("🔒 Gateway de sessão ativo (única autenticação; sem Bearer). cookie=%s secure=%t ttl=%s", cfg.SessionCookieName, cfg.SessionCookieSecure, cfg.SessionTTL))
 
 	r := httprouter.NewRouter(httprouter.RouterDeps{
 		Log:                      log,
 		DB:                       db,
 		Env:                      cfg.AppEnv,
-		JWKS:                     jwks,
-		ApplicationID:            cfg.AppApplicationID,
 		CORSOrigins:              cfg.CORSOrigins,
 		AccountService:           accSvc,
 		CategoryService:          catSvc,
@@ -394,7 +375,6 @@ func main() {
 		SupplierService:          supplierSvc,
 		MemberDocumentService:    memberDocSvc,
 		VehicleService:           vehicleSvc,
-		PermsEnforcement:         permsMode,
 
 		FinanceFiscalDashboardService: finFiscalDashSvc,
 		PatrimonyService:              patrimonySvc,
@@ -411,9 +391,9 @@ func main() {
 		ProfileService:                profileSvc,
 
 		SessionService: sessionSvc,
-		SessionAuth:    sessionAuth,
+		SessionAuth:    authClient,
 		SessionCookie:  sessionCookie,
-		AuthBaseURL:    authClient.BaseURL(),
+		AuthBaseURL:    cfg.AuthAPIBaseURL,
 	})
 
 	// Limpeza de sessões expiradas/revogadas (retidas 7 dias para auditoria).

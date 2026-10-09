@@ -4,7 +4,6 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	appacc "github.com/retechfin/retechfin-api/internal/application/account"
 	appb "github.com/retechfin/retechfin-api/internal/application/budget"
@@ -18,9 +17,10 @@ import (
 	appsess "github.com/retechfin/retechfin-api/internal/application/session"
 	appv "github.com/retechfin/retechfin-api/internal/application/vehicle"
 	appw "github.com/retechfin/retechfin-api/internal/application/warranty"
-	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/handlers"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
+	"github.com/theretechlabs/retech-authkit/authclient"
+	"github.com/theretechlabs/retech-authkit/cookie"
 	"gorm.io/gorm"
 )
 
@@ -28,8 +28,6 @@ type RouterDeps struct {
 	Log                      *slog.Logger
 	DB                       *gorm.DB
 	Env                      string
-	JWKS                     *keyfunc.JWKS
-	ApplicationID            string
 	CORSOrigins              []string
 	AccountService           *appl.AccountService
 	CategoryService          *appl.CategoryService
@@ -59,7 +57,6 @@ type RouterDeps struct {
 	SupplierService          *appf.SupplierService
 	MemberDocumentService    *apph.MemberDocumentService
 	VehicleService           *appv.Service
-	PermsEnforcement         middleware.EnforcementMode
 
 	// Módulos da apresentação (2026-07)
 	FinanceFiscalDashboardService *appf.FiscalDashboardService
@@ -78,8 +75,8 @@ type RouterDeps struct {
 
 	// Gateway de sessão (cookie HttpOnly) — docs/auth-session-gateway.md
 	SessionService *appsess.Service
-	SessionAuth    *authclient.PublicAuthenticator // /auth/me e login
-	SessionCookie  middleware.SessionCookie
+	SessionAuth    *authclient.Client // /auth/me (perfil) e login
+	SessionCookie  cookie.Config
 	AuthBaseURL    string // base do retech-auth-api para o proxy IAM
 }
 
@@ -111,8 +108,6 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	budH := handlers.NewBudgetHandler(d.BudgetService)
 
 	authOpts := middleware.AuthOptions{
-		JWKS:           d.JWKS,
-		ApplicationID:  d.ApplicationID,
 		Cookie:         d.SessionCookie,
 		AllowedOrigins: d.CORSOrigins,
 		Sessions:       d.SessionService,
@@ -125,7 +120,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	authG := r.Group("/api/v1/auth")
 	{
 		authG.POST("/login", middleware.RateLimitPerIP(10, time.Minute), sessH.Login)
-		authG.POST("/logout", sessH.Logout)
+		authG.POST("/logout", middleware.CSRF(d.CORSOrigins), sessH.Logout)
 		authG.GET("/me", requireAuth, sessH.Me)
 	}
 
@@ -144,7 +139,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		v1.DELETE("/me/avatar", meH.DeleteAvatar)
 
 		// Módulo legado (ledger/budget) — subjects retechfin.*
-		legacy := v1.Group("", middleware.RequireModule("retechfin", d.PermsEnforcement))
+		legacy := v1.Group("", middleware.RequireModule("retechfin"))
 		legacy.POST("/accounts", accH.Create)
 		legacy.GET("/accounts", accH.List)
 		legacy.GET("/accounts/:id", accH.Get)
@@ -181,7 +176,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 		extStatusH := handlers.NewHealthExtractionHandler(d.ExtractionService, d.DocumentService, d.ExamImportService)
 		extTrigH := handlers.NewHealthExtractTriggerHandler(d.DocumentService, d.ExtractionService)
 		examConfirmH := handlers.NewHealthExamConfirmHandler(d.ExamImportService)
-		health := v1.Group("/health", middleware.RequireModule("health", d.PermsEnforcement))
+		health := v1.Group("/health", middleware.RequireModule("health"))
 		{
 			health.GET("/markers", mkH.List)
 			health.POST("/markers", mkH.Create)
@@ -288,7 +283,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	finExtTrigH := handlers.NewFinanceExtractTriggerHandler(d.FinanceDocumentService, d.FinanceExtractionService)
 	finExtH := handlers.NewFinanceExtractionHandler(d.FinanceExtractionService, d.FinanceDocumentService, d.FinancialEntryService)
 	finFiscalH := handlers.NewFinanceFiscalHandler(d.FinanceFiscalService)
-	finance := v1.Group("/finance", middleware.RequireModule("finance", d.PermsEnforcement))
+	finance := v1.Group("/finance", middleware.RequireModule("finance"))
 	{
 		finance.GET("/suppliers", supplierH.List)
 		finance.POST("/suppliers", supplierH.Create)
@@ -410,7 +405,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	// Frota Familiar
 	vehicleH := handlers.NewVehicleHandler(d.VehicleService)
-	vehicles := v1.Group("/vehicles", middleware.RequireModule("vehicles", d.PermsEnforcement))
+	vehicles := v1.Group("/vehicles", middleware.RequireModule("vehicles"))
 	{
 		// FIPE search (estático antes de /:id para não conflitar)
 		vehicles.GET("/fipe/brands", vehicleH.FipeBrands)
@@ -464,7 +459,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 	// Patrimônio — imóveis + impostos de bens
 	patrimonyH := handlers.NewPatrimonyHandler(d.PatrimonyService)
 	patrimonyDocH := handlers.NewPropertyDocumentHandler(d.PatrimonyDocumentService)
-	patrimony := v1.Group("/patrimony", middleware.RequireModule("patrimony", d.PermsEnforcement))
+	patrimony := v1.Group("/patrimony", middleware.RequireModule("patrimony"))
 	{
 		patrimony.GET("/properties", patrimonyH.ListProperties)
 		patrimony.POST("/properties", patrimonyH.CreateProperty)
@@ -489,7 +484,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	// Garantias de bens
 	warrantyH := handlers.NewWarrantyHandler(d.WarrantyService, d.WarrantyDocumentService)
-	warranties := v1.Group("/warranties", middleware.RequireModule("warranties", d.PermsEnforcement))
+	warranties := v1.Group("/warranties", middleware.RequireModule("warranties"))
 	{
 		warranties.GET("/summary", warrantyH.Summary)
 		warranties.GET("", warrantyH.List)
@@ -506,7 +501,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	// Educação / Material Escolar
 	educationH := handlers.NewEducationHandler(d.EducationService)
-	education := v1.Group("/education", middleware.RequireModule("education", d.PermsEnforcement))
+	education := v1.Group("/education", middleware.RequireModule("education"))
 	{
 		education.GET("/dashboard", educationH.Dashboard)
 
@@ -530,7 +525,7 @@ func NewRouter(d RouterDeps) *gin.Engine {
 
 	// Segurança do Lar
 	homeSafetyH := handlers.NewHomeSafetyHandler(d.HomeSafetyService)
-	homeSafety := v1.Group("/home-safety", middleware.RequireModule("homesafety", d.PermsEnforcement))
+	homeSafety := v1.Group("/home-safety", middleware.RequireModule("homesafety"))
 	{
 		homeSafety.GET("/dashboard", homeSafetyH.Dashboard)
 		homeSafety.GET("/catalog", homeSafetyH.Catalog)

@@ -1,5 +1,15 @@
 # Gateway de sessão (token handler / BFF)
 
+> **2026-10-09** — implementação movida para o módulo compartilhado
+> [`retech-authkit`](https://github.com/theretechlabs/retech-authkit) (`session`, `sessioncrypto`,
+> `cookie`, `csrf`, `ratelimit`, `jwtverify`, `authclient`, `authsync`), idêntico ao CashFlowfy.
+> Diferenças em relação ao texto abaixo: o JWT é verificado em toda requisição com `iss`, `aud`
+> (`APP_APPLICATION_CODE`) e `typ=access` (não há mais `APP_APPLICATION_ID`); o logout revoga também o
+> refresh token no auth (`POST /v1/logout`) e passa pela verificação CSRF; tokens em repouso usam
+> AES-GCM + HKDF + AAD = id da sessão; `SESSION_TTL` é uma duração (ex.: `12h`); `AUTH_JWKS_URL` é
+> derivada de `AUTH_API_BASE_URL`; `PERMS_ENFORCEMENT` deixou de existir (sempre estrito).
+
+
 ## Problema
 
 Até aqui o admin fazia login direto no `retech-auth-api` e guardava `access_token`
@@ -46,7 +56,7 @@ e diferente do host da API. `GET/HEAD/OPTIONS` e Bearer não passam por isso.
 | `SESSION_COOKIE_NAME` | `meufin_session` | Produção: `__Host-meufin_session` (exige Secure e sem Domain; bloqueia injeção por subdomínio). |
 | `SESSION_COOKIE_SECURE` | `true` | `false` só em dev http. Produção falha no boot se `false`. |
 | `SESSION_COOKIE_DOMAIN` | vazio | Vazio = host da API. Só preencher se admin e API estiverem em subdomínios diferentes sem proxy. |
-| `SESSION_TTL_HOURS` | `12` | Validade absoluta da sessão (igual ao CashFlowfy). Precisa caber no `JWT_REFRESH_EXPIRATION_HOURS` do auth. |
+| `SESSION_TTL` | `12` | Validade absoluta da sessão (igual ao CashFlowfy). Precisa caber no `JWT_REFRESH_EXPIRATION_HOURS` do auth. |
 | `APP_APPLICATION_CODE` | `meufin` | `application_code` do `/v1/authenticate`. |
 | `AUTH_API_BASE_URL` | — | Já existia (esqueci a senha). Agora também alimenta login/refresh/me e o proxy IAM. |
 

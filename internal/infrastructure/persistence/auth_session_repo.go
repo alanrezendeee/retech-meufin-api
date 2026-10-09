@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
+	"github.com/theretechlabs/retech-authkit/sessioncrypto"
 	"gorm.io/gorm"
+
+	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
 )
 
-// AuthSessionModel espelha auth_sessions. Tokens ficam cifrados (AES-GCM).
+// AuthSessionModel espelha auth_sessions. Tokens ficam cifrados (AES-GCM, AAD = id).
 type AuthSessionModel struct {
 	ID              string     `gorm:"size:64;primaryKey"`
 	UserID          uuid.UUID  `gorm:"type:uuid;not null"`
@@ -30,35 +32,40 @@ type AuthSessionModel struct {
 
 func (AuthSessionModel) TableName() string { return "auth_sessions" }
 
-// AuthSessionRepository implementa domsess.Store sobre GORM.
+// AuthSessionRepository implementa domsess.Store (retech-authkit/session.Store) sobre GORM.
 type AuthSessionRepository struct {
 	db     *gorm.DB
-	cipher *domsess.Cipher
+	cipher *sessioncrypto.Cipher
 }
 
-func NewAuthSessionRepository(db *gorm.DB, cipher *domsess.Cipher) *AuthSessionRepository {
+func NewAuthSessionRepository(db *gorm.DB, cipher *sessioncrypto.Cipher) *AuthSessionRepository {
 	return &AuthSessionRepository{db: db, cipher: cipher}
 }
 
 var _ domsess.Store = (*AuthSessionRepository)(nil)
 
-func (r *AuthSessionRepository) seal(t domsess.Tokens) (access, refresh []byte, err error) {
-	if access, err = r.cipher.Seal(t.Access); err != nil {
+func (r *AuthSessionRepository) seal(id string, t domsess.Tokens) (access, refresh []byte, err error) {
+	if access, err = r.cipher.Seal(t.Access, id); err != nil {
 		return nil, nil, err
 	}
-	if refresh, err = r.cipher.Seal(t.Refresh); err != nil {
+	if refresh, err = r.cipher.Seal(t.Refresh, id); err != nil {
 		return nil, nil, err
 	}
 	return access, refresh, nil
 }
 
 func (r *AuthSessionRepository) Create(ctx context.Context, s domsess.Session) error {
-	access, refresh, err := r.seal(s.Tokens)
+	access, refresh, err := r.seal(s.ID, s.Tokens)
 	if err != nil {
 		return err
 	}
+	var tenant *uuid.UUID
+	if s.HasTenant() {
+		t := s.TenantID
+		tenant = &t
+	}
 	m := AuthSessionModel{
-		ID: s.ID, UserID: s.User.ID, Email: s.User.Email, Name: s.User.Name, TenantID: s.TenantID,
+		ID: s.ID, UserID: s.User.ID, Email: s.User.Email, Name: s.User.Name, TenantID: tenant,
 		AccessTokenEnc: access, RefreshTokenEnc: refresh, AccessExpiresAt: s.Tokens.AccessExpiresAt,
 		ExpiresAt: s.ExpiresAt, CreatedAt: s.CreatedAt, LastSeenAt: s.LastSeenAt, RevokedAt: s.RevokedAt,
 		IP: truncate(s.IP, 64), UserAgent: truncate(s.UserAgent, 512),
@@ -66,6 +73,7 @@ func (r *AuthSessionRepository) Create(ctx context.Context, s domsess.Session) e
 	return r.db.WithContext(ctx).Create(&m).Error
 }
 
+// Get devolve a sessão (inclusive expirada/revogada; o serviço decide).
 func (r *AuthSessionRepository) Get(ctx context.Context, id string) (domsess.Session, error) {
 	var m AuthSessionModel
 	if err := r.db.WithContext(ctx).Where("id = ?", id).First(&m).Error; err != nil {
@@ -74,18 +82,22 @@ func (r *AuthSessionRepository) Get(ctx context.Context, id string) (domsess.Ses
 		}
 		return domsess.Session{}, err
 	}
-	access, err := r.cipher.Open(m.AccessTokenEnc)
+	access, err := r.cipher.Open(m.AccessTokenEnc, m.ID)
 	if err != nil {
 		return domsess.Session{}, err
 	}
-	refresh, err := r.cipher.Open(m.RefreshTokenEnc)
+	refresh, err := r.cipher.Open(m.RefreshTokenEnc, m.ID)
 	if err != nil {
 		return domsess.Session{}, err
+	}
+	tenant := uuid.Nil
+	if m.TenantID != nil {
+		tenant = *m.TenantID
 	}
 	return domsess.Session{
 		ID:         m.ID,
 		User:       domsess.UserInfo{ID: m.UserID, Email: m.Email, Name: m.Name},
-		TenantID:   m.TenantID,
+		TenantID:   tenant,
 		Tokens:     domsess.Tokens{Access: access, Refresh: refresh, AccessExpiresAt: m.AccessExpiresAt},
 		ExpiresAt:  m.ExpiresAt,
 		CreatedAt:  m.CreatedAt,
@@ -102,7 +114,7 @@ func (r *AuthSessionRepository) Touch(ctx context.Context, id string, at time.Ti
 }
 
 func (r *AuthSessionRepository) UpdateTokens(ctx context.Context, id string, t domsess.Tokens) error {
-	access, refresh, err := r.seal(t)
+	access, refresh, err := r.seal(id, t)
 	if err != nil {
 		return err
 	}
@@ -111,6 +123,14 @@ func (r *AuthSessionRepository) UpdateTokens(ctx context.Context, id string, t d
 		"refresh_token_enc": refresh,
 		"access_expires_at": t.AccessExpiresAt,
 	}).Error
+}
+
+func (r *AuthSessionRepository) SetTenant(ctx context.Context, id string, tenantID uuid.UUID) error {
+	var tenant *uuid.UUID
+	if tenantID != uuid.Nil {
+		tenant = &tenantID
+	}
+	return r.db.WithContext(ctx).Model(&AuthSessionModel{}).Where("id = ?", id).Update("tenant_id", tenant).Error
 }
 
 func (r *AuthSessionRepository) Revoke(ctx context.Context, id string, at time.Time) error {

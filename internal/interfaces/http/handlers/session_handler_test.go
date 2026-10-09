@@ -4,9 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"encoding/base64"
 	"encoding/json"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,14 +13,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MicahParks/keyfunc/v2"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/theretechlabs/retech-authkit/authclient"
+	"github.com/theretechlabs/retech-authkit/cookie"
+	"github.com/theretechlabs/retech-authkit/jwtverify"
+	"github.com/theretechlabs/retech-authkit/sessioncrypto"
 
 	appsess "github.com/retechfin/retechfin-api/internal/application/session"
 	domsess "github.com/retechfin/retechfin-api/internal/domain/session"
-	"github.com/retechfin/retechfin-api/internal/infrastructure/authclient"
 	"github.com/retechfin/retechfin-api/internal/interfaces/http/middleware"
 )
 
@@ -47,10 +47,11 @@ func loginBody(email, secret string) string {
 
 type fakeAuthServer struct {
 	key      *rsa.PrivateKey
-	jwks     *keyfunc.JWKS
+	verifier *jwtverify.Verifier
 	tenant   string
 	mu       sync.Mutex
 	refreshs int
+	logouts  int
 	accessTT time.Duration // validade do access token emitido
 }
 
@@ -60,17 +61,9 @@ func newFakeAuthServer(t *testing.T) (*fakeAuthServer, *httptest.Server) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pub := key.PublicKey
-	raw, _ := json.Marshal(map[string]any{"keys": []map[string]any{{
-		"kty": "RSA", "kid": "k1", "alg": "RS256", "use": "sig",
-		"n": base64.RawURLEncoding.EncodeToString(pub.N.Bytes()),
-		"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
-	}}})
-	jwks, err := keyfunc.NewJSON(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	f := &fakeAuthServer{key: key, jwks: jwks, tenant: uuid.NewString(), accessTT: time.Hour}
+	verifier := jwtverify.NewWithKeyfunc(func(*jwt.Token) (any, error) { return &key.PublicKey, nil },
+		jwtverify.Options{Issuer: "retech-auth-api", Audience: "meufin", RequireTyp: jwtverify.TypAccess, RequireTenant: true})
+	f := &fakeAuthServer{key: key, verifier: verifier, tenant: uuid.NewString(), accessTT: time.Hour}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /v1/authenticate", func(w http.ResponseWriter, r *http.Request) {
@@ -95,9 +88,15 @@ func newFakeAuthServer(t *testing.T) (*fakeAuthServer, *httptest.Server) {
 		f.mu.Unlock()
 		f.writeTokens(w)
 	})
+	mux.HandleFunc("POST /v1/logout", func(w http.ResponseWriter, _ *http.Request) {
+		f.mu.Lock()
+		f.logouts++
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("GET /v1/me", func(w http.ResponseWriter, r *http.Request) {
 		tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if _, err := jwt.Parse(tok, f.jwks.Keyfunc, jwt.WithValidMethods([]string{"RS256"})); err != nil {
+		if _, err := f.verifier.Verify(tok); err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
@@ -114,9 +113,13 @@ func (f *fakeAuthServer) writeTokens(w http.ResponseWriter) {
 	ttl := f.accessTT
 	f.mu.Unlock()
 	claims := middleware.AuthClaims{
-		UserID: fixtureUserID, Email: fixtureEmail, Name: "Ana",
-		ApplicationID: "app-meufin", TenantID: &f.tenant, Roles: []string{"admin"}, Perms: []string{"all:manage"},
-		RegisteredClaims: jwt.RegisteredClaims{ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl))},
+		UserID: uuid.MustParse(fixtureUserID), Email: fixtureEmail, Name: "Ana",
+		ApplicationID: uuid.New(), TenantID: &f.tenant, Roles: []string{"admin"}, Perms: []string{"all:manage"},
+		Typ: jwtverify.TypAccess,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer: "retech-auth-api", Audience: jwt.ClaimStrings{"meufin"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)), IssuedAt: jwt.NewNumericDate(time.Now()),
+		},
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = "k1"
@@ -178,29 +181,33 @@ func (s *memStore) Revoke(_ context.Context, id string, at time.Time) error {
 func (s *memStore) RevokeAllForUser(context.Context, uuid.UUID, time.Time) (int64, error) {
 	return 0, nil
 }
+func (s *memStore) SetTenant(_ context.Context, id string, t uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sess := s.m[id]
+	sess.TenantID = t
+	s.m[id] = sess
+	return nil
+}
 func (s *memStore) PurgeExpired(context.Context, time.Time) (int64, error) { return 0, nil }
 
 func newGatewayApp(t *testing.T) (*gin.Engine, *fakeAuthServer, *memStore) {
 	t.Helper()
 	fake, srv := newFakeAuthServer(t)
-	t.Setenv("AUTH_API_BASE_URL", srv.URL)
-	t.Setenv("AUTH_BOOTSTRAP_SECRET", "x")
-	client := authclient.New(authclient.ConfigFromEnv())
-	auth := authclient.NewPublicAuthenticator(client, "meufin")
+	auth := authclient.New(authclient.Config{BaseURL: srv.URL, Secret: "x", ApplicationCode: "meufin"}, nil)
 	store := &memStore{m: map[string]domsess.Session{}}
-	svc := appsess.NewService(auth, store, 24*time.Hour, nil)
-	cookie := middleware.SessionCookie{Name: "meufin_session", Secure: true, MaxAge: 86400}
+	svc := appsess.NewService(auth, store, fake.verifier, 24*time.Hour, nil)
+	ck := cookie.Config{Name: "meufin_session", Secure: true, TTL: 24 * time.Hour}
 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	requireAuth := middleware.RequireAuth(middleware.AuthOptions{
-		JWKS: fake.jwks, ApplicationID: "app-meufin", Sessions: svc, Cookie: cookie,
-		AllowedOrigins: []string{"https://admin.meufin.app"},
+		Sessions: svc, Cookie: ck, AllowedOrigins: []string{"https://admin.meufin.app"},
 	})
-	h := NewSessionHandler(svc, auth, cookie)
+	h := NewSessionHandler(svc, auth, ck)
 	a := r.Group("/api/v1/auth")
 	a.POST("/login", h.Login)
-	a.POST("/logout", h.Logout)
+	a.POST("/logout", middleware.CSRF([]string{"https://admin.meufin.app"}), h.Logout)
 	a.GET("/me", requireAuth, h.Me)
 	v1 := r.Group("/api/v1", requireAuth)
 	v1.GET("/ping", func(c *gin.Context) {
@@ -268,7 +275,7 @@ func TestGatewayFluxoCompleto(t *testing.T) {
 	if _, ok := store.m[ck.Value]; ok {
 		t.Fatal("store indexado pelo token em claro")
 	}
-	if _, ok := store.m[domsess.HashToken(ck.Value)]; !ok {
+	if _, ok := store.m[sessioncrypto.HashToken(ck.Value)]; !ok {
 		t.Fatal("sessão não encontrada pelo hash")
 	}
 
@@ -299,7 +306,7 @@ func TestGatewayFluxoCompleto(t *testing.T) {
 	}
 
 	// Access token perto de expirar → refresh transparente no auth.
-	id := domsess.HashToken(ck.Value)
+	id := sessioncrypto.HashToken(ck.Value)
 	sess := store.m[id]
 	sess.Tokens.AccessExpiresAt = time.Now().Add(5 * time.Second)
 	store.m[id] = sess
@@ -311,10 +318,24 @@ func TestGatewayFluxoCompleto(t *testing.T) {
 		t.Fatal("tokens renovados não persistidos")
 	}
 
-	// Logout: 204, cookie limpo, sessão revogada; cookie antigo vira 401 + limpeza.
+	// Logout cross-site é recusado (CSRF) e não revoga nada.
+	req = httptest.NewRequest(http.MethodPost, "https://admin.meufin.app/api/v1/auth/logout", nil)
+	req.Host = "admin.meufin.app"
+	req.Header.Set("Origin", "https://evil.example")
+	req.AddCookie(ck)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("logout cross-site: code=%d", w.Code)
+	}
+
+	// Logout: 204, cookie limpo, sessão revogada aqui E no auth; cookie antigo vira 401 + limpeza.
 	w = call(r, http.MethodPost, "/api/v1/auth/logout", "", ck)
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("logout: code=%d", w.Code)
+	}
+	if fake.logouts != 1 {
+		t.Fatalf("logout deveria revogar o refresh token no auth: logouts=%d", fake.logouts)
 	}
 	if c := cookieFrom(w, "meufin_session"); c == nil || c.MaxAge >= 0 && c.Value != "" {
 		t.Fatalf("logout não limpou o cookie: %+v", c)
